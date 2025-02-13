@@ -679,9 +679,10 @@ void PadDualshock2::Set(u32 index, float value)
 	}
 	else if (IsTriggerKey(index))
 	{
+		const float pMod = ((this->buttons & (1u << Inputs::PAD_PRESSURE)) == 0) ? this->pressureModifier : 1.0f;
 		const float s_value = std::clamp(value, 0.0f, 1.0f);
 		const float dz_value = (this->buttonDeadzone > 0.0f && s_value < this->buttonDeadzone) ? 0.0f : s_value;
-		this->rawInputs[index] = static_cast<u8>(dz_value * 255.0f);
+		this->rawInputs[index] = static_cast<u8>(dz_value * pMod * 255.0f);
 		if (dz_value > 0.0f)
 			this->buttons &= ~(1u << bitmaskMapping[index]);
 		else
@@ -689,8 +690,7 @@ void PadDualshock2::Set(u32 index, float value)
 	}
 	else
 	{
-		// Don't affect L2/R2, since they are analog on most pads.
-		const float pMod = ((this->buttons & (1u << Inputs::PAD_PRESSURE)) == 0 && !IsTriggerKey(index)) ? this->pressureModifier : 1.0f;
+		const float pMod = ((this->buttons & (1u << Inputs::PAD_PRESSURE)) == 0) ? this->pressureModifier : 1.0f;
 		const float dzValue = (value < this->buttonDeadzone) ? 0.0f : value;
 		this->rawInputs[index] = static_cast<u8>(std::clamp(dzValue * pMod * 255.0f, 0.0f, 255.0f));
 
@@ -710,7 +710,7 @@ void PadDualshock2::Set(u32 index, float value)
 
 			for (u32 i = 0; i < Inputs::LENGTH; i++)
 			{
-				if (i == index || IsAnalogKey(i) || IsTriggerKey(i))
+				if (i == index || IsAnalogKey(i))
 				{
 					continue;
 				}
