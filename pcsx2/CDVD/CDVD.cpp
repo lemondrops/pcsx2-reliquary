@@ -44,7 +44,10 @@ static constexpr u8 cdvdParamLength[16] = { 0, 0, 0, 0, 0, 4, 11, 11, 11, 1, 255
 static constexpr size_t NVRAM_SIZE = 1024;
 static u8 s_nvram[NVRAM_SIZE];
 
-static constexpr u32 DEFAULT_MECHA_VERSION = 0x00020603;
+#define MECHACONVER_PCSX2_GENERIC 0x00020603
+#define MECHACONVER_ARCADE 0x0104020a // from a COH-H31100: `0A 02 04 01`
+static constexpr u32 DEFAULT_MECHA_VERSION = MECHACONVER_ARCADE;
+
 static u32 s_mecha_version = 0;
 
 static __fi void SetSCMDResultSize(u8 size) noexcept
