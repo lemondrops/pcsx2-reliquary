@@ -3325,11 +3325,13 @@ void VMManager::WarnAboutUnsafeSettings()
 		append(ICON_PF_MICROCHIP,
 			TRANSLATE_SV("VMManager", "VU Clamp Mode is not set to default, this may break some games."));
 	}
-	if (EmuConfig.Cpu.ExtraMemory)
+	/*if (EmuConfig.Cpu.ExtraMemory)
 	{
+		//SYSTEM256 needs 64mb EE | 4mb IOP
+		//and all COH-H models use practically the same boot rom software that ran on the arcade TOOL. so there should be no "compatibility affected"
 		append(ICON_PF_MICROCHIP,
 			TRANSLATE_SV("VMManager", "Extended RAM is enabled. Compatibility with some games may be affected."));
-	}
+	}*/
 	if (!EmuConfig.EnableGameFixes)
 	{
 		append(ICON_FA_GAMEPAD,
