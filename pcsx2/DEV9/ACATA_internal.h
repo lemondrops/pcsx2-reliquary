@@ -22,8 +22,6 @@
 #define ATA_STAT_READY 0x40
 #define ATA_STAT_BUSY  0x80
 
-
-
 enum ATA_C_CODES {
     ATA_C_NOP                                  = 0x00,
     ATA_C_CFA_REQUEST_EXTENDED_ERROR_CODE      = 0x03,

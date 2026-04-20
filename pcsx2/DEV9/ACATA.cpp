@@ -1,10 +1,13 @@
 #include "ACATA.h"
+#include "ACATAPI.h"
 #include "common/Console.h"
 
 #include "ACMACROS.h"
 
 #include "ACATA_CMD_RESPONSES"
 
+std::string ACATA::imgpath = "";
+ACMEDIATYPE ACATA::MediaType;
 
 int ACATA::device_probes[ACATA_DEVCNT] = {0,0};
 int ACATA::last_device_probed = 0;
@@ -20,9 +23,9 @@ u16 ACATA::read16(u32 addr) {
     case ACATA_BASE_PROBEADDR:
         return ACATA::cmd_handleR(addr);
     break;
+    case ACATA_PROBEREG_2: ACATA::REGS[ACATA_R_STATUS] = 0; break;
     case ACATA_PROBEREG_0:
     case ACATA_PROBEREG_1:
-    case ACATA_PROBEREG_2: ACATA::REGS[ACATA_R_STATUS] = 0; break;
     case ACATA_PROBEREG_3:
     case ACATA_DEVICE_SELECT:
     break;
@@ -38,6 +41,7 @@ u16 ACATA::read16(u32 addr) {
     break;
     
     default:
+        // TODO: move the error line here after development stage finished
         break;
     }
     return ACATA::REGS[addr];
@@ -69,6 +73,7 @@ void ACATA::write16(u32 addr, u16 val) {
     break;
 
     default:
+        // TODO: move the error line here after development stage finished
         break;
     }
     ACATA::REGS[addr] = V;
@@ -99,11 +104,10 @@ void ACATA::cmd_handleW(u32 addr, u16 val) {
 u16 ACATA::cmd_handleR(u32 addr) {
     switch (ACATA::cmd_handled) {
     case -1: break;
-    case ATA_C_IDENTIFY_PACKET_DEVICE: //ATA_C_IDENTIFY_PACKET_DEVICE
+    case ATA_C_IDENTIFY_PACKET_DEVICE:
         if (ACATA::cmd_handledc < 256) {
-            //Console.Warning("ATA_C_IDENTIFY_PACKET_DEVICE[%d]: %04X", ACATA::cmd_handledc, ATA_R_IDENTIFY_PACKET_DEVICE[ACATA::cmd_handledc]);
             return ATA_R_IDENTIFY_PACKET_DEVICE[ACATA::cmd_handledc++];
-        } else ACATA::cmd_handled = -1;
+        } else {ACATA::cmd_handled = -1; CLRB(ACATA_STATUS, ATA_STAT_DRQ);}
         break;
     case ATA_C_SET_FEATURES:
     break;
@@ -127,13 +131,15 @@ void ACATA::rstat_write_handle(u16 val) {
         Console.Warning("ATA_C_IDENTIFY_PACKET_DEVICE");
         ACATA::cmd_handled = val;
         ACATA::cmd_handledc = 0;
+        ACATA_STATUS |= ATA_STAT_DRQ;
     break;
     case ATA_C_PACKET:
         ACATA::cmd_handled = val;
         ACATA::cmd_handledc = 0;
-        Console.Warning("ATA_C_PACKET");
-        ACATA::REGS[ACATA_R_STATUS] |= ATA_STAT_DRQ;
+        Console.Warning("ATA_C_PACKET: isDMA:%d", ACATA_ISDMA!=0);
+        ACATA_STATUS |= ATA_STAT_DRQ;
         CLRB(ACATA::REGS[ACATA_R_STATUS], ATA_STAT_BUSY);
+        CLRB(ACATA::REGS[ACATA_PROBEREG_2], ATA_STAT_ERR); // when packet is sent, ACCDVD fails if this bit is set or timeout consumed
     break;
     
     
@@ -159,3 +165,22 @@ std::map<u32, u32> ACATA::REGS = {
     {0x16010000,           0},// flag & 1;
 };
 
+void ACATA_SETUP() {
+    ACATA::TH::readBuffer = new u8[ACATA::TH::readBufferLen];
+}
+
+#include "common/Path.h"
+
+void ACATA::SetImgPath(const char* S) {
+	ACATA::imgpath = Path::ToNativePath(Path::GetDirectory(S));
+	Console.WriteLn("arcade image lookup path set to '%s'\n", ACATA::imgpath.c_str());
+}
+
+void ACATA::SetEnv(std::string ata_img_path, std::string ata_img_filename, std::string Media) {
+	//ACATA::imgpath = Path::ToNativePath(Path::GetDirectory(ata_img_path));
+	Console.WarningFmt("ata_img_path '{}' | ata_img_filename '{}'", ata_img_path, ata_img_filename);
+    ACATA::imgpath = Path::Combine(ata_img_path, ata_img_filename);
+    ACATA::MediaType = ACMEDIATYPE_FROM_STRING(Media);
+	Console.WarningFmt("ACENV: ata_img: '{}'", ACATA::imgpath);
+	Console.WarningFmt("mediat: '{}'", (int)ACATA::MediaType);
+}

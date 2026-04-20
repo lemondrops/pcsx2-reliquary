@@ -11,6 +11,7 @@
 #include "DEV9/ACRAM.h"
 #include "DEV9/ACSRAM.h"
 #include "DEV9/ACJV.h"
+#include "DEV9/ACCORE.h"
 #include "IopHw.h"
 
 uptr *psxMemWLUT = nullptr;
@@ -362,6 +363,10 @@ void iopMemWrite16(u32 mem, u16 value)
 		
 	} else if (t == ACSRAM_RANGE) {
 		ACSRAM::Write16(mem, value);
+	} else if ((t & 0xFF00) == 0x1241) {
+	} else if ((t & 0xFF00) == 0x1300) {
+		if (mem == ACCORE_INTR_ATA)  Console.Warning("ACCORE_ACATA_INTR_STOP: %04X", value);
+		if (mem == ACCORE_INTR_UART) Console.Warning("ACCORE_ACUART_INTR_STOP: %04X", value);
 	} else
 	{
 		u8* p = (u8 *)(psxMemWLUT[mem >> 16]);
