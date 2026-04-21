@@ -63,6 +63,7 @@ void ACATA::TH::IO_Read(u32* addr, u32 size) {
 	u64 size2 = sectorsize*nsector;
 	if (size != (size2)) Console.Error("ACATA::TH::IO_Read> mismatch on request and read...\n%ld vs %ld (sec:%d,lba:%d)",
 			 size, (size2), sectorsize, nsector);
+	Console.WriteLn("%s: from %08X, len %08x", __FUNCTION__, pos, (size2));
 	if (FileSystem::FSeek64(IMAGE, pos, SEEK_SET) != 0) {
 		Console.ErrorFmt("ACATA:IO_Read: failed to seek pos:{}", pos);
 		pxAssert(false);
@@ -79,6 +80,7 @@ void ACATA::TH::IO_Read(u32* addr, u32 size) {
 		ioRead = false;
 	}
 }
+
 void ACATA::TH::IO_Read() {
 	const s64 lba = ACATA::TH::LBA;
 	const u64 pos = lba * ACATA::TH::sectorsize;
@@ -97,15 +99,16 @@ void ACATA::TH::IO_Read() {
 }
 
 int ACATA::TH::IO_OpenImage() {
-	//ACATA::imgpath = std::string("C:\\Users\\Isra\\OneDrive\\Escritorio\\scII-DVD0D.iso");
     ACATA::TH::IMAGE = std::fopen(ACATA::imgpath.c_str(), "rb");
 	if (!ACATA::TH::IMAGE) {
-		Console.ErrorFmt("ACATA::OpenImage> fail to fopen '{}' w/ error {} '{}'", ACATA::imgpath, errno, strerror(errno));
+		Console.ErrorFmt("{}> fail to fopen '{}' w/ error {} '{}'", __FUNCTION__, ACATA::imgpath, errno, strerror(errno));
 		return errno;
 	}
+	Console.WriteLn("%s: image opened ok", __FUNCTION__);
 	return 0;
 }
 int ACATA::TH::IO_CloseImage() {
+	Console.WriteLn("%s", __FUNCTION__);
 	std::fclose(ACATA::TH::IMAGE);
 	return 0;
 }
