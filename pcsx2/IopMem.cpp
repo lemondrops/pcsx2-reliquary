@@ -168,6 +168,14 @@ u16 iopMemRead16(u32 mem)
 			default:
 				return psxHu16(mem);
 		}
+	} else if (t == 0x1241) {
+		if (IS_ACUART_RANGE(mem)) {
+			V = ACUART::Read16(mem);
+    		Console.Error("%-16s %08X:  %04X", "ACUART::Read16", mem, V);
+		} else {
+			V = ACCORE::Read16(mem);
+		}
+		return V;
 	} else if (t == ACJV_RANGE) {
 		V = ACJV::Read16(mem);
     	Console.Error("%-16s %08X:  %04X", "ACJV::read16", mem, V);
@@ -363,34 +371,16 @@ void iopMemWrite16(u32 mem, u16 value)
 		if (ACJV::enabled) {
 			ACJV::Write16(mem, value);
     		Console.Error("%-16s %08X = %04X", "ACJV::write16", mem, value);
-		}// else Console.Error("%-16s %08X = %04X", "ACJV::write16 [D]", mem, value);
+		}
 	} else if (t == ACRAM_RANGE) {
 		ACRAM::Write16(mem, value);
 	} else if (t == ACSRAM_RANGE) {
 		ACSRAM::Write16(mem, value);
 	} else if (t == 0x1241) {
-		switch (mem) {
-		case ACJV_CTR_START: Console.Warning("ACJV::START"); ACJV::enabled = true; break;
-		case ACJV_CTR_STOP:  Console.Warning("ACJV::STOP");  ACJV::enabled = false;  break;
-		case 0x1241510C:  Console.Warning("ACCORE::INTR  DISABLE_ACATA_INTR"); break;
-		case 0x1241511C:  Console.Warning("ACCORE::INTR  DISABLE_ACUART_INTR"); break;
-		// ACFPGA UPLOAD MMIO ///TODOx6: move this handling to ACFPGA.cpp
-		case 0x12416012:
-		case 0x12416014:
-		case 0x12416018:
-		case 0x12416016:
-		case 0x1241601A:
-			break;
-		// unknown addresses set to 0 on ACCORE. most likely stopping other stuff
-		//case 0x12416032: break;
-		//case 0x12416032: break;
-		//case 0x12416036: break;
-		//case 0x1241603A: break;
-		//case 0x12417000: break;
-		//case 0x1241601E: break;
-
-		default: Console.Error("%-16s %08X = %04X", "ACUNK::write16", mem, value); break;
-		}
+		if (IS_ACUART_RANGE(mem))
+			ACUART::Write16(mem, value);
+		else
+			ACCORE::Write16(mem, value);
 	} else if ((t & 0xFF00) == 0x1300) {
 		if (mem == ACCORE_INTR_ATA)  Console.Warning("ACCORE:  ACATA_INTR_CLEAR: %04X", value);
 		if (mem == ACCORE_INTR_UART) Console.Warning("ACCORE: ACUART_INTR_CLEAR: %04X", value);
