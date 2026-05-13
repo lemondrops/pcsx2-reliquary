@@ -22,11 +22,11 @@ namespace ACSRAM
     void Write8(u32 addr, u8 val);
 
     // data
-    u8 SRAMBUF[];
+    extern u8 buffer[];
+    extern std::string filepath;
 
     //storage
-    void ReadFile(std::string path);
-    void WriteFile(std::string path);
+    int ReadFile();
+    int WriteFile();
     void Clear(u8 fillerbyte = 0x0);
-    std::string GetSRAMPath(void);
 }
