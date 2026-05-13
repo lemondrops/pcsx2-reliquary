@@ -28,15 +28,15 @@
 
 #define ACATA_PROBEREG_0         0x16020000
 #define ACATA_PROBEREG_1         0x16030000
-#define ACATA_PROBEREG_2         0x16160000 // r:ata dma stat | w: ata flags (see ps2sdk impl) 
-#define ACATA_PROBEREG_3         0x16010000
+#define ACATA_PROBEREG_2         0x16160000 // ALTSTATUS / CONTROL / r:ata dma stat | w: ata flags (see ps2sdk impl) 
+#define ACATA_PROBEREG_3         0x16010000 // ERROR / FEATURES
 #define ACATA_DEVICE_SELECT      0x16060000 // ACATA_DEVICE_SELECT [`ACATA_UNIT0`, `ACATA_UNIT1`]
-#define ACATA_R_STATUS           0x16070000 
+#define ACATA_R_STATUS           0x16070000 // STATUS / COMMAND
 
-#define ACATA_16050000           0x16050000 // LBA LO {CONFIRM ME}
-#define ACATA_16040000           0x16040000 // LBA HI {CONFIRM ME}
+#define ACATA_16050000           0x16050000 // CYL HIGH?
+#define ACATA_16040000           0x16040000 // CYL LOW?
 
-#define ACATA_BASE_PROBEADDR     0x16000000
+#define ACATA_BASE_PROBEADDR     0x16000000 // DATA
 #define ACATA_RANGE              0x1600
 
 #define ACATA_UNIT0              0x0  // 16 * (unitIndex != 0)
