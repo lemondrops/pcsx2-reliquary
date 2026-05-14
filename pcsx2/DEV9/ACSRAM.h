@@ -8,18 +8,14 @@
 #define ACSRAM_ADDR_BASE 0xB2500000
 #define ACSRAM_RANGE 0x1250
 #define ACSRAM_ADDR_BASE_IOP_POV 0x12500000
-#define ACSRAM_MAX_SIZE _32kb
+#define ACSRAM_MAX_SIZE _32kb // size of the SRAM
 
 namespace ACSRAM
 {
     // emulation methods
-    u8 Read8(u32 addr);
     u16 Read16(u32 addr);
-    u32 Read32(u32 addr);
 
-    void Write32(u32 addr, u32 val);
     void Write16(u32 addr, u16 val);
-    void Write8(u32 addr, u8 val);
 
     // data
     extern u8 buffer[];

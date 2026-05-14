@@ -122,11 +122,6 @@ u8 iopMemRead8(u32 mem)
 	} else if (t == 0x1f40)
 	{
 		return psxHw4Read8(mem);
-	} else if (t == ACSRAM_RANGE) {
-		return ACSRAM::Read8(mem);
-	} else if (t == ACJV_RANGE) {
-    	Console.Error("%-16s %08X:  %04X", "ACJV::read8", mem, 0);
-		return 0;
 	} else if (t == ACRAM_RANGE) {
 		Console.Error("ACRAM_RANGE:r08:%08X\n", mem);
 		return 0;
@@ -322,10 +317,6 @@ void iopMemWrite8(u32 mem, u8 value)
 	{
 		psxHw4Write8(mem, value);
 	
-	} else if (t == ACJV_RANGE) {
-		if (ACJV::enabled) {
-    		Console.Error("%-16s %08X = %04X", "ACJV::write8", mem, value);
-		}
 	}
 	else
 	{
