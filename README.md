@@ -2,7 +2,7 @@
 
 PCSX2 Reliquary is a PCSX2 fork focused on accurate emulation of security flows and esoteric PS2-derived hardware.
 
-It targets platforms and software outside the usual retail console path, including systems such as the PSX DESR, Konami Python 1 & 2, and Namco System 246/256 families.
+It targets platforms and software outside the usual retail console path, including systems such as the Konami Python 1 & 2, and Namco System families.
 
 ## Features
 
@@ -51,6 +51,77 @@ PCSX2 memory cards expect the ECC data to be present. Some memorycard dumping ut
 Python 2 games require pairing of the game hdd image, the associated nvram, the white and black dongle data, as well as other hardware specifics like your e-amuse card id. This can all be configured through a `.py2` file that the game library scanner can read and interpret. Details on this file format are listed in this [wiki article](https://github.com/987123879113/pcsx2/wiki/PY2-Game-Entry-File-Example).
 
 Python 2 HDD images can be provided as either raw `.raw` files or CHD-compressed `.chd` files. CHD images are opened read-only as the base image to reduce collection size, while any writes made by the emulated HDD are stored in a separate writable overlay under `hdd-overlays/` in the emulator settings directory. This keeps the compressed source CHD unchanged and allows per-install or per-user runtime data to persist. To reset a CHD-backed HDD to its base image, close the emulator and delete the matching `.overlay` and `.map` files.
+
+**Ensure the mechacon keys are set properly in the advanced settings menu and that the key mode is set to "Retail"**
+
+Here is an example config for SuperNova 2
+```yaml
+[Game]
+; Friendly name to display in the game list
+Name="DDR SuperNova 2"
+
+; Path to HDD image file.
+; Note: For Windows you must use \\ instead of just \ for file paths or it WILL NOT WORK.
+HddImagePath=gdj_jaa_2007100800.chd
+
+; HDD ID corresponding to the HDD image (required for unpatched drives)
+HddIdPath=ps2_hdd_id
+
+; NvRam corresponding to the HDD image (required for unpatched drives)
+NvRamPath=ps2_nvram
+
+; Black and white dongle files (required for unpatched games)
+; Format of binary dongle file is:
+; (Old format)
+; 8 bytes - serial ID
+; 32 bytes - encrypted dongle payload
+;
+; OR
+;
+; (MAME format)
+; 32 bytes - encrypted dongle payload
+; 8 bytes - serial ID
+DongleBlackPath=ds2430_black_gqgdjjaa.bin
+DongleWhitePath=ds2430_white_gqfdhjaa.bin
+
+; Input types
+; 0 = Drummania
+; 1 = Guitar Freaks
+; 2 = Dance Dance Revolution
+; 3 = Toy's March
+; 4 = Thrill Drive 3
+; 5 = Dance 86.4 Funky Radio Station
+InputType=2
+
+; DIP Switches 1234 (NEW FORMAT)
+; Change each individual dipswitch to true or false
+DIPSW1=false
+DIPSW2=false
+DIPSW3=false
+DIPSW4=false
+
+; Optional, extended pnach patch file
+PatchFile=ddrsn2j.pnach
+
+; Force 31 kHz mode
+; Will cause the top of the screen to not refresh in Guitar Freaks, Drummania, Toy's March (all GFDM engine-based games) which also occurs on real hardware.
+Force31kHz=0
+
+; Card files are text files with the 16 character card ID.
+; Optional. You'll know if you have a need for this.
+Player1Card=card1.txt
+; Player2Card=card2.txt
+
+; (RECOMMENDED) Manually set a unique ID number to the game as the CRC value.
+; If this is not manually set then random number will be generated every time the file is added to the game list, resulting in a new gamesettings .ini to be created for the game each time it's newly imported so settings may not be shared as expected.
+; WARNING: If you manually set this value then please make sure that the unique ID does not clash with any other game entries or else there may be bugs with game settings.
+UniqueId=334281
+
+; Manually set the region on the game list when imported
+; Optional, will default to "NTSC-J".
+; See wiki page for list of valid region codes.
+; Region=NTSC-J
+```
 
 The Python 2 IO board (P2IO) is available as a USB device in the controller configuration screen. It must be plugged into port 1 for the inputs and dongles to be authenticated correctly.
 ![p2io-config.png](docs/p2io-config.png)
