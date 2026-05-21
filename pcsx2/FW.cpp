@@ -8,21 +8,28 @@
 
 #include "common/Console.h"
 
+#include <algorithm>
+#include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+
+#ifndef _WIN32
+#include <cerrno>
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 static u8 phyregs[16];
 s8* fwregs;
 
 namespace
 {
-	constexpr bool FW_VERBOSE_LOGS = true;
+	constexpr bool FW_VERBOSE_LOGS = false;
 	constexpr u32 FW_BUS_RESET_LOG_LIMIT = 4;
 	constexpr u32 FW_DISCOVERY_LOG_LIMIT = 16;
 	constexpr u32 FW_CROM_LOG_LIMIT = 80;
-	constexpr u32 FW_DBUF_LOG_LIMIT = 16;
 	constexpr u32 FW_UBUF_LOG_LIMIT = 32;
 	constexpr u32 FW_INTR_LOG_LIMIT = 16;
 	constexpr u32 FW_SECTOR_LOG_LIMIT = 64;
@@ -71,7 +78,10 @@ namespace
 	constexpr u32 LOCAL_NODE_ID_REGISTER = (0x3ffu << 22) | (LOCAL_PHY_ID << 16) | 1u;
 	constexpr u32 KONAMI_CF_COMMAND_OFFSET = 0x390;
 	constexpr u32 KONAMI_ATA_COMMAND_OFFSET = 0x3a0;
+	constexpr u32 KONAMI_DALLAS_STATUS_OFFSET = 0x00010000;
+	constexpr u32 KONAMI_UART_STATUS_OFFSET = 0x00030000;
 	constexpr u32 KONAMI_CF_STATUS_OFFSET = 0x00050000;
+	constexpr u32 KONAMI_BBSRAM_STATUS_OFFSET = 0x00080000;
 	constexpr u32 KONAMI_BOOTROM_STATUS_OFFSET = 0x00090000;
 	constexpr u32 KONAMI_FSCI_STATUS_OFFSET = 0x000a0000;
 	constexpr u32 KONAMI_CROM_BASE = 0xf0000400;
@@ -79,11 +89,28 @@ namespace
 	constexpr u32 KONAMI_BOOT_READY_OFFSET_LOW = 0x05735734;
 	constexpr u32 KONAMI_RUNTIME_READY_OFFSET_LOW = 0x05735730;
 	constexpr u32 SECTOR_SIZE = 0x200;
+	constexpr u32 BOOTROM_SIZE = 0x10000;
+	constexpr u32 BBSRAM_SIZE = 0x2000;
 	constexpr const char* WE2K3_BLOB_PATH = "";
+	constexpr const char* WE2K3_BBSRAM_PATH = "";
 	// EE byte-swaps the JAMMA word, then maps source bit 8 to P1 bit 0x200.
 	constexpr u32 JAMMA_P1_JVS_PRESENT = 0x00010000;
 	// Captured neutral JAMMA status/DIP bytes. The present signal is in the input word above.
 	constexpr u32 JAMMA_STATUS_NEUTRAL = 0x0100ffff;
+	constexpr u8 KONAMI_FACTORY_MAC[] = {
+		0x00, 0x04, 0x5f, 0x00, 0x00, 0x01,
+	};
+	constexpr u8 KONAMI_MAC_BACKUP[] = {
+		0x00, 0x04, 0x5f, 0x00, 0x00, 0x01,
+		0xff, 0xfb, 0xa0, 0xff, 0xff, 0xfe,
+	};
+	constexpr u32 KONAMI_DALLAS_NO_KEY_RESPONSE[] = {
+		0x01000000, 0x00000000, 0x00000000,
+	};
+	constexpr u8 KONAMI_FSCI_SERIAL_STREAM[] =
+		"@0DM00045F000001AF"
+		"@0DM00045F000001AF"
+		"@0DM00045F000001AF";
 
 	struct PendingDbufDmaWrite
 	{
@@ -106,6 +133,9 @@ namespace
 	std::vector<u32> s_pending_dbuf_r0_rx_fifo;
 	std::vector<PendingDbufDmaWrite> s_pending_dbuf_r0_rx_dma;
 	std::vector<u32> s_dbuf_r0_rx_fifo;
+	u8 s_bootrom[BOOTROM_SIZE];
+	u8 s_bbsram[BBSRAM_SIZE];
+	bool s_bbsram_dirty;
 	std::vector<u32> s_pht_tx_fifo[2];
 	u32 s_pht_tx_expected_bytes[2];
 	bool s_pht_write_pending[2];
@@ -118,11 +148,143 @@ namespace
 	u32 s_sector_read_log_count;
 	u32 s_pht_log_count;
 	u32 s_runtime_log_count;
+#ifndef _WIN32
+	void WriteTraceErrorMarker(const char* message, int error)
+	{
+		const char* error_path = std::getenv("PCSX2_FW_TRACE_ERROR_FILE");
+		if (!error_path || !error_path[0])
+			return;
+
+		const int error_fd = ::open(error_path, O_CREAT | O_WRONLY | O_APPEND, 0644);
+		if (error_fd < 0)
+			return;
+
+		char error_buffer[128];
+		const int error_len = std::snprintf(error_buffer, sizeof(error_buffer), "%s error=%d\n", message, error);
+		if (error_len > 0)
+			(void)::write(error_fd, error_buffer, static_cast<size_t>(error_len));
+		::close(error_fd);
+	}
+#endif
+
+	void FwTrace(const char* format, ...)
+	{
+		char buffer[512];
+		int offset = 0;
+		std::va_list ap;
+		va_start(ap, format);
+		offset = std::vsnprintf(buffer, sizeof(buffer), format, ap);
+		va_end(ap);
+		if (offset < 0)
+			return;
+		if (offset >= static_cast<int>(sizeof(buffer)))
+			offset = static_cast<int>(sizeof(buffer)) - 1;
+		buffer[offset++] = '\n';
+
+#ifndef _WIN32
+		const char* trace_path = std::getenv("PCSX2_FW_TRACE_FILE");
+		if (!trace_path || !trace_path[0])
+			return;
+
+		const int trace_fd = open(trace_path, O_CREAT | O_WRONLY | O_APPEND, 0644);
+		if (trace_fd < 0)
+		{
+			WriteTraceErrorMarker("open", errno);
+			return;
+		}
+
+		const ssize_t written = ::write(trace_fd, buffer, offset);
+		if (written < 0)
+			WriteTraceErrorMarker("write", errno);
+		::close(trace_fd);
+#endif
+	}
+
+	void TraceIopBuffer(const char* prefix, u32 address, u32 byte_count)
+	{
+		if (byte_count == 0)
+			return;
+
+		if (byte_count > 0x40)
+			byte_count = 0x40;
+
+		u8 data[0x40] = {};
+		const bool ok = iopMemSafeReadBytes(address, data, byte_count);
+		u32 words[4] = {};
+		for (u32 word = 0; word < std::min<u32>(4, (byte_count + 3) / sizeof(u32)); word++)
+		{
+			for (u32 i = 0; i < sizeof(u32) && word * sizeof(u32) + i < byte_count; i++)
+				words[word] |= static_cast<u32>(data[word * sizeof(u32) + i]) << (24 - i * 8);
+		}
+
+		FwTrace("%s addr=0x%x bytes=0x%x ok=%u data=%08x %08x %08x %08x", prefix, address, byte_count, ok ? 1 : 0, words[0], words[1], words[2], words[3]);
+	}
+
+	void TraceBytes(const char* prefix, u32 offset, const u8* data, u32 byte_count)
+	{
+		if (byte_count == 0)
+			return;
+
+		const u32 trace_count = std::min<u32>(byte_count, 0x40);
+		u32 words[4] = {};
+		for (u32 word = 0; word < std::min<u32>(4, (trace_count + 3) / sizeof(u32)); word++)
+		{
+			for (u32 i = 0; i < sizeof(u32) && word * sizeof(u32) + i < trace_count; i++)
+				words[word] |= static_cast<u32>(data[word * sizeof(u32) + i]) << (24 - i * 8);
+		}
+
+		FwTrace("%s offset=0x%x bytes=0x%x data=%08x %08x %08x %08x", prefix, offset, byte_count, words[0], words[1], words[2], words[3]);
+	}
+
+	const char* GetBbsramPath()
+	{
+		const char* path = std::getenv("PCSX2_FW_BBSRAM_FILE");
+		return (path && path[0]) ? path : WE2K3_BBSRAM_PATH;
+	}
+
+	void LoadBbsram()
+	{
+		std::memset(s_bbsram, 0, sizeof(s_bbsram));
+		s_bbsram_dirty = false;
+
+		const char* path = GetBbsramPath();
+		std::FILE* file = std::fopen(path, "rb");
+		if (!file)
+		{
+			FwTrace("bbsram load path=%s bytes=0 ok=0", path);
+			return;
+		}
+
+		const size_t read = std::fread(s_bbsram, 1, sizeof(s_bbsram), file);
+		std::fclose(file);
+		FwTrace("bbsram load path=%s bytes=0x%zx ok=%u", path, read, read == sizeof(s_bbsram) ? 1 : 0);
+		TraceBytes("bbsram load data", 0, s_bbsram, std::min<u32>(0x40, static_cast<u32>(read)));
+	}
+
+	void SaveBbsramIfDirty()
+	{
+		if (!s_bbsram_dirty)
+			return;
+
+		const char* path = GetBbsramPath();
+		std::FILE* file = std::fopen(path, "wb");
+		if (!file)
+		{
+			FwTrace("bbsram save path=%s bytes=0 ok=0", path);
+			return;
+		}
+
+		const size_t written = std::fwrite(s_bbsram, 1, sizeof(s_bbsram), file);
+		std::fclose(file);
+		FwTrace("bbsram save path=%s bytes=0x%zx ok=%u", path, written, written == sizeof(s_bbsram) ? 1 : 0);
+		if (written == sizeof(s_bbsram))
+			s_bbsram_dirty = false;
+	}
 
 	bool ShouldLogLimited(u32& counter, u32 limit)
 	{
 		counter++;
-		return true;
+		return counter <= limit;
 	}
 
 	u32 ByteSwap32(u32 value)
@@ -201,7 +363,6 @@ namespace
 	{
 		s_dbuf_r0_rx_fifo.push_back(value);
 		UpdateDbufR0RxLevel();
-		DevCon.WriteLn("FW HLE: DBUF R0 rx queue value=0x%x bytes_level=0x%x quads=%zu", value, fwRu32(0x84c0), s_dbuf_r0_rx_fifo.size());
 	}
 
 	void FlushPendingDbufR0RxPacket();
@@ -215,8 +376,10 @@ namespace
 		s_dbuf_r0_rx_fifo.erase(s_dbuf_r0_rx_fifo.begin());
 		UpdateDbufR0RxLevel();
 		const bool became_empty = s_dbuf_r0_rx_fifo.empty();
-		if (ShouldLogLimited(s_dbuf_log_count, FW_DBUF_LOG_LIMIT) || became_empty)
+		if (became_empty)
+		{
 			DevCon.WriteLn("FW HLE: DBUF R0 rx pop value=0x%x remaining=%zu", value, s_dbuf_r0_rx_fifo.size());
+		}
 		if (became_empty)
 			FlushPendingDbufR0RxPacket();
 		return value;
@@ -361,6 +524,7 @@ namespace
 	{
 		if (ShouldLogLimited(s_sector_read_log_count, FW_SECTOR_LOG_LIMIT))
 			DevCon.WriteLn("FW HLE: queue DBUF WRITEQ off_hi=0x%x off_low=0x%x payload=0x%x", offset_high, offset_low, payload);
+		FwTrace("queue WRITEQ off_hi=0x%x off_low=0x%x payload=0x%x", offset_high, offset_low, payload);
 		s_pending_dbuf_r0_rx_dma.emplace_back();
 		s_pending_dbuf_r0_rx_fifo.push_back((0x3ffu << 22) | (KONAMI_RESPONSE_SPEED << 16) | (1u << 10) | (IEEE1394_TCODE_WRITEQ << 4));
 		s_pending_dbuf_r0_rx_fifo.push_back((LOCAL_NODE_ID << 16) | offset_high);
@@ -374,6 +538,7 @@ namespace
 		const u32 byte_count = payload_quads * sizeof(u32);
 		if (ShouldLogLimited(s_runtime_log_count, FW_RUNTIME_LOG_LIMIT))
 			DevCon.WriteLn("FW HLE: queue DBUF WRITEB off_hi=0x%x off_low=0x%x bytes=0x%x", offset_high, offset_low, byte_count);
+		FwTrace("queue WRITEB off_hi=0x%x off_low=0x%x bytes=0x%x", offset_high, offset_low, byte_count);
 		s_pending_dbuf_r0_rx_dma.emplace_back();
 		if (offset_high == 0x1000 && byte_count != 0)
 		{
@@ -389,6 +554,35 @@ namespace
 		s_pending_dbuf_r0_rx_fifo.push_back(byte_count << 16);
 		for (u32 i = 0; i < payload_quads; i++)
 			s_pending_dbuf_r0_rx_fifo.push_back(payload[i]);
+		s_pending_dbuf_r0_rx_fifo.push_back(2);
+	}
+
+	void QueuePendingDbufByteWrite(u32 offset_high, u32 offset_low, const u8* payload, u32 byte_count)
+	{
+		if (ShouldLogLimited(s_runtime_log_count, FW_RUNTIME_LOG_LIMIT))
+			DevCon.WriteLn("FW HLE: queue DBUF WRITEB off_hi=0x%x off_low=0x%x bytes=0x%x", offset_high, offset_low, byte_count);
+		FwTrace("queue WRITEB bytes off_hi=0x%x off_low=0x%x bytes=0x%x", offset_high, offset_low, byte_count);
+
+		s_pending_dbuf_r0_rx_dma.emplace_back();
+		if (offset_high == 0x1000 && byte_count != 0)
+		{
+			PendingDbufDmaWrite& dma = s_pending_dbuf_r0_rx_dma.back();
+			dma.active = true;
+			dma.dest = offset_low;
+			dma.data.assign(payload, payload + byte_count);
+		}
+
+		s_pending_dbuf_r0_rx_fifo.push_back((0x3ffu << 22) | (KONAMI_RESPONSE_SPEED << 16) | (IEEE1394_TCODE_WRITEB << 4));
+		s_pending_dbuf_r0_rx_fifo.push_back((LOCAL_NODE_ID << 16) | offset_high);
+		s_pending_dbuf_r0_rx_fifo.push_back(offset_low);
+		s_pending_dbuf_r0_rx_fifo.push_back(byte_count << 16);
+		for (u32 offset = 0; offset < byte_count; offset += sizeof(u32))
+		{
+			u32 value = 0;
+			for (u32 i = 0; i < sizeof(value) && offset + i < byte_count; i++)
+				value |= static_cast<u32>(payload[offset + i]) << (24 - (i * 8));
+			s_pending_dbuf_r0_rx_fifo.push_back(value);
+		}
 		s_pending_dbuf_r0_rx_fifo.push_back(2);
 	}
 
@@ -412,6 +606,7 @@ namespace
 		const size_t chunks = (data.size() + SECTOR_SIZE - 1) / SECTOR_SIZE;
 		if (ShouldLogLimited(s_sector_read_log_count, FW_SECTOR_LOG_LIMIT))
 			DevCon.WriteLn("FW HLE: queue DBUF WRITEB off_hi=0x1000 off_low=0x%x bytes=0x%zx chunks=0x%zx", dest, data.size(), chunks);
+		FwTrace("sector response queue dest=0x%x bytes=0x%zx chunks=0x%zx pending_before=0x%zx", dest, data.size(), chunks, s_pending_dbuf_r0_rx_fifo.size());
 
 		if (!iopMemSafeWriteBytes(dest, data.data(), static_cast<u32>(data.size())))
 		{
@@ -420,6 +615,7 @@ namespace
 		}
 
 		DevCon.WriteLn("FW HLE: FireWire DMA WRITEB off_hi=0x1000 off_low=0x%x bytes=0x%zx", dest, data.size());
+		FwTrace("sector direct dma dest=0x%x bytes=0x%zx", dest, data.size());
 
 		for (size_t offset = 0; offset < data.size(); offset += SECTOR_SIZE)
 		{
@@ -486,6 +682,7 @@ namespace
 			const PendingDbufDmaWrite& dma = s_pending_dbuf_r0_rx_dma.front();
 			const bool dma_written = iopMemSafeWriteBytes(dma.dest, dma.data.data(), static_cast<u32>(dma.data.size()));
 			DevCon.WriteLn("FW HLE: FireWire DMA WRITEB off_hi=0x1000 off_low=0x%x bytes=0x%zx ok=%u", dma.dest, dma.data.size(), dma_written ? 1 : 0);
+			FwTrace("deliver dma dest=0x%x bytes=0x%zx ok=%u", dma.dest, dma.data.size(), dma_written ? 1 : 0);
 		}
 
 		for (size_t i = 0; i < packet_quads; i++)
@@ -493,8 +690,7 @@ namespace
 		s_pending_dbuf_r0_rx_fifo.erase(s_pending_dbuf_r0_rx_fifo.begin(), s_pending_dbuf_r0_rx_fifo.begin() + packet_quads);
 		if (!s_pending_dbuf_r0_rx_dma.empty())
 			s_pending_dbuf_r0_rx_dma.erase(s_pending_dbuf_r0_rx_dma.begin());
-		if (ShouldLogLimited(s_sector_read_log_count, FW_SECTOR_LOG_LIMIT))
-			DevCon.WriteLn("FW HLE: queued deferred DBUF R0 rx packet quads=0x%zx pending_quads=0x%zx", packet_quads, s_pending_dbuf_r0_rx_fifo.size());
+		DevCon.WriteLn("FW HLE: queued deferred DBUF R0 rx packet quads=0x%zx level=0x%x pending_quads=0x%zx pending_dma=0x%zx", packet_quads, fwRu32(0x84c0), s_pending_dbuf_r0_rx_fifo.size(), s_pending_dbuf_r0_rx_dma.size());
 		// DRFR is reserved for self-ID in Konami's stack; it drains DBUF before the RX task can parse async packets.
 		RaiseIntr0(FW_INTR0_URx);
 	}
@@ -539,12 +735,167 @@ namespace
 		return QueuePendingSectorAndStatusPackets(dest, data);
 	}
 
+	bool HleBbsramCommand(const u32* payload, u32 payload_quads)
+	{
+		if (payload_quads < 4)
+			return false;
+
+		const u32 subop = payload[0];
+		const u32 offset = payload[1];
+		const u32 byte_count = payload[2];
+		const u32 dest = payload[3];
+		DevCon.WriteLn("FW HLE: BBSRAM command subop=0x%x offset=0x%x bytes=0x%x dest=0x%x", subop, offset, byte_count, dest);
+		FwTrace("bbsram subop=0x%x offset=0x%x bytes=0x%x dest=0x%x", subop, offset, byte_count, dest);
+		if (offset > BBSRAM_SIZE || byte_count > BBSRAM_SIZE - offset)
+		{
+			DevCon.WriteLn("FW HLE: BBSRAM request out of range subop=0x%x offset=0x%x bytes=0x%x dest=0x%x", subop, offset, byte_count, dest);
+			return false;
+		}
+
+		if (subop == 0)
+		{
+			if (byte_count != 0 && dest != 0)
+			{
+				TraceBytes("bbsram read data", offset, s_bbsram + offset, byte_count);
+				QueuePendingDbufByteWrite(0x1000, dest, s_bbsram + offset, byte_count);
+			}
+			QueuePendingDbufQuadWrite(0xfffe, KONAMI_BBSRAM_STATUS_OFFSET, 0);
+			return true;
+		}
+
+		if (subop == 1)
+		{
+			if (byte_count != 0 && dest != 0)
+			{
+				if (!iopMemSafeReadBytes(dest, s_bbsram + offset, byte_count))
+				{
+					DevCon.WriteLn("FW HLE: failed BBSRAM write DMA read src=0x%x bytes=0x%x", dest, byte_count);
+					return false;
+				}
+				TraceIopBuffer("bbsram write source", dest, byte_count);
+				TraceBytes("bbsram write data", offset, s_bbsram + offset, byte_count);
+				s_bbsram_dirty = true;
+				SaveBbsramIfDirty();
+			}
+			QueuePendingDbufQuadWrite(0xfffe, KONAMI_BBSRAM_STATUS_OFFSET, 0);
+			return true;
+		}
+
+		DevCon.WriteLn("FW HLE: unhandled BBSRAM subop=0x%x offset=0x%x bytes=0x%x dest=0x%x", subop, offset, byte_count, dest);
+		return false;
+	}
+
+	bool HleDallasCommand(const u32* payload, u32 payload_quads)
+	{
+		if (payload_quads < 1)
+			return false;
+
+		const u32 subop = payload[0];
+		const u32 key = payload_quads > 1 ? payload[1] : 0;
+		const u32 offset = payload_quads > 2 ? payload[2] : 0;
+		const u32 byte_count = payload_quads > 3 ? payload[3] : 0;
+		const u32 dest = payload_quads > 4 ? payload[4] : 0;
+		DevCon.WriteLn("FW HLE: DALLAS command subop=0x%x key=0x%x offset=0x%x bytes=0x%x dest=0x%x", subop, key, offset, byte_count, dest);
+		FwTrace("dallas subop=0x%x key=0x%x offset=0x%x bytes=0x%x dest=0x%x", subop, key, offset, byte_count, dest);
+
+		QueuePendingDbufBlockWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, KONAMI_DALLAS_NO_KEY_RESPONSE,
+			sizeof(KONAMI_DALLAS_NO_KEY_RESPONSE) / sizeof(KONAMI_DALLAS_NO_KEY_RESPONSE[0]));
+		return true;
+	}
+
+	bool HleFsciCommand(const u32* payload, u32 payload_quads)
+	{
+		const u32 subop = payload[0];
+		const u32 byte_count = payload_quads > 1 ? payload[1] : 0;
+		const u32 dest = payload_quads > 2 ? payload[2] : 0;
+		DevCon.WriteLn("FW HLE: FSCI command subop=0x%x bytes=0x%x dest=0x%x", subop, byte_count, dest);
+		FwTrace("fsci subop=0x%x bytes=0x%x dest=0x%x", subop, byte_count, dest);
+
+		if (subop == 2 && byte_count != 0 && dest != 0)
+		{
+			const u32 response_bytes = std::min<u32>(byte_count, sizeof(KONAMI_FSCI_SERIAL_STREAM) - 1);
+			QueuePendingDbufByteWrite(0x1000, dest, KONAMI_FSCI_SERIAL_STREAM, response_bytes);
+			QueuePendingDbufQuadWrite(0xfffe, KONAMI_FSCI_STATUS_OFFSET, ByteSwap32(response_bytes));
+			return true;
+		}
+
+		QueuePendingDbufQuadWrite(0xfffe, KONAMI_FSCI_STATUS_OFFSET, 0);
+		return true;
+	}
+
+	bool HleUartCommand(const u32* payload, u32 payload_quads)
+	{
+		if (payload_quads < 1)
+			return false;
+
+		const u32 subop = payload[0];
+		const u32 word1 = payload_quads > 1 ? payload[1] : 0;
+		const u32 word2 = payload_quads > 2 ? payload[2] : 0;
+		const u32 status = ByteSwap32(2);
+		DevCon.WriteLn("FW HLE: UART command subop=0x%x w1=0x%x w2=0x%x status=0x%x", subop, word1, word2, status);
+		FwTrace("uart subop=0x%x w1=0x%x w2=0x%x status=0x%x", subop, word1, word2, status);
+
+		QueuePendingDbufQuadWrite(0xfffe, KONAMI_UART_STATUS_OFFSET, status);
+		if (subop == 2)
+			QueuePendingDbufQuadWrite(0xfffe, KONAMI_UART_STATUS_OFFSET, ByteSwap32(1));
+		return true;
+	}
+
+	bool HleBootromCommand(const u32* payload, u32 payload_quads)
+	{
+		if (payload_quads < 4)
+			return false;
+
+		const u32 subop = payload[0];
+		const u32 offset = payload[1];
+		const u32 byte_count = payload[2];
+		const u32 dest = payload[3];
+		DevCon.WriteLn("FW HLE: BOOTROM command subop=0x%x offset=0x%x bytes=0x%x dest=0x%x", subop, offset, byte_count, dest);
+		FwTrace("bootrom subop=0x%x offset=0x%x bytes=0x%x dest=0x%x", subop, offset, byte_count, dest);
+
+		if (offset > BOOTROM_SIZE || byte_count > BOOTROM_SIZE - offset)
+		{
+			QueuePendingDbufQuadWrite(0xfffe, KONAMI_BOOTROM_STATUS_OFFSET, 0x41000000);
+			return true;
+		}
+
+		if (subop == 0)
+		{
+			if (byte_count != 0 && dest != 0)
+				QueuePendingDbufByteWrite(0x1000, dest, s_bootrom + offset, byte_count);
+			QueuePendingDbufQuadWrite(0xfffe, KONAMI_BOOTROM_STATUS_OFFSET, 0x41000000);
+			return true;
+		}
+
+		if (subop == 1)
+		{
+			if (byte_count != 0 && dest != 0 && !iopMemSafeReadBytes(dest, s_bootrom + offset, byte_count))
+				DevCon.WriteLn("FW HLE: failed BOOTROM write DMA read src=0x%x bytes=0x%x", dest, byte_count);
+			QueuePendingDbufQuadWrite(0xfffe, KONAMI_BOOTROM_STATUS_OFFSET, 0x41000000);
+			return true;
+		}
+
+		QueuePendingDbufQuadWrite(0xfffe, KONAMI_BOOTROM_STATUS_OFFSET, 0x41000000);
+		return true;
+	}
+
 	bool TryHleKonamiCommand(u32 offset_low, const u32* payload, u32 payload_quads)
 	{
 		const u32 command_offset = offset_low & 0xfff;
 		DevCon.WriteLn("FW HLE: TryHleKonamiCommand offset_low=0x%x command_offset=0x%x payload_quads=0x%x", offset_low, command_offset, payload_quads);
+		FwTrace("cmd offset_low=0x%x command_offset=0x%x quads=0x%x p0=0x%x p1=0x%x p2=0x%x p3=0x%x", offset_low, command_offset, payload_quads,
+			payload_quads > 0 ? payload[0] : 0, payload_quads > 1 ? payload[1] : 0, payload_quads > 2 ? payload[2] : 0, payload_quads > 3 ? payload[3] : 0);
 		if (command_offset != KONAMI_CF_COMMAND_OFFSET && command_offset != KONAMI_ATA_COMMAND_OFFSET && payload_quads >= 1)
 		{
+			if (command_offset == 0x100 && HleUartCommand(payload, payload_quads))
+				return true;
+
+			if (command_offset == 0x120 && HleDallasCommand(payload, payload_quads))
+				return true;
+
+			if (command_offset == 0x140 && HleBbsramCommand(payload, payload_quads))
+				return true;
+
 			if (command_offset == 0xe0 && payload_quads >= 8)
 			{
 				static constexpr u32 JAMMA_INIT_RESPONSE[] = {
@@ -565,16 +916,14 @@ namespace
 				return true;
 			}
 
-			if (command_offset == 0x150 && payload_quads >= 8)
-			{
-				QueuePendingDbufQuadWrite(0xfffe, KONAMI_BOOTROM_STATUS_OFFSET, 0x41000000);
+			if (command_offset == 0x150 && HleBootromCommand(payload, payload_quads))
 				return true;
-			}
 
 			if (command_offset == 0x160 && payload_quads >= 1)
 			{
-				QueuePendingDbufQuadWrite(0xfffe, KONAMI_FSCI_STATUS_OFFSET, 0);
-				return true;
+				if ((payload[0] == 2 || payload[0] == 3) && payload_quads >= 3 && payload[2] != 0)
+					TraceIopBuffer("fsci buffer before", payload[2], payload[1]);
+				return HleFsciCommand(payload, payload_quads);
 			}
 		}
 
@@ -602,6 +951,7 @@ namespace
 		{
 			DevCon.WriteLn("FW HLE: unhandled Konami command off=0x%x subop=0x%x sector=0x%x count=0x%x dest=0x%x", command_offset, subop, sector, count, dest);
 		}
+		FwTrace("unhandled cmd off=0x%x subop=0x%x sector=0x%x count=0x%x dest=0x%x", command_offset, subop, sector, count, dest);
 
 		return false;
 	}
@@ -1302,13 +1652,15 @@ void logFwAction(u32 addr, u32 value, bool write)
 			DevCon.WriteLn("FW: %s dma trans TRSH0 0x%x: 0x%x", mode, addr, value);
 			break;
 		case 0x1f8084c0:
-			DevCon.WriteLn("FW: %s dbuf FIFO lvl r0 0x%x: 0x%x", mode, addr, value);
+			if (write)
+				DevCon.WriteLn("FW: %s dbuf FIFO lvl r0 0x%x: 0x%x", mode, addr, value);
 			break;
 		case 0x1f8084c4:
 			DevCon.WriteLn("FW: %s dbuf Tx data r0 0x%x: 0x%x", mode, addr, value);
 			break;
 		case 0x1f8084c8:
-			DevCon.WriteLn("FW: %s dbuf Rx data r0 0x%x: 0x%x", mode, addr, value);
+			if (write)
+				DevCon.WriteLn("FW: %s dbuf Rx data r0 0x%x: 0x%x", mode, addr, value);
 			break;
 		case 0x1f8084cc:
 			DevCon.WriteLn("FW: %s dbuf watermarks r0 0x%x: 0x%x", mode, addr, value);
@@ -1400,7 +1752,13 @@ void logFwAction(u32 addr, u32 value, bool write)
 		InitializePhyRegisters();
 		s_ubuf_rx_fifo.clear();
 		s_ubuf_tx_fifo.clear();
+		s_pending_dbuf_r0_rx_fifo.clear();
+		s_pending_dbuf_r0_rx_dma.clear();
 		s_dbuf_r0_rx_fifo.clear();
+		std::memset(s_bootrom, 0xff, sizeof(s_bootrom));
+		std::memcpy(s_bootrom, KONAMI_FACTORY_MAC, sizeof(KONAMI_FACTORY_MAC));
+		std::memcpy(s_bootrom + 0xf000, KONAMI_MAC_BACKUP, sizeof(KONAMI_MAC_BACKUP));
+		LoadBbsram();
 		for (int channel = 0; channel < 2; channel++)
 		{
 			s_pht_tx_fifo[channel].clear();
@@ -1416,6 +1774,7 @@ void logFwAction(u32 addr, u32 value, bool write)
 		s_sector_read_log_count = 0;
 		s_pht_log_count = 0;
 		s_runtime_log_count = 0;
+		FwTrace("FWopen");
 	// Initializing our registers.
 	fwregs = (s8*)calloc(0x10000, 1);
 	if (fwregs == NULL)
@@ -1432,6 +1791,8 @@ void logFwAction(u32 addr, u32 value, bool write)
 
 void FWclose()
 {
+	SaveBbsramIfDirty();
+	FwTrace("FWclose");
 	// Freeing the registers.
 	free(fwregs);
 	fwregs = NULL;
