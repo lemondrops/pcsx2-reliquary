@@ -333,6 +333,7 @@ void SifTraceCommandPacket(const char* direction, u32 addr, const u32* words, in
 
 	const bool payload_interesting = dest_is_iop && SifTraceIopPayloadHasPath(dest, dsize);
 	const bool uart_ee_request = dest_is_iop && cid == 0 && psize == 0x20 && dsize == 0 && dest == 0 && opt == 0 && count >= 8 && words[5] == 0x9600;
+	const bool uart_iop_data = !dest_is_iop && cid == 0 && dsize == 0 && dest == 0 && opt == 0 && psize == 0x60 && count >= 8 && words[3] == 0;
 	bool uart_iop_completion = false;
 	if (!dest_is_iop && cid == 0 && dsize == 0 && dest == 0 && psize == 0x10 && (opt == 1 || opt == 2))
 	{
@@ -349,11 +350,11 @@ void SifTraceCommandPacket(const char* direction, u32 addr, const u32* words, in
 			}
 		}
 	}
-	if (!payload_interesting && !uart_ee_request && !uart_iop_completion)
+	if (!payload_interesting && !uart_ee_request && !uart_iop_data && !uart_iop_completion)
 		return;
 
 	log_count++;
-	const char* kind = uart_ee_request ? "UART_EE_REQ" : (uart_iop_completion ? "UART_IOP_COMPLETE" : "CMD");
+	const char* kind = uart_ee_request ? "UART_EE_REQ" : (uart_iop_data ? "UART_IOP_DATA" : (uart_iop_completion ? "UART_IOP_COMPLETE" : "CMD"));
 	Console.WriteLn("[IOPFS] %s %s cid=0x%08x addr=0x%08x psize=0x%x dsize=0x%x dest=0x%08x opt=0x%08x head=%s%s",
 		direction, kind, cid, addr, psize, dsize, dest, opt, SifTraceHexWords(words, count).c_str(),
 		dest_is_iop ? SifTraceIopPayload(dest, dsize).c_str() : "");

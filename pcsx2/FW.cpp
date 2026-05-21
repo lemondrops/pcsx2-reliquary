@@ -34,6 +34,8 @@ namespace
 	constexpr u32 FW_INTR_LOG_LIMIT = 16;
 	constexpr u32 FW_SECTOR_LOG_LIMIT = 64;
 	constexpr u32 FW_RUNTIME_LOG_LIMIT = 256;
+	constexpr u32 UART_RX_QUEUE_LIMIT = 0x400;
+	constexpr u32 UART_CALLBACK_BYTE_LIMIT = 38;
 
 	constexpr u32 FW_INTR0_DRFR = 0x00000001;
 	constexpr u32 FW_INTR0_PBCntR = 0x00000200;
@@ -111,6 +113,45 @@ namespace
 		"@0DM00045F000001AF"
 		"@0DM00045F000001AF"
 		"@0DM00045F000001AF";
+	constexpr u8 KONAMI_EXTERNAL_IO_SYNC_RESPONSE[] = {
+		0xaa, 0xaa, 0xaa, 0x55,
+	};
+	constexpr u8 KONAMI_EXTERNAL_IO_RESET_RESPONSE[] = {
+		0xaa, 0xaa, 0x00, 0x00,
+	};
+	constexpr u8 KONAMI_EXTERNAL_IO_COUNT_RESPONSE[] = {
+		0xaa, 0xaa, 0x00, 0x01, 0x01, 0x01, 0xad,
+	};
+	constexpr u8 KONAMI_EXTERNAL_IO_PRODUCT_RESPONSE[] = {
+		0xaa, 0xaa, 0x01, 0x02, 0x00, 0x00,
+		0xaa, 0x01, 0x00, 0x02, 0x00,
+		0x03, 0x00, 0x00, 0x00,
+		0x00,
+		0x01, 0x01, 0x00,
+		'I', 'C', 'C', 'A', 0x00, 0x00, 0x00, 0x00, 0x18,
+	};
+	constexpr u8 KONAMI_EXTERNAL_IO_STARTUP_RESPONSE[] = {
+		0xaa, 0xaa, 0x01, 0x03, 0x00, 0x00,
+		0xaa, 0x01, 0x00, 0x03, 0x00, 0x00, 0x04,
+	};
+	constexpr u8 KONAMI_ICCA_PRODUCT_RESPONSE[] = {
+		0xaa, 0x81, 0x00, 0x02, 0x00, 0x2d,
+		0x03, 0x00, 0x00, 0x00, // Device ID
+		0x00, // Flag
+		0x01, 0x01, 0x00, // Version
+		'I', 'C', 'C', 'A',
+		'O', 'c', 't', ' ', '2', '6', ' ', '2', '0', '0', '5', 0x00, 0x00, 0x00, 0x00, 0x00,
+		'1', '3', ' ', ':', ' ', '5', '5', ' ', ':', ' ', '0', '3', 0x00, 0x00, 0x00, 0x00,
+	};
+	constexpr u8 KONAMI_ICCA_STARTUP_RESPONSE[] = {
+		0xaa, 0x81, 0x00, 0x03, 0x00, 0x01, 0x00,
+	};
+	constexpr u8 KONAMI_ICCA_STATUS_RESPONSE[] = {
+		0xaa, 0x81, 0x01, 0x31, 0x00, 0x10,
+		0x01, 0x00, // Reader present, no card/sensor active.
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x03, 0x00, 0x00, 0x00, 0x00,
+	};
 
 	struct PendingDbufDmaWrite
 	{
@@ -133,6 +174,7 @@ namespace
 	std::vector<u32> s_pending_dbuf_r0_rx_fifo;
 	std::vector<PendingDbufDmaWrite> s_pending_dbuf_r0_rx_dma;
 	std::vector<u32> s_dbuf_r0_rx_fifo;
+	std::vector<u8> s_uart_rx_fifo;
 	u8 s_bootrom[BOOTROM_SIZE];
 	u8 s_bbsram[BBSRAM_SIZE];
 	bool s_bbsram_dirty;
@@ -234,6 +276,174 @@ namespace
 		}
 
 		FwTrace("%s offset=0x%x bytes=0x%x data=%08x %08x %08x %08x", prefix, offset, byte_count, words[0], words[1], words[2], words[3]);
+	}
+
+	u32 ByteSwap32(u32 value);
+
+	u8 CalculateAcioChecksum(const u8* data, u32 byte_count)
+	{
+		u8 checksum = 0;
+		for (u32 i = 1; i < byte_count; i++)
+			checksum = static_cast<u8>(checksum + data[i]);
+		return checksum;
+	}
+
+	std::vector<u8> EscapeAcioPacket(const u8* data, u32 byte_count)
+	{
+		std::vector<u8> escaped;
+		escaped.reserve(byte_count + 4);
+		for (u32 i = 0; i < byte_count; i++)
+		{
+			if (data[i] == 0xaa || data[i] == 0xff)
+			{
+				escaped.push_back(0xff);
+				escaped.push_back(static_cast<u8>(~data[i]));
+			}
+			else
+			{
+				escaped.push_back(data[i]);
+			}
+		}
+		return escaped;
+	}
+
+	void QueueUartBytes(const u8* data, u32 byte_count)
+	{
+		if (byte_count == 0)
+			return;
+
+		if (s_uart_rx_fifo.size() + byte_count > UART_RX_QUEUE_LIMIT)
+		{
+			const size_t overflow = s_uart_rx_fifo.size() + byte_count - UART_RX_QUEUE_LIMIT;
+			s_uart_rx_fifo.erase(s_uart_rx_fifo.begin(), s_uart_rx_fifo.begin() + std::min(overflow, s_uart_rx_fifo.size()));
+		}
+
+		s_uart_rx_fifo.insert(s_uart_rx_fifo.end(), data, data + byte_count);
+		TraceBytes("uart rx enqueue", 0, data, byte_count);
+	}
+
+	void QueueAcioResponse(const u8* data, u32 byte_count)
+	{
+		if (byte_count == 0)
+			return;
+
+		std::vector<u8> packet(data, data + byte_count);
+		packet.push_back(CalculateAcioChecksum(packet.data(), static_cast<u32>(packet.size())));
+		std::vector<u8> escaped = EscapeAcioPacket(packet.data(), static_cast<u32>(packet.size()));
+		QueueUartBytes(escaped.data(), static_cast<u32>(escaped.size()));
+	}
+
+	void QueueExternalIoWrappedResponse(const std::vector<u8>& request, const u8* response, u32 response_bytes)
+	{
+		std::vector<u8> packet(request);
+		packet.push_back(0xaa);
+		packet.push_back(request[2]);
+		packet.push_back(0x00);
+		packet.push_back(request[3]);
+		packet.insert(packet.end(), response, response + response_bytes);
+		packet.push_back(CalculateAcioChecksum(packet.data() + request.size(), response_bytes + 4));
+		QueueUartBytes(packet.data(), static_cast<u32>(packet.size()));
+	}
+
+	void HandleAcioUartWrite(const u32* payload, u32 payload_quads, u32 byte_count)
+	{
+		std::vector<u8> bytes;
+		bytes.resize(byte_count);
+		const u32 inline_bytes = payload_quads > 2 ? (payload_quads - 2) * sizeof(u32) : 0;
+		if (byte_count > inline_bytes)
+		{
+			const u32 source = payload_quads > 2 ? payload[2] : 0;
+			if (source == 0 || !iopMemSafeReadBytes(source, bytes.data(), byte_count))
+			{
+				DevCon.WriteLn("FW HLE: failed UART write source read src=0x%x bytes=0x%x", source, byte_count);
+				return;
+			}
+		}
+		else
+		{
+			for (u32 offset = 0; offset < byte_count; offset++)
+			{
+				const u32 word = payload[2 + offset / sizeof(u32)];
+				bytes[offset] = static_cast<u8>(word >> (24 - ((offset & 3) * 8)));
+			}
+		}
+
+		TraceBytes("uart tx", 0, bytes.data(), static_cast<u32>(bytes.size()));
+		if (bytes.size() == 4 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] == 0xaa && bytes[3] == 0x55)
+		{
+			QueueUartBytes(KONAMI_EXTERNAL_IO_SYNC_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_SYNC_RESPONSE));
+		}
+		else if (bytes.size() >= 4 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] == 0x00 && bytes[3] == 0x00)
+		{
+			QueueUartBytes(KONAMI_EXTERNAL_IO_RESET_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_RESET_RESPONSE));
+		}
+		else if (bytes.size() >= 4 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] == 0x00 && bytes[3] == 0x01)
+		{
+			QueueUartBytes(KONAMI_EXTERNAL_IO_COUNT_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_COUNT_RESPONSE));
+		}
+		else if (bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] == 0x01 && bytes[3] == 0x02)
+		{
+			QueueUartBytes(KONAMI_EXTERNAL_IO_PRODUCT_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_PRODUCT_RESPONSE));
+		}
+		else if (bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] == 0x01 && bytes[3] == 0x03)
+		{
+			QueueUartBytes(KONAMI_EXTERNAL_IO_STARTUP_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_STARTUP_RESPONSE));
+		}
+		else if (bytes.size() >= 5 && bytes[0] == 0xaa && bytes[1] == 0x01 && bytes[2] == 0x00 && bytes[3] == 0x02)
+		{
+			QueueAcioResponse(KONAMI_ICCA_PRODUCT_RESPONSE, sizeof(KONAMI_ICCA_PRODUCT_RESPONSE));
+		}
+		else if (bytes.size() >= 5 && bytes[0] == 0xaa && bytes[1] == 0x01 && bytes[2] == 0x00 && bytes[3] == 0x03)
+		{
+			QueueAcioResponse(KONAMI_ICCA_STARTUP_RESPONSE, sizeof(KONAMI_ICCA_STARTUP_RESPONSE));
+		}
+		else if (bytes.size() >= 5 && bytes[0] == 0xaa && bytes[1] == 0x01 &&
+			bytes[2] == 0x01 && (bytes[3] == 0x31 || bytes[3] == 0x34 || bytes[3] == 0x35))
+		{
+			QueueAcioResponse(KONAMI_ICCA_STATUS_RESPONSE, sizeof(KONAMI_ICCA_STATUS_RESPONSE));
+		}
+		else if (bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0x00 &&
+			CalculateAcioChecksum(bytes.data(), static_cast<u32>(bytes.size() - 1)) == bytes.back())
+		{
+			const u8 response[] = {0x00, 0x00};
+			switch (bytes[3])
+			{
+				case 0x00:
+				case 0x01:
+				case 0x10:
+				case 0x11:
+					QueueExternalIoWrappedResponse(bytes, response, sizeof(response));
+					break;
+				default:
+					break;
+			}
+		}
+	}
+
+	void QueuePendingDbufBlockWrite(u32 offset_high, u32 offset_low, const u32* payload, u32 payload_quads);
+
+	void QueueUartReadData(u32 requested_bytes)
+	{
+		const u32 byte_count = std::min<u32>(requested_bytes, static_cast<u32>(s_uart_rx_fifo.size()));
+		if (byte_count == 0)
+			return;
+
+		std::vector<u32> callback(2 + ((byte_count + 1) / 2));
+		callback[1] = (byte_count << 16) | s_uart_rx_fifo[0];
+		for (u32 i = 1; i < byte_count; i++)
+		{
+			u32& word = callback[2 + ((i - 1) / 2)];
+			if (((i - 1) & 1) == 0)
+				word |= static_cast<u32>(s_uart_rx_fifo[i]) << 16;
+			else
+				word |= s_uart_rx_fifo[i];
+		}
+
+		TraceBytes("uart rx deliver", 0, s_uart_rx_fifo.data(), byte_count);
+		for (u32& word : callback)
+			word = ByteSwap32(word);
+		QueuePendingDbufBlockWrite(0xfffe, KONAMI_UART_STATUS_OFFSET, callback.data(), static_cast<u32>(callback.size()));
+		s_uart_rx_fifo.erase(s_uart_rx_fifo.begin(), s_uart_rx_fifo.begin() + byte_count);
 	}
 
 	const char* GetBbsramPath()
@@ -834,6 +1044,11 @@ namespace
 		const u32 status = ByteSwap32(2);
 		DevCon.WriteLn("FW HLE: UART command subop=0x%x w1=0x%x w2=0x%x status=0x%x", subop, word1, word2, status);
 		FwTrace("uart subop=0x%x w1=0x%x w2=0x%x status=0x%x", subop, word1, word2, status);
+
+		if (subop == 1 && word1 != 0)
+			HandleAcioUartWrite(payload, payload_quads, word1);
+		else if (subop == 2)
+			QueueUartReadData(UART_CALLBACK_BYTE_LIMIT);
 
 		QueuePendingDbufQuadWrite(0xfffe, KONAMI_UART_STATUS_OFFSET, status);
 		if (subop == 2)
