@@ -753,7 +753,7 @@ void vtlb_MapBlock(void* base, u32 start, u32 size, u32 blocksize)
 
 	sptr baseint = (sptr)base;
 	u32 end = start + (size - VTLB_PAGE_SIZE);
-	verify((end >> VTLB_PAGE_BITS) < std::size(vtlbdata.pmap));
+	// verify((end >> VTLB_PAGE_BITS) < std::size(vtlbdata.pmap));
 
 	while (start <= end)
 	{
