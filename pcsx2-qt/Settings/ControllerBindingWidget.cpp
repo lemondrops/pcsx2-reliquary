@@ -14,6 +14,7 @@
 #include "common/Console.h"
 #include "common/StringUtil.h"
 
+#include "pcsx2/FW.h"
 #include "pcsx2/Host.h"
 #include "pcsx2/SIO/Pad/Pad.h"
 
@@ -1242,6 +1243,218 @@ void USBDeviceWidget::doDeviceAutomaticBinding(const QString& device)
 		g_emu_thread->applySettings();
 		onTypeChanged();
 	}
+}
+
+//////////////////////////////////////////////////////////////////////////
+
+FireWireDeviceWidget::FireWireDeviceWidget(QWidget* parent, ControllerSettingsWindow* dialog)
+	: QWidget(parent)
+	, m_dialog(dialog)
+	, m_config_section(FireWire::GetConfigSection())
+{
+	m_ui.setupUi(this);
+	m_ui.groupBox->setTitle(tr("FireWire"));
+	m_ui.deviceType->hide();
+	m_ui.deviceSubtype->hide();
+	m_ui.settings->hide();
+
+	QLabel* device_label = new QLabel(tr("P1IO (Python 1 IO)"), this);
+	m_ui.horizontalLayout->insertWidget(0, device_label);
+
+	m_bindings_widget = new FireWireBindingWidget(this);
+	m_ui.stackedWidget->addWidget(m_bindings_widget);
+	m_ui.stackedWidget->setCurrentWidget(m_bindings_widget);
+
+	connect(m_ui.bindings, &QPushButton::clicked, this, &FireWireDeviceWidget::onBindingsClicked);
+	connect(m_ui.automaticBinding, &QPushButton::clicked, this, &FireWireDeviceWidget::onAutomaticBindingClicked);
+	connect(m_ui.clearBindings, &QPushButton::clicked, this, &FireWireDeviceWidget::onClearBindingsClicked);
+
+	updateHeaderToolButtons();
+}
+
+FireWireDeviceWidget::~FireWireDeviceWidget() = default;
+
+QIcon FireWireDeviceWidget::getIcon() const
+{
+	return QIcon::fromTheme("keyboardmania-line");
+}
+
+void FireWireDeviceWidget::updateHeaderToolButtons()
+{
+	const QWidget* current_widget = m_ui.stackedWidget->currentWidget();
+	const QSignalBlocker bindings_sb(m_ui.bindings);
+	m_ui.bindings->setChecked(current_widget == m_bindings_widget);
+	m_ui.automaticBinding->setEnabled(current_widget == m_bindings_widget);
+	m_ui.clearBindings->setEnabled(current_widget == m_bindings_widget);
+}
+
+void FireWireDeviceWidget::onBindingsClicked()
+{
+	m_ui.stackedWidget->setCurrentWidget(m_bindings_widget);
+	updateHeaderToolButtons();
+}
+
+void FireWireDeviceWidget::onAutomaticBindingClicked()
+{
+	QMenu menu(this);
+	bool added = false;
+
+	for (const QPair<QString, QString>& dev : m_dialog->getDeviceList())
+	{
+		QAction* action;
+		if (dev.first.compare(dev.second, Qt::CaseInsensitive) == 0)
+			action = menu.addAction(dev.first);
+		else
+			action = menu.addAction(QStringLiteral("%1: %2").arg(dev.first).arg(dev.second));
+		action->setData(dev.first);
+		connect(action, &QAction::triggered, this, [this, action]() { doDeviceAutomaticBinding(action->data().toString()); });
+		added = true;
+	}
+
+	if (!added)
+	{
+		QAction* action = menu.addAction(tr("No devices available"));
+		action->setEnabled(false);
+	}
+
+	menu.exec(QCursor::pos());
+}
+
+void FireWireDeviceWidget::onClearBindingsClicked()
+{
+	if (QMessageBox::question(QtUtils::GetRootWidget(this), tr("Clear Bindings"),
+			tr("Are you sure you want to clear all FireWire bindings? This action cannot be undone.")) != QMessageBox::Yes)
+	{
+		return;
+	}
+
+	if (m_dialog->isEditingGlobalSettings())
+	{
+		{
+			auto lock = Host::GetSettingsLock();
+			FireWire::ClearP1IOBindings(*Host::Internal::GetBaseSettingsLayer());
+		}
+		Host::CommitBaseSettingChanges();
+	}
+	else
+	{
+		FireWire::ClearP1IOBindings(*m_dialog->getProfileSettingsInterface());
+		m_dialog->getProfileSettingsInterface()->Save();
+	}
+
+	g_emu_thread->applySettings();
+	m_ui.stackedWidget->removeWidget(m_bindings_widget);
+	m_bindings_widget->deleteLater();
+	m_bindings_widget = new FireWireBindingWidget(this);
+	m_ui.stackedWidget->addWidget(m_bindings_widget);
+	m_ui.stackedWidget->setCurrentWidget(m_bindings_widget);
+	updateHeaderToolButtons();
+}
+
+void FireWireDeviceWidget::doDeviceAutomaticBinding(const QString& device)
+{
+	std::vector<std::pair<GenericInputBinding, std::string>> mapping = InputManager::GetGenericBindingMapping(device.toStdString());
+	if (mapping.empty())
+	{
+		QMessageBox::critical(QtUtils::GetRootWidget(this), tr("Automatic Binding"),
+			tr("No generic bindings were generated for device '%1'. The controller/source may not support automatic mapping.").arg(device));
+		return;
+	}
+
+	bool result;
+	if (m_dialog->isEditingGlobalSettings())
+	{
+		{
+			auto lock = Host::GetSettingsLock();
+			result = FireWire::MapP1IO(*Host::Internal::GetBaseSettingsLayer(), mapping);
+		}
+		if (result)
+			Host::CommitBaseSettingChanges();
+	}
+	else
+	{
+		result = FireWire::MapP1IO(*m_dialog->getProfileSettingsInterface(), mapping);
+		if (result)
+		{
+			m_dialog->getProfileSettingsInterface()->Save();
+			g_emu_thread->reloadInputBindings();
+		}
+	}
+
+	if (result)
+	{
+		g_emu_thread->applySettings();
+		m_ui.stackedWidget->removeWidget(m_bindings_widget);
+		m_bindings_widget->deleteLater();
+		m_bindings_widget = new FireWireBindingWidget(this);
+		m_ui.stackedWidget->addWidget(m_bindings_widget);
+		m_ui.stackedWidget->setCurrentWidget(m_bindings_widget);
+		updateHeaderToolButtons();
+	}
+}
+
+FireWireBindingWidget::FireWireBindingWidget(FireWireDeviceWidget* parent)
+	: QWidget(parent)
+{
+	createWidgets(FireWire::GetP1IOBindings());
+}
+
+FireWireBindingWidget::~FireWireBindingWidget() = default;
+
+std::string FireWireBindingWidget::getBindingKey(const char* binding_name) const
+{
+	return FireWire::GetConfigSubKey(binding_name);
+}
+
+void FireWireBindingWidget::createWidgets(std::span<const InputBindingInfo> bindings)
+{
+	QGroupBox* button_gbox = nullptr;
+	QGridLayout* button_layout = nullptr;
+	SettingsInterface* sif = getDialog()->getProfileSettingsInterface();
+
+	QScrollArea* scrollarea = new QScrollArea(this);
+	QWidget* scrollarea_widget = new QWidget(scrollarea);
+	scrollarea->setWidget(scrollarea_widget);
+	scrollarea->setWidgetResizable(true);
+	scrollarea->setFrameShape(QFrame::StyledPanel);
+	scrollarea->setFrameShadow(QFrame::Plain);
+
+	int row = 0;
+	int column = 0;
+	for (const InputBindingInfo& bi : bindings)
+	{
+		if (bi.bind_type != InputBindingInfo::Type::Button)
+			continue;
+
+		if (!button_gbox)
+		{
+			button_gbox = new QGroupBox(tr("Buttons"), scrollarea_widget);
+			button_layout = new QGridLayout(button_gbox);
+		}
+
+		QGroupBox* gbox = new QGroupBox(qApp->translate("FireWire", bi.display_name), button_gbox);
+		QVBoxLayout* temp = new QVBoxLayout(gbox);
+		InputBindingWidget* widget = new InputBindingWidget(gbox, sif, bi.bind_type, getConfigSection(), getBindingKey(bi.name));
+		temp->addWidget(widget);
+		button_layout->addWidget(gbox, row, column);
+		if ((++column) == 4)
+		{
+			column = 0;
+			row++;
+		}
+	}
+
+	if (!button_gbox)
+		return;
+
+	button_layout->addItem(new QSpacerItem(1, 1, QSizePolicy::Minimum, QSizePolicy::Expanding), ++row, 0);
+
+	QHBoxLayout* layout = new QHBoxLayout(scrollarea_widget);
+	layout->addWidget(button_gbox);
+	layout->addItem(new QSpacerItem(1, 1, QSizePolicy::Expanding, QSizePolicy::Minimum));
+
+	QHBoxLayout* main_layout = new QHBoxLayout(this);
+	main_layout->addWidget(scrollarea);
 }
 
 //////////////////////////////////////////////////////////////////////////

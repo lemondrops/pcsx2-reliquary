@@ -14,6 +14,7 @@
 #include "IopDma.h"
 
 #include "ps2/pgif.h"
+#include "ps2/BiosTools.h"
 #include "Mdec.h"
 
 #define SIO0LOG_ENABLE 0
@@ -105,7 +106,8 @@ mem8_t iopHwRead8_Page3(u32 addr)
 	switch (masked_addr)
 	{
 		case 0x100: // TOOL config switches
-			ret = 0;
+			// COH-H/Python boards use bit 3 to ignore the absent CD-ROM drive.
+			ret = (BiosZone == "COH-H") ? 0x08 : 0;
 			break;
 		case 0x204: // TOOL board id
 			ret = 0x7c;
@@ -494,4 +496,3 @@ mem32_t iopHwRead32_Page8( u32 addr )
 }
 
 }
-

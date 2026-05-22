@@ -602,6 +602,7 @@ void VMManager::SetDefaultSettings(
 	{
 		Pad::SetDefaultControllerConfig(si);
 		USB::SetDefaultConfiguration(&si);
+		FireWire::SetDefaultConfiguration(&si);
 	}
 	if (hotkeys)
 		Pad::SetDefaultHotkeyConfig(si);

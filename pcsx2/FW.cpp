@@ -3,16 +3,22 @@
 
 #include "IopDma.h"
 #include "IopMem.h"
+#include "Memory.h"
 #include "R3000A.h"
 #include "FW.h"
 
 #include "common/Console.h"
+#include "common/SettingsInterface.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string_view>
+#include <utility>
+#include <array>
 #include <vector>
 
 #ifndef _WIN32
@@ -90,15 +96,104 @@ namespace
 	constexpr u32 KONAMI_BOOT_READY_OFFSET_HIGH = 0xfffd;
 	constexpr u32 KONAMI_BOOT_READY_OFFSET_LOW = 0x05735734;
 	constexpr u32 KONAMI_RUNTIME_READY_OFFSET_LOW = 0x05735730;
+	constexpr u32 KONAMI_NET_COMMAND_OFFSET_BASE = 0x180;
+	constexpr u32 KONAMI_NET_COMMAND_STRIDE = 0x20;
+	constexpr u32 KONAMI_NET_RESPONSE_OFFSET_BASE = 0x000b0000;
+	constexpr u32 KONAMI_NET_RESPONSE_STRIDE = 0x1000;
+	constexpr u32 KONAMI_NET_CHANNEL_COUNT = 8;
+	constexpr u32 KONAMI_JAMMA_INIT_COMMAND_OFFSET = 0x0e0;
+	constexpr u32 KONAMI_JAMMA_OUTPUT_COMMAND_OFFSET = 0x0f80;
+	constexpr u32 INVALID_JAMMA_INPUT_DEST = 0xffffffffu;
+	constexpr u32 JAMMA_INPUT_REPORT_QUADS = 9;
+	constexpr u32 P1IO_SOURCE_P1_START = 1u << 11;
+	constexpr u32 P1IO_SOURCE_P1_UP = 1u << 2;
+	constexpr u32 P1IO_SOURCE_P1_DOWN = 1u << 3;
+	constexpr u32 P1IO_SOURCE_P1_LEFT = 1u << 0;
+	constexpr u32 P1IO_SOURCE_P1_RIGHT = 1u << 1;
+	constexpr u32 P1IO_SOURCE_P1_BUTTON1 = 1u << 4;
+	constexpr u32 P1IO_SOURCE_P1_BUTTON2 = 1u << 5;
+	constexpr u32 P1IO_SOURCE_P1_BUTTON3 = 1u << 6;
+	constexpr u32 P1IO_SOURCE_P1_BUTTON4 = 1u << 7;
+	constexpr u32 P1IO_SOURCE_P1_BUTTON5 = 1u << 8;
+	constexpr u32 P1IO_SOURCE_TEST = 1u << 15;
+	constexpr u32 P1IO_SOURCE_SERVICE = 1u << 14;
 	constexpr u32 SECTOR_SIZE = 0x200;
 	constexpr u32 BOOTROM_SIZE = 0x10000;
 	constexpr u32 BBSRAM_SIZE = 0x2000;
 	constexpr const char* WE2K3_BLOB_PATH = "";
 	constexpr const char* WE2K3_BBSRAM_PATH = "";
+	constexpr const char* FIREWIRE_CONFIG_SECTION = "FireWire";
+	constexpr const char* P1IO_CONFIG_PREFIX = "P1IO_";
 	// EE byte-swaps the JAMMA word, then maps source bit 8 to P1 bit 0x200.
 	constexpr u32 JAMMA_P1_JVS_PRESENT = 0x00010000;
+	constexpr u32 JAMMA_COIN1_COUNTER_BASE = 0xaa2c0698;
 	// Captured neutral JAMMA status/DIP bytes. The present signal is in the input word above.
 	constexpr u32 JAMMA_STATUS_NEUTRAL = 0x0100ffff;
+	constexpr u32 JAMMA_ACTIVE_LOW_INPUT_MASK = 0x0000ffff;
+
+	enum P1IOBinding : u32
+	{
+		P1IO_BIND_TEST,
+		P1IO_BIND_SERVICE,
+		P1IO_BIND_COIN1,
+		P1IO_BIND_COIN2,
+		P1IO_BIND_P1_START,
+		P1IO_BIND_P1_UP,
+		P1IO_BIND_P1_DOWN,
+		P1IO_BIND_P1_LEFT,
+		P1IO_BIND_P1_RIGHT,
+		P1IO_BIND_P1_BUTTON1,
+		P1IO_BIND_P1_BUTTON2,
+		P1IO_BIND_P1_BUTTON3,
+		P1IO_BIND_P1_BUTTON4,
+		P1IO_BIND_P1_BUTTON5,
+		P1IO_BIND_P1_BUTTON6,
+		P1IO_BIND_COUNT,
+	};
+
+	struct P1IOJammaMapping
+	{
+		u32 bind;
+		u32 active_low_mask;
+	};
+
+	static constexpr InputBindingInfo P1IO_BINDINGS[] = {
+		{"Test", "Test Button", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_TEST, GenericInputBinding::Select},
+		{"Service", "Service Button", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_SERVICE, GenericInputBinding::System},
+		{"Coin1", "Coin Player 1", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_COIN1, GenericInputBinding::L3},
+		{"Coin2", "Coin Player 2", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_COIN2, GenericInputBinding::R3},
+		{"P1Start", "P1 Start", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P1_START, GenericInputBinding::Start},
+		{"P1Up", "P1 Up", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P1_UP, GenericInputBinding::DPadUp},
+		{"P1Down", "P1 Down", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P1_DOWN, GenericInputBinding::DPadDown},
+		{"P1Left", "P1 Left", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P1_LEFT, GenericInputBinding::DPadLeft},
+		{"P1Right", "P1 Right", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P1_RIGHT, GenericInputBinding::DPadRight},
+		{"P1Button1", "P1 Button 1", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P1_BUTTON1, GenericInputBinding::Cross},
+		{"P1Button2", "P1 Button 2", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P1_BUTTON2, GenericInputBinding::Circle},
+		{"P1Button3", "P1 Button 3", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P1_BUTTON3, GenericInputBinding::Square},
+		{"P1Button4", "P1 Button 4", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P1_BUTTON4, GenericInputBinding::Triangle},
+		{"P1Button5", "P1 Button 5", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P1_BUTTON5, GenericInputBinding::L1},
+		{"P1Button6", "P1 Button 6", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P1_BUTTON6, GenericInputBinding::R1},
+	};
+
+	// P1IO's input report is still being documented, so keep the bit layout centralized.
+	// Neutral has the low 16 bits high; pressed inputs clear one bit.
+	static constexpr P1IOJammaMapping P1IO_JAMMA_MAPPINGS[] = {
+		{P1IO_BIND_TEST, 0x0001},
+		{P1IO_BIND_SERVICE, 0x0002},
+		{P1IO_BIND_COIN1, 0x0004},
+		{P1IO_BIND_COIN2, 0x0008},
+		{P1IO_BIND_P1_START, 0x0010},
+		{P1IO_BIND_P1_UP, 0x0020},
+		{P1IO_BIND_P1_DOWN, 0x0040},
+		{P1IO_BIND_P1_LEFT, 0x0080},
+		{P1IO_BIND_P1_RIGHT, 0x0100},
+		{P1IO_BIND_P1_BUTTON1, 0x0200},
+		{P1IO_BIND_P1_BUTTON2, 0x0400},
+		{P1IO_BIND_P1_BUTTON3, 0x0800},
+		{P1IO_BIND_P1_BUTTON4, 0x1000},
+		{P1IO_BIND_P1_BUTTON5, 0x2000},
+		{P1IO_BIND_P1_BUTTON6, 0x4000},
+	};
 	constexpr u8 KONAMI_FACTORY_MAC[] = {
 		0x00, 0x04, 0x5f, 0x00, 0x00, 0x01,
 	};
@@ -106,6 +201,25 @@ namespace
 		0x00, 0x04, 0x5f, 0x00, 0x00, 0x01,
 		0xff, 0xfb, 0xa0, 0xff, 0xff, 0xfe,
 	};
+	constexpr u8 KONAMI_NET_IP_ADDRESS[] = {192, 168, 50, 2};
+	constexpr u8 KONAMI_NET_SUBNET_MASK[] = {255, 255, 255, 0};
+	constexpr u8 KONAMI_NET_GATEWAY[] = {192, 168, 50, 1};
+	constexpr u8 KONAMI_NET_PRIMARY_DNS[] = {192, 168, 50, 1};
+	constexpr bool KONAMI_NET_FORCE_OFFLINE = true;
+	constexpr u8 KONAMI_NET_OFFLINE_IP_ADDRESS[] = {169, 254, 50, 2};
+	constexpr u8 KONAMI_NET_OFFLINE_GATEWAY[] = {0, 0, 0, 0};
+	constexpr u8 KONAMI_NET_OFFLINE_DNS[] = {0, 0, 0, 0};
+	constexpr u8 KONAMI_NET_MACHINE_ID[] = {
+		'P', 'Y', 'T', 'H', 'O', 'N', '1', '-',
+		'0', '0', '0', '0', '0', '0', '0', '1',
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+	};
+	constexpr u8 KONAMI_NET_SECONDARY_DNS[] = {0, 0, 0, 0};
 	constexpr u32 KONAMI_DALLAS_NO_KEY_RESPONSE[] = {
 		0x01000000, 0x00000000, 0x00000000,
 	};
@@ -160,6 +274,13 @@ namespace
 		std::vector<u8> data;
 	};
 
+	struct PendingNetPacket
+	{
+		std::vector<u8> data;
+		u32 source_ip = 0;
+		u16 source_port = 0;
+	};
+
 	// Captured from the WE2K3 Python1 IO board's config-ROM reads in python1-boot-ioerror.nosy.
 	constexpr u32 KONAMI_IO_BOARD_CROM[] = {
 		0x0404a1a4, 0x31333934, 0x407d8002, 0x00000000, 0x00000000, 0x00053f04,
@@ -174,6 +295,7 @@ namespace
 	std::vector<u32> s_pending_dbuf_r0_rx_fifo;
 	std::vector<PendingDbufDmaWrite> s_pending_dbuf_r0_rx_dma;
 	std::vector<u32> s_dbuf_r0_rx_fifo;
+	std::vector<PendingNetPacket> s_net_rx_packets[KONAMI_NET_CHANNEL_COUNT];
 	std::vector<u8> s_uart_rx_fifo;
 	u8 s_bootrom[BOOTROM_SIZE];
 	u8 s_bbsram[BBSRAM_SIZE];
@@ -181,6 +303,11 @@ namespace
 	std::vector<u32> s_pht_tx_fifo[2];
 	u32 s_pht_tx_expected_bytes[2];
 	bool s_pht_write_pending[2];
+	std::atomic<u32> s_p1io_bind_state{0};
+	u32 s_jamma_input_dest = INVALID_JAMMA_INPUT_DEST;
+	u32 s_last_jamma_input_status = JAMMA_STATUS_NEUTRAL;
+	u32 s_last_p1io_bind_state = 0;
+	u32 s_p1io_coin_counters[2] = {};
 	u32 s_bus_reset_log_count;
 	u32 s_discovery_log_count;
 	u32 s_crom_log_count;
@@ -190,6 +317,7 @@ namespace
 	u32 s_sector_read_log_count;
 	u32 s_pht_log_count;
 	u32 s_runtime_log_count;
+	u32 s_p1io_log_count;
 #ifndef _WIN32
 	void WriteTraceErrorMarker(const char* message, int error)
 	{
@@ -278,6 +406,47 @@ namespace
 		FwTrace("%s offset=0x%x bytes=0x%x data=%08x %08x %08x %08x", prefix, offset, byte_count, words[0], words[1], words[2], words[3]);
 	}
 
+	void TraceBytesToConsoleWhenEnabled(const char* prefix, u32 address, const u8* data, u32 byte_count)
+	{
+		if (std::getenv("PCSX2_WE2K3_NET_TRACE") == nullptr || byte_count == 0)
+			return;
+
+		const u32 trace_count = std::min<u32>(byte_count, 0x40);
+		u32 words[4] = {};
+		for (u32 word = 0; word < std::min<u32>(4, (trace_count + 3) / sizeof(u32)); word++)
+		{
+			for (u32 i = 0; i < sizeof(u32) && word * sizeof(u32) + i < trace_count; i++)
+				words[word] |= static_cast<u32>(data[word * sizeof(u32) + i]) << (24 - i * 8);
+		}
+
+		DevCon.WriteLn("FW HLE: %s addr=0x%x bytes=0x%x data=%08x %08x %08x %08x", prefix, address, byte_count, words[0], words[1], words[2], words[3]);
+	}
+
+	u32 ReadEeMain32(u32 address)
+	{
+		if (!eeMem || address + sizeof(u32) > Ps2MemSize::ExposedRam)
+			return 0;
+
+		u32 value = 0;
+		std::memcpy(&value, &eeMem->Main[address], sizeof(value));
+		return value;
+	}
+
+	void SampleEeNetworkState(const char* context)
+	{
+		if (!std::getenv("PCSX2_FW_TRACE_EE_NETWORK_STATE"))
+			return;
+
+		FwTrace("ee network state sample context=%s init=0x%x callback_status=0x%x callback_count=0x%x machine_state=0x%x retry=0x%x gate=0x%x",
+			context,
+			ReadEeMain32(0x01d67bf0),
+			ReadEeMain32(0x01d67bf4),
+			ReadEeMain32(0x01d67bf8),
+			ReadEeMain32(0x01d67c00),
+			ReadEeMain32(0x01d67c04),
+			ReadEeMain32(0x01d67c18));
+	}
+
 	u32 ByteSwap32(u32 value);
 
 	u8 CalculateAcioChecksum(const u8* data, u32 byte_count)
@@ -309,6 +478,8 @@ namespace
 
 	void QueueUartBytes(const u8* data, u32 byte_count)
 	{
+		SampleEeNetworkState("uart-enqueue");
+
 		if (byte_count == 0)
 			return;
 
@@ -369,6 +540,7 @@ namespace
 		}
 
 		TraceBytes("uart tx", 0, bytes.data(), static_cast<u32>(bytes.size()));
+		TraceBytesToConsoleWhenEnabled("uart tx", payload_quads > 2 ? payload[2] : 0, bytes.data(), static_cast<u32>(bytes.size()));
 		if (bytes.size() == 4 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] == 0xaa && bytes[3] == 0x55)
 		{
 			QueueUartBytes(KONAMI_EXTERNAL_IO_SYNC_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_SYNC_RESPONSE));
@@ -1094,6 +1266,407 @@ namespace
 		return true;
 	}
 
+	bool TryGetNetProperty(u32 property, u32 requested_bytes, const u8** response, u32* response_bytes)
+	{
+		const u8* data = nullptr;
+		u32 data_bytes = 0;
+
+		switch (property)
+		{
+			case 0x101:
+				data = KONAMI_NET_FORCE_OFFLINE ? KONAMI_NET_OFFLINE_IP_ADDRESS : KONAMI_NET_IP_ADDRESS;
+				data_bytes = KONAMI_NET_FORCE_OFFLINE ? sizeof(KONAMI_NET_OFFLINE_IP_ADDRESS) : sizeof(KONAMI_NET_IP_ADDRESS);
+				break;
+			case 1:
+				data = KONAMI_NET_SUBNET_MASK;
+				data_bytes = sizeof(KONAMI_NET_SUBNET_MASK);
+				break;
+			case 3:
+				data = KONAMI_NET_FORCE_OFFLINE ? KONAMI_NET_OFFLINE_GATEWAY : KONAMI_NET_GATEWAY;
+				data_bytes = KONAMI_NET_FORCE_OFFLINE ? sizeof(KONAMI_NET_OFFLINE_GATEWAY) : sizeof(KONAMI_NET_GATEWAY);
+				break;
+			case 6:
+				data = KONAMI_NET_FORCE_OFFLINE ? KONAMI_NET_OFFLINE_DNS : KONAMI_NET_PRIMARY_DNS;
+				data_bytes = KONAMI_NET_FORCE_OFFLINE ? sizeof(KONAMI_NET_OFFLINE_DNS) : sizeof(KONAMI_NET_PRIMARY_DNS);
+				break;
+			case 0xf:
+				data = KONAMI_NET_MACHINE_ID;
+				data_bytes = sizeof(KONAMI_NET_MACHINE_ID);
+				break;
+			case 0x2a:
+				data = KONAMI_FACTORY_MAC;
+				data_bytes = sizeof(KONAMI_FACTORY_MAC);
+				break;
+			case 0x36:
+				data = KONAMI_NET_SECONDARY_DNS;
+				data_bytes = sizeof(KONAMI_NET_SECONDARY_DNS);
+				break;
+			default:
+				return false;
+		}
+
+		*response_bytes = std::min(requested_bytes, data_bytes);
+		*response = data;
+		return true;
+	}
+
+	u16 ReadBe16(const u8* data)
+	{
+		return static_cast<u16>((static_cast<u16>(data[0]) << 8) | data[1]);
+	}
+
+	void WriteBe16(std::vector<u8>& data, u16 value)
+	{
+		data.push_back(static_cast<u8>(value >> 8));
+		data.push_back(static_cast<u8>(value));
+	}
+
+	void WriteBe32(std::vector<u8>& data, u32 value)
+	{
+		data.push_back(static_cast<u8>(value >> 24));
+		data.push_back(static_cast<u8>(value >> 16));
+		data.push_back(static_cast<u8>(value >> 8));
+		data.push_back(static_cast<u8>(value));
+	}
+
+	u32 ReadIopNative32(u32 address)
+	{
+		u32 value = 0;
+		if (!iopMemSafeReadBytes(address, &value, sizeof(value)))
+			return 0;
+		return value;
+	}
+
+	u16 OnesComplementSum(const u8* data, u32 byte_count, u32 sum = 0)
+	{
+		for (u32 offset = 0; offset < byte_count; offset += 2)
+		{
+			u16 word = static_cast<u16>(data[offset]) << 8;
+			if (offset + 1 < byte_count)
+				word |= data[offset + 1];
+			sum += word;
+			while (sum >> 16)
+				sum = (sum & 0xffff) + (sum >> 16);
+		}
+
+		return static_cast<u16>(~sum);
+	}
+
+	bool BuildDnsPayloadResponse(const u8* dns, u32 dns_bytes, std::vector<u8>* response)
+	{
+		if (dns_bytes < 12 || ReadBe16(dns + 4) == 0)
+			return false;
+
+		u32 question_end = 12;
+		while (question_end < dns_bytes && dns[question_end] != 0)
+		{
+			const u8 label_bytes = dns[question_end];
+			if ((label_bytes & 0xc0) != 0 || label_bytes == 0 || question_end + 1 + label_bytes >= dns_bytes)
+				return false;
+			question_end += 1 + label_bytes;
+		}
+		if (question_end + 5 > dns_bytes)
+			return false;
+		question_end += 5;
+
+		response->clear();
+		response->reserve(question_end + 16);
+		response->insert(response->end(), dns, dns + question_end);
+		(*response)[2] = 0x81;
+		(*response)[3] = 0x80;
+		(*response)[6] = 0x00;
+		(*response)[7] = 0x01;
+		(*response)[8] = 0x00;
+		(*response)[9] = 0x00;
+		(*response)[10] = 0x00;
+		(*response)[11] = 0x00;
+		WriteBe16(*response, 0xc00c);
+		WriteBe16(*response, 1);
+		WriteBe16(*response, 1);
+		WriteBe32(*response, 60);
+		WriteBe16(*response, 4);
+		WriteBe32(*response, KONAMI_NET_GATEWAY[0] << 24 | KONAMI_NET_GATEWAY[1] << 16 | KONAMI_NET_GATEWAY[2] << 8 | KONAMI_NET_GATEWAY[3]);
+		return true;
+	}
+
+	bool BuildDnsResponsePacket(const u8* request, u32 request_bytes, u32 src_ip, u32 dst_ip, std::vector<u8>* response)
+	{
+		if (request_bytes < 28)
+			return false;
+
+		const u8 ip_header_bytes = static_cast<u8>((request[0] & 0x0f) * 4);
+		if ((request[0] >> 4) != 4 || ip_header_bytes < 20 || request_bytes < ip_header_bytes + 8)
+			return false;
+		if (request[9] != 17)
+			return false;
+
+		const u8* udp = request + ip_header_bytes;
+		const u16 src_port = ReadBe16(udp);
+		const u16 dst_port = ReadBe16(udp + 2);
+		const u16 udp_bytes = ReadBe16(udp + 4);
+		if (dst_port != 53 || udp_bytes < 8 || ip_header_bytes + udp_bytes > request_bytes)
+			return false;
+
+		std::vector<u8> dns_response;
+		if (!BuildDnsPayloadResponse(udp + 8, udp_bytes - 8, &dns_response))
+			return false;
+
+		const u16 reply_udp_bytes = static_cast<u16>(8 + dns_response.size());
+		const u16 reply_ip_bytes = static_cast<u16>(20 + reply_udp_bytes);
+
+		response->clear();
+		response->reserve(reply_ip_bytes);
+		response->push_back(0x45);
+		response->push_back(0x00);
+		WriteBe16(*response, reply_ip_bytes);
+		WriteBe16(*response, ReadBe16(request + 4));
+		WriteBe16(*response, 0x4000);
+		response->push_back(64);
+		response->push_back(17);
+		WriteBe16(*response, 0);
+		WriteBe32(*response, src_ip);
+		WriteBe32(*response, dst_ip);
+		const u16 ip_checksum = OnesComplementSum(response->data(), 20);
+		(*response)[10] = static_cast<u8>(ip_checksum >> 8);
+		(*response)[11] = static_cast<u8>(ip_checksum);
+
+		WriteBe16(*response, dst_port);
+		WriteBe16(*response, src_port);
+		WriteBe16(*response, reply_udp_bytes);
+		WriteBe16(*response, 0);
+		response->insert(response->end(), dns_response.begin(), dns_response.end());
+
+		std::vector<u8> pseudo_header;
+		pseudo_header.reserve(12 + reply_udp_bytes);
+		WriteBe32(pseudo_header, src_ip);
+		WriteBe32(pseudo_header, dst_ip);
+		pseudo_header.push_back(0);
+		pseudo_header.push_back(17);
+		WriteBe16(pseudo_header, reply_udp_bytes);
+		pseudo_header.insert(pseudo_header.end(), response->begin() + 20, response->end());
+		const u16 udp_checksum = OnesComplementSum(pseudo_header.data(), static_cast<u32>(pseudo_header.size()));
+		(*response)[26] = static_cast<u8>(udp_checksum >> 8);
+		(*response)[27] = static_cast<u8>(udp_checksum);
+		return true;
+	}
+
+	void MaybeQueueNetReply(u32 channel, const u32* payload, u32 payload_quads)
+	{
+		if (KONAMI_NET_FORCE_OFFLINE)
+			return;
+
+		if (channel >= KONAMI_NET_CHANNEL_COUNT || payload_quads < 4 || payload[3] == 0)
+			return;
+
+		const u32 data_address = payload[2];
+		const u32 byte_count = payload[3];
+		if (byte_count > 0x2000)
+			return;
+
+		std::vector<u8> request(byte_count);
+		if (!iopMemSafeReadBytes(data_address, request.data(), byte_count))
+			return;
+
+		std::vector<u8> response;
+		if (BuildDnsResponsePacket(request.data(), byte_count, 0xc0a83201, 0xc0a83202, &response) ||
+			(payload_quads >= 5 && (payload[4] & 0xffff) == 53 && BuildDnsPayloadResponse(request.data(), byte_count, &response)))
+		{
+			PendingNetPacket packet;
+			packet.data = std::move(response);
+			packet.source_ip = 0x0132a8c0;
+			packet.source_port = 53;
+			s_net_rx_packets[channel].push_back(std::move(packet));
+			DevCon.WriteLn("FW HLE: queued NET DNS response channel=0x%x bytes=0x%zx", channel, s_net_rx_packets[channel].back().data.size());
+		}
+	}
+
+	bool HleNetCommand(u32 command_offset, const u32* payload, u32 payload_quads)
+	{
+		if (command_offset < KONAMI_NET_COMMAND_OFFSET_BASE)
+			return false;
+
+		const u32 relative_offset = command_offset - KONAMI_NET_COMMAND_OFFSET_BASE;
+		if ((relative_offset % KONAMI_NET_COMMAND_STRIDE) != 0)
+			return false;
+
+		const u32 channel = relative_offset / KONAMI_NET_COMMAND_STRIDE;
+		if (channel >= KONAMI_NET_CHANNEL_COUNT || payload_quads == 0)
+			return false;
+
+		const u32 command = payload[0];
+		FwTrace("net cmd channel=0x%x command=0x%x p1=0x%x p2=0x%x p3=0x%x",
+			channel, command, payload_quads > 1 ? payload[1] : 0, payload_quads > 2 ? payload[2] : 0, payload_quads > 3 ? payload[3] : 0);
+
+		switch (command)
+		{
+			case 0:
+			case 1:
+			case 2:
+			case 3:
+			case 5:
+			case 6:
+			case 7:
+			case 0x0b:
+			case 0x0c:
+			case 0x13:
+			case 0x14:
+			case 0x15:
+			case 0x16:
+			case 0x17:
+			case 0x1d:
+			case 0x1e:
+				break;
+			default:
+				return false;
+		}
+
+		// SUBBOARD's NET RPC path sends setup commands, then waits until NETWriteCallback
+		// writes a status block at 0xb0000 + channel * 0x1000 and sets its event flag.
+		const u8* property_response = nullptr;
+		u32 property_response_bytes = 0;
+		if (command == 0x1e)
+		{
+			if (payload_quads < 4 || !TryGetNetProperty(payload[1], payload[3], &property_response, &property_response_bytes))
+				return false;
+
+			QueuePendingDbufByteWrite(0x1000, payload[2], property_response, property_response_bytes);
+		}
+		else if ((command == 0x14 || command == 0x15) && payload_quads < 4)
+		{
+			return false;
+		}
+		else if (command == 0x15)
+		{
+			MaybeQueueNetReply(channel, payload, payload_quads);
+		}
+
+		PendingNetPacket received_packet;
+		bool has_received_packet = false;
+		if ((command == 0x16 || command == 0x17) && payload_quads >= 4 && !s_net_rx_packets[channel].empty())
+		{
+			received_packet = std::move(s_net_rx_packets[channel].front());
+			s_net_rx_packets[channel].erase(s_net_rx_packets[channel].begin());
+			const u32 max_bytes = std::min<u32>(payload[3], 0x2000);
+			if (received_packet.data.size() > max_bytes)
+				received_packet.data.resize(max_bytes);
+			if (!received_packet.data.empty())
+				QueuePendingDbufByteWrite(0x1000, payload[2], received_packet.data.data(), static_cast<u32>(received_packet.data.size()));
+			has_received_packet = true;
+		}
+
+		std::array<u32, 8> response = {};
+		if (command == 7)
+			response[1] = 1;
+		else if (command == 0x14 || command == 0x15)
+			response[1] = ByteSwap32(payload[3]);
+		else if ((command == 0x16 || command == 0x17) && has_received_packet)
+		{
+			response[1] = ByteSwap32(static_cast<u32>(received_packet.data.size()));
+			response[2] = received_packet.source_ip;
+			response[3] = (ReadIopNative32(payload[5]) & 0xffff0000) | received_packet.source_port;
+			DevCon.WriteLn("FW HLE: NET receive channel=0x%x bytes=0x%zx src=0x%x port=0x%x",
+				channel, received_packet.data.size(), received_packet.source_ip, received_packet.source_port);
+		}
+		else if (command == 0x1e)
+			response[1] = ByteSwap32(property_response_bytes);
+		QueuePendingDbufBlockWrite(0xfffe, KONAMI_NET_RESPONSE_OFFSET_BASE + channel * KONAMI_NET_RESPONSE_STRIDE,
+			response.data(), static_cast<u32>(response.size()));
+		return true;
+	}
+
+	u32 GetP1IOJammaStatus()
+	{
+		u32 status = JAMMA_STATUS_NEUTRAL;
+		for (const P1IOJammaMapping& mapping : P1IO_JAMMA_MAPPINGS)
+		{
+			if (FireWire::GetP1IOBindValue(mapping.bind) >= 0.5f)
+				status &= ~(mapping.active_low_mask & JAMMA_ACTIVE_LOW_INPUT_MASK);
+		}
+
+		return status;
+	}
+
+	u32 GetP1IOBindState()
+	{
+		return s_p1io_bind_state.load(std::memory_order_relaxed);
+	}
+
+	bool UpdateP1IOCoinCounters(u32 bind_state)
+	{
+		const bool bind_state_changed = bind_state != s_last_p1io_bind_state;
+		const u32 pressed = bind_state & ~s_last_p1io_bind_state;
+		if (pressed & (1u << P1IO_BIND_COIN1))
+			s_p1io_coin_counters[0]++;
+		if (pressed & (1u << P1IO_BIND_COIN2))
+			s_p1io_coin_counters[1]++;
+		s_last_p1io_bind_state = bind_state;
+		return bind_state_changed;
+	}
+
+	u32 BuildP1IOInputSourceBits(u32 bind_state)
+	{
+		u32 source_bits = 0;
+		if (bind_state & (1u << P1IO_BIND_TEST))
+			source_bits |= P1IO_SOURCE_TEST;
+		if (bind_state & (1u << P1IO_BIND_SERVICE))
+			source_bits |= P1IO_SOURCE_SERVICE;
+		if (bind_state & (1u << P1IO_BIND_P1_START))
+			source_bits |= P1IO_SOURCE_P1_START;
+		if (bind_state & (1u << P1IO_BIND_P1_UP))
+			source_bits |= P1IO_SOURCE_P1_UP;
+		if (bind_state & (1u << P1IO_BIND_P1_DOWN))
+			source_bits |= P1IO_SOURCE_P1_DOWN;
+		if (bind_state & (1u << P1IO_BIND_P1_LEFT))
+			source_bits |= P1IO_SOURCE_P1_LEFT;
+		if (bind_state & (1u << P1IO_BIND_P1_RIGHT))
+			source_bits |= P1IO_SOURCE_P1_RIGHT;
+		if (bind_state & (1u << P1IO_BIND_P1_BUTTON1))
+			source_bits |= P1IO_SOURCE_P1_BUTTON1;
+		if (bind_state & (1u << P1IO_BIND_P1_BUTTON2))
+			source_bits |= P1IO_SOURCE_P1_BUTTON2;
+		if (bind_state & (1u << P1IO_BIND_P1_BUTTON3))
+			source_bits |= P1IO_SOURCE_P1_BUTTON3;
+		if (bind_state & (1u << P1IO_BIND_P1_BUTTON4))
+			source_bits |= P1IO_SOURCE_P1_BUTTON4;
+		if (bind_state & (1u << P1IO_BIND_P1_BUTTON5))
+			source_bits |= P1IO_SOURCE_P1_BUTTON5;
+		return source_bits;
+	}
+
+	std::array<u32, JAMMA_INPUT_REPORT_QUADS> BuildP1IOJammaAttachReport(u32 jamma_status)
+	{
+		return {{
+			0x98062caa, 0x00000000, 0x00000000, 0x00000000,
+			JAMMA_P1_JVS_PRESENT, 0x80000000, 0x00000000, 0x01020101,
+			jamma_status,
+		}};
+	}
+
+	std::array<u32, JAMMA_INPUT_REPORT_QUADS> BuildP1IOJammaLiveReport(u32 source_bits, u32 jamma_status)
+	{
+		return {{
+			ByteSwap32(JAMMA_COIN1_COUNTER_BASE + s_p1io_coin_counters[0]), ByteSwap32(s_p1io_coin_counters[1]),
+			0x00000000, 0x00000000,
+			JAMMA_P1_JVS_PRESENT | ByteSwap32(source_bits), 0x80000000, 0x00000000, 0x01020101,
+			jamma_status,
+		}};
+	}
+
+	bool WriteP1IOJammaInputReport(u32 dest, u32 source_bits, u32 jamma_status)
+	{
+		const std::array<u32, JAMMA_INPUT_REPORT_QUADS> report = BuildP1IOJammaLiveReport(source_bits, jamma_status);
+		const u32 byte_count = static_cast<u32>(report.size() * sizeof(report[0]));
+		const bool dma_written = iopMemSafeWriteBytes(dest, report.data(), byte_count);
+		if (ShouldLogLimited(s_p1io_log_count, 32))
+		{
+			DevCon.WriteLn("FW HLE: P1IO input DMA dest=0x%x bytes=0x%x source=0x%x coin1=%u coin2=%u jamma_status=0x%x ok=%u",
+				dest, byte_count, source_bits, s_p1io_coin_counters[0], s_p1io_coin_counters[1], jamma_status, dma_written ? 1 : 0);
+		}
+		FwTrace("p1io input dma dest=0x%x bytes=0x%x source=0x%x coin1=%u coin2=%u status=0x%x ok=%u",
+			dest, byte_count, source_bits, s_p1io_coin_counters[0], s_p1io_coin_counters[1], jamma_status, dma_written ? 1 : 0);
+		return dma_written;
+	}
+
 	bool TryHleKonamiCommand(u32 offset_low, const u32* payload, u32 payload_quads)
 	{
 		const u32 command_offset = offset_low & 0xfff;
@@ -1102,6 +1675,9 @@ namespace
 			payload_quads > 0 ? payload[0] : 0, payload_quads > 1 ? payload[1] : 0, payload_quads > 2 ? payload[2] : 0, payload_quads > 3 ? payload[3] : 0);
 		if (command_offset != KONAMI_CF_COMMAND_OFFSET && command_offset != KONAMI_ATA_COMMAND_OFFSET && payload_quads >= 1)
 		{
+			if (HleNetCommand(command_offset, payload, payload_quads))
+				return true;
+
 			if (command_offset == 0x100 && HleUartCommand(payload, payload_quads))
 				return true;
 
@@ -1111,23 +1687,44 @@ namespace
 			if (command_offset == 0x140 && HleBbsramCommand(payload, payload_quads))
 				return true;
 
-			if (command_offset == 0xe0 && payload_quads >= 8)
+			if (command_offset == KONAMI_JAMMA_INIT_COMMAND_OFFSET && payload_quads >= 8)
 			{
-				static constexpr u32 JAMMA_INIT_RESPONSE[] = {
+				const u32 bind_state = GetP1IOBindState();
+				(void)UpdateP1IOCoinCounters(bind_state);
+				const u32 jamma_status = GetP1IOJammaStatus();
+				s_jamma_input_dest = payload[0];
+				s_last_jamma_input_status = jamma_status;
+				const std::array<u32, JAMMA_INPUT_REPORT_QUADS> jamma_attached_input = BuildP1IOJammaAttachReport(jamma_status);
+				const u32 JAMMA_INIT_RESPONSE[] = {
 					0xfe4b109c, 0x00000000, 0x00000000, 0x00000000,
 					JAMMA_P1_JVS_PRESENT,
 					0x81000100, 0x00000000, 0x01020101,
-					JAMMA_STATUS_NEUTRAL,
-				};
-				static constexpr u32 JAMMA_ATTACHED_INPUT[] = {
-					0x98062caa, 0x00000000, 0x00000000, 0x00000000,
-					JAMMA_P1_JVS_PRESENT, 0x80000000, 0x00000000, 0x01020101, JAMMA_STATUS_NEUTRAL,
+					jamma_status,
 				};
 				QueuePendingDbufBlockWrite(0x1000, payload[0], JAMMA_INIT_RESPONSE,
 					sizeof(JAMMA_INIT_RESPONSE) / sizeof(JAMMA_INIT_RESPONSE[0]));
 				for (u32 i = 0; i < 8; i++)
-					QueuePendingDbufBlockWrite(0x1000, payload[0], JAMMA_ATTACHED_INPUT,
-						sizeof(JAMMA_ATTACHED_INPUT) / sizeof(JAMMA_ATTACHED_INPUT[0]));
+					QueuePendingDbufBlockWrite(0x1000, payload[0], jamma_attached_input.data(),
+						static_cast<u32>(jamma_attached_input.size()));
+				return true;
+			}
+
+			if (command_offset == KONAMI_JAMMA_OUTPUT_COMMAND_OFFSET && payload_quads >= 8)
+			{
+				if (s_jamma_input_dest == INVALID_JAMMA_INPUT_DEST)
+				{
+					if (ShouldLogLimited(s_p1io_log_count, 32))
+						DevCon.WriteLn("FW HLE: P1IO output ignored until input dest is registered");
+					return true;
+				}
+
+				const u32 bind_state = GetP1IOBindState();
+				const bool bind_state_changed = UpdateP1IOCoinCounters(bind_state);
+				const u32 source_bits = BuildP1IOInputSourceBits(bind_state);
+				const u32 jamma_status = GetP1IOJammaStatus();
+				if ((bind_state_changed || jamma_status != s_last_jamma_input_status) &&
+					WriteP1IOJammaInputReport(s_jamma_input_dest, source_bits, jamma_status))
+					s_last_jamma_input_status = jamma_status;
 				return true;
 			}
 
@@ -1317,6 +1914,103 @@ namespace
 			DevCon.WriteLn("FW HLE: PHT%d hdr node=0x%x off_hi=0x%x off_low=0x%x tlabel=0x%x speed=0x%x bytes=0x%x ctrl=0x%x",
 				channel, hdr0 >> 16, hdr0 & 0xffff, hdr1, (hdr2 >> 19) & 0x3f, (hdr2 >> 16) & 0x7, hdr2 & 0xffff, fwRu32(base));
 		}
+	}
+}
+
+namespace FireWire
+{
+	const char* GetConfigSection()
+	{
+		return FIREWIRE_CONFIG_SECTION;
+	}
+
+	std::string GetConfigSubKey(std::string_view bind_name)
+	{
+		std::string key(P1IO_CONFIG_PREFIX);
+		key.append(bind_name);
+		return key;
+	}
+
+	std::span<const InputBindingInfo> GetP1IOBindings()
+	{
+		return P1IO_BINDINGS;
+	}
+
+	float GetP1IOBindValue(u32 bind_index)
+	{
+		if (bind_index >= P1IO_BIND_COUNT)
+			return 0.0f;
+
+		return (s_p1io_bind_state.load(std::memory_order_relaxed) & (1u << bind_index)) ? 1.0f : 0.0f;
+	}
+
+	void SetP1IOBindValue(u32 bind_index, float value)
+	{
+		if (bind_index >= P1IO_BIND_COUNT)
+			return;
+
+		const u32 mask = 1u << bind_index;
+		if (value >= 0.5f)
+			s_p1io_bind_state.fetch_or(mask, std::memory_order_relaxed);
+		else
+			s_p1io_bind_state.fetch_and(~mask, std::memory_order_relaxed);
+	}
+
+	void ResetP1IOBindState()
+	{
+		s_p1io_bind_state.store(0, std::memory_order_relaxed);
+	}
+
+	bool MapP1IO(SettingsInterface& si, const std::vector<std::pair<GenericInputBinding, std::string>>& mapping)
+	{
+		u32 num_mappings = 0;
+		for (const InputBindingInfo& bi : P1IO_BINDINGS)
+		{
+			if (bi.generic_mapping == GenericInputBinding::Unknown)
+				continue;
+
+			const auto found = std::ranges::find_if(mapping, [generic = bi.generic_mapping](const auto& entry) {
+				return entry.first == generic;
+			});
+			const std::string key = GetConfigSubKey(bi.name);
+			if (found != mapping.end())
+			{
+				si.SetStringValue(FIREWIRE_CONFIG_SECTION, key.c_str(), found->second.c_str());
+				num_mappings++;
+			}
+			else
+			{
+				si.DeleteValue(FIREWIRE_CONFIG_SECTION, key.c_str());
+			}
+		}
+
+		return num_mappings > 0;
+	}
+
+	void ClearP1IOBindings(SettingsInterface& si)
+	{
+		for (const InputBindingInfo& bi : P1IO_BINDINGS)
+		{
+			const std::string key = GetConfigSubKey(bi.name);
+			si.DeleteValue(FIREWIRE_CONFIG_SECTION, key.c_str());
+		}
+	}
+
+	void CopyConfiguration(SettingsInterface* dest_si, const SettingsInterface& src_si, bool copy_bindings)
+	{
+		if (!copy_bindings)
+			return;
+
+		for (const InputBindingInfo& bi : P1IO_BINDINGS)
+		{
+			const std::string key = GetConfigSubKey(bi.name);
+			dest_si->CopyStringValue(src_si, FIREWIRE_CONFIG_SECTION, key.c_str());
+		}
+	}
+
+	void SetDefaultConfiguration(SettingsInterface* si)
+	{
+		si->ClearSection(FIREWIRE_CONFIG_SECTION);
 	}
 }
 
@@ -1974,6 +2668,14 @@ void logFwAction(u32 addr, u32 value, bool write)
 		std::memcpy(s_bootrom, KONAMI_FACTORY_MAC, sizeof(KONAMI_FACTORY_MAC));
 		std::memcpy(s_bootrom + 0xf000, KONAMI_MAC_BACKUP, sizeof(KONAMI_MAC_BACKUP));
 		LoadBbsram();
+		for (auto& packets : s_net_rx_packets)
+			packets.clear();
+		FireWire::ResetP1IOBindState();
+		s_jamma_input_dest = INVALID_JAMMA_INPUT_DEST;
+		s_last_jamma_input_status = JAMMA_STATUS_NEUTRAL;
+		s_last_p1io_bind_state = 0;
+		s_p1io_coin_counters[0] = 0;
+		s_p1io_coin_counters[1] = 0;
 		for (int channel = 0; channel < 2; channel++)
 		{
 			s_pht_tx_fifo[channel].clear();
@@ -1989,6 +2691,7 @@ void logFwAction(u32 addr, u32 value, bool write)
 		s_sector_read_log_count = 0;
 		s_pht_log_count = 0;
 		s_runtime_log_count = 0;
+		s_p1io_log_count = 0;
 		FwTrace("FWopen");
 	// Initializing our registers.
 	fwregs = (s8*)calloc(0x10000, 1);
@@ -2053,6 +2756,8 @@ void PHYRead()
 
 u32 FWread32(u32 addr)
 {
+	SampleEeNetworkState("fw-read");
+
 	u32 ret = 0;
 
 	switch (addr)
@@ -2107,6 +2812,8 @@ u32 FWread32(u32 addr)
 
 void FWwrite32(u32 addr, u32 value)
 {
+	SampleEeNetworkState("fw-write");
+
 	logFwAction(addr, value, true);
 	switch (addr)
 	{

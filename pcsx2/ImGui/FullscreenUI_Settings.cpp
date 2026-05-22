@@ -6,6 +6,7 @@
 #include "GS/GSUtil.h"
 #include "Achievements.h"
 #include "GameList.h"
+#include "FW.h"
 #include "Host.h"
 #include "Host/AudioStream.h"
 #include "INISettingsInterface.h"
@@ -4302,6 +4303,7 @@ void FullscreenUI::ResetControllerSettings()
 				Pad::SetDefaultControllerConfig(*dsi);
 				Pad::SetDefaultHotkeyConfig(*dsi);
 				USB::SetDefaultConfiguration(dsi);
+				FireWire::SetDefaultConfiguration(dsi);
 				ShowToast(std::string(), FSUI_STR("Controller settings reset to default."));
 			}
 		});
@@ -4337,6 +4339,7 @@ void FullscreenUI::DoLoadInputProfile()
 			SettingsInterface* dsi = GetEditingSettingsInterface();
 			Pad::CopyConfiguration(dsi, ssi, true, true, IsEditingGameSettings(dsi));
 			USB::CopyConfiguration(dsi, ssi, true, true);
+			FireWire::CopyConfiguration(dsi, ssi, true);
 			SetSettingsChanged(dsi);
 			ShowToast(std::string(), fmt::format(FSUI_FSTR("Input profile '{}' loaded."), title));
 			CloseChoiceDialog();
@@ -4351,6 +4354,7 @@ void FullscreenUI::DoSaveInputProfile(const std::string& name)
 	SettingsInterface* ssi = GetEditingSettingsInterface();
 	Pad::CopyConfiguration(&dsi, *ssi, true, true, IsEditingGameSettings(ssi));
 	USB::CopyConfiguration(&dsi, *ssi, true, true);
+	FireWire::CopyConfiguration(&dsi, *ssi, true);
 	if (dsi.Save())
 		ShowToast(std::string(), fmt::format(FSUI_FSTR("Input profile '{}' saved."), name));
 	else

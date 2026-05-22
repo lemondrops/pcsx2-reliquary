@@ -27,9 +27,22 @@ static bool SifIopFsTraceEnabled()
 	return enabled;
 }
 
+static bool SifWe2K3NetTraceEnabled()
+{
+	static const bool enabled = std::getenv("PCSX2_WE2K3_NET_TRACE") != nullptr;
+	return enabled;
+}
+
 static bool SifTraceInterestingSid(u32 sid)
 {
-	return sid >= 0x80000590u && sid <= 0x8000059fu;
+	return (sid >= 0x80000590u && sid <= 0x8000059fu) ||
+		(SifWe2K3NetTraceEnabled() && sid >= 0x10u && sid <= 0x17u);
+}
+
+static bool SifTracePrioritySid(u32 sid)
+{
+	return SifWe2K3NetTraceEnabled() &&
+		((sid >= 0x80000590u && sid <= 0x8000059fu) || (sid >= 0x10u && sid <= 0x17u));
 }
 
 static std::string SifTraceAsciiFromBytes(const u8* bytes, int byte_count)
@@ -191,7 +204,7 @@ static SifTraceTrackedRpc* SifTraceTrack(u32 sid, u32 cd, u32 sd)
 
 void SifTraceRegisterRpc(u32 sid, u32 sd, u32 func, u32 buf, u32 cfunc, u32 cbuf, u32 qd)
 {
-	if (!SifIopFsTraceEnabled() || !SifTraceInterestingSid(sid))
+	if ((!SifIopFsTraceEnabled() && !SifWe2K3NetTraceEnabled()) || !SifTraceInterestingSid(sid))
 		return;
 
 	SifTraceTrack(sid, 0, sd);
@@ -208,7 +221,7 @@ static u32 SifTraceSidFromServerData(u32 sd)
 
 void SifTraceRpcPacket(const char* direction, u32 addr, const u32* words, int count, bool dest_is_iop)
 {
-	if (!SifIopFsTraceEnabled() || count < 4)
+	if ((!SifIopFsTraceEnabled() && !SifWe2K3NetTraceEnabled()) || count < 4)
 		return;
 
 	const u32 psize = words[0] & 0xff;
@@ -220,8 +233,8 @@ void SifTraceRpcPacket(const char* direction, u32 addr, const u32* words, int co
 		return;
 
 	static int log_count = 0;
-	if (log_count >= 2000)
-		return;
+	static int path_log_count = 0;
+	static int priority_log_count = 0;
 
 	const u32 SIF_CMD_RPC_END = 0x80000008u;
 	const u32 SIF_CMD_RPC_BIND = 0x80000009u;
@@ -236,6 +249,15 @@ void SifTraceRpcPacket(const char* direction, u32 addr, const u32* words, int co
 			return;
 
 		SifTraceTrack(sid, cd, 0);
+		const bool priority_sid = SifTracePrioritySid(sid);
+		if (priority_sid)
+		{
+			if (priority_log_count >= 4096)
+				return;
+			priority_log_count++;
+		}
+		else if (log_count >= 2000)
+			return;
 		log_count++;
 		Console.WriteLn("[IOPFS] %s RPC_BIND sid=0x%08x cd=0x%08x rec_id=0x%08x pkt=0x%08x rpc_id=0x%08x addr=0x%08x psize=0x%x dsize=0x%x dest=0x%08x opt=0x%08x head=%s%s",
 			direction, sid, cd, words[4], words[5], words[6], addr, psize, dsize, dest, opt,
@@ -267,6 +289,23 @@ void SifTraceRpcPacket(const char* direction, u32 addr, const u32* words, int co
 		const bool path_payload = dest_is_iop && SifTraceIopPayloadHasPath(dest, dsize);
 		if ((!tracked || !SifTraceInterestingSid(tracked->sid)) && !path_payload)
 			return;
+		const bool priority_sid = tracked && SifTracePrioritySid(tracked->sid);
+		if (priority_sid)
+		{
+			if (priority_log_count >= 4096)
+				return;
+			priority_log_count++;
+		}
+		else if (path_payload)
+		{
+			if (path_log_count >= 4096)
+				return;
+			path_log_count++;
+		}
+		else if (log_count >= 2000)
+		{
+			return;
+		}
 
 		log_count++;
 		Console.WriteLn("[IOPFS] %s %s sid=0x%08x rpc_number=0x%08x cd=0x%08x sd=0x%08x send=0x%x recv=0x%x recvbuf=0x%08x rmode=0x%08x rec_id=0x%08x pkt=0x%08x rpc_id=0x%08x addr=0x%08x psize=0x%x dsize=0x%x dest=0x%08x opt=0x%08x head=%s%s",
@@ -288,6 +327,15 @@ void SifTraceRpcPacket(const char* direction, u32 addr, const u32* words, int co
 		if (ended_cid == SIF_CMD_RPC_BIND && sd)
 			tracked->sd = sd;
 
+		const bool priority_sid = SifTracePrioritySid(tracked->sid);
+		if (priority_sid)
+		{
+			if (priority_log_count >= 4096)
+				return;
+			priority_log_count++;
+		}
+		else if (log_count >= 2000)
+			return;
 		log_count++;
 		Console.WriteLn("[IOPFS] %s RPC_END sid=0x%08x ended_cid=0x%08x cd=0x%08x sd=0x%08x rec_id=0x%08x pkt=0x%08x rpc_id=0x%08x buf=0x%08x cbuf=0x%08x addr=0x%08x psize=0x%x dsize=0x%x dest=0x%08x opt=0x%08x head=%s%s",
 			direction, tracked->sid, ended_cid, cd, sd, words[4], words[5], words[6], words[10], words[11],
@@ -304,6 +352,15 @@ void SifTraceRpcPacket(const char* direction, u32 addr, const u32* words, int co
 		if (!SifTraceInterestingSid(words[6]))
 			return;
 
+		const bool priority_sid = SifTracePrioritySid(words[6]);
+		if (priority_sid)
+		{
+			if (priority_log_count >= 4096)
+				return;
+			priority_log_count++;
+		}
+		else if (log_count >= 2000)
+			return;
 		log_count++;
 		Console.WriteLn("[IOPFS] %s RPC_RDATA rpc_id=0x%08x recvbuf=0x%08x src=0x%08x rdest=0x%08x size=0x%x addr=0x%08x psize=0x%x dsize=0x%x dest=0x%08x opt=0x%08x head=%s%s",
 			direction, words[6], recvbuf, src, rdest, size, addr, psize, dsize, dest, opt,
@@ -313,7 +370,7 @@ void SifTraceRpcPacket(const char* direction, u32 addr, const u32* words, int co
 
 void SifTraceCommandPacket(const char* direction, u32 addr, const u32* words, int count, bool dest_is_iop)
 {
-	if (!SifIopFsTraceEnabled() || count < 4)
+	if ((!SifIopFsTraceEnabled() && !SifWe2K3NetTraceEnabled()) || count < 4)
 		return;
 
 	const u32 psize = words[0] & 0xff;
@@ -328,7 +385,7 @@ void SifTraceCommandPacket(const char* direction, u32 addr, const u32* words, in
 		return;
 
 	static int log_count = 0;
-	if (log_count >= 512)
+	if (log_count >= 8192)
 		return;
 
 	const bool payload_interesting = dest_is_iop && SifTraceIopPayloadHasPath(dest, dsize);

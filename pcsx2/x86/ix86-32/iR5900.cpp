@@ -25,6 +25,8 @@
 // Only for MOVQ workaround.
 #include "common/emitter/internal.h"
 
+#include <cstdlib>
+
 //#define DUMP_BLOCKS 1
 //#define TRACE_BLOCKS 1
 
@@ -842,6 +844,24 @@ void recClear(u32 addr, u32 size)
 
 static int* s_pCode;
 
+static void TraceWe2K3ZeroBranchTarget(u32 target, u32 after_delay_pc)
+{
+	if (target != 0 || !std::getenv("PCSX2_WE2K3_NET_TRACE"))
+		return;
+
+	Console.WriteLn("[WE2K3_NET] EE branch target zero after_delay_pc=0x%08x pc=0x%08x ra=0x%08x sp=0x%08x gp=0x%08x epc=0x%08x errorepc=0x%08x cause=0x%08x status=0x%08x cycle=0x%llx",
+		after_delay_pc,
+		cpuRegs.pc,
+		cpuRegs.GPR.r[31].UL[0],
+		cpuRegs.GPR.r[29].UL[0],
+		cpuRegs.GPR.r[28].UL[0],
+		cpuRegs.CP0.n.EPC,
+		cpuRegs.CP0.n.ErrorEPC,
+		cpuRegs.CP0.n.Cause,
+		cpuRegs.CP0.n.Status.val,
+		static_cast<unsigned long long>(cpuRegs.cycle));
+}
+
 
 // Branch to a runtime variable target
 // pass the target in eax
@@ -850,6 +870,9 @@ void SetBranchReg()
 	g_branch = 1;
 
 	xMOV(ptr32[&cpuRegs.pc], eax);
+	xMOV(arg2regd, pc);
+	xFastCall((const void*)TraceWe2K3ZeroBranchTarget, eax, arg2regd);
+	xMOV(eax, ptr32[&cpuRegs.pc]);
 
 	// Test for jump to unaligned, only needed for register branches
 	//  since unaligned targets can't be encoded with imm
@@ -2160,6 +2183,21 @@ static void recRecompile(const u32 startpc)
 {
 	u32 i = 0;
 	u32 willbranch3 = 0;
+
+	if (!startpc && std::getenv("PCSX2_WE2K3_NET_TRACE"))
+	{
+		Console.WriteLn("[WE2K3_NET] EE recRecompile zero startpc pc=0x%08x ra=0x%08x sp=0x%08x gp=0x%08x epc=0x%08x errorepc=0x%08x cause=0x%08x status=0x%08x cycle=0x%llx next=0x%llx",
+			cpuRegs.pc,
+			cpuRegs.GPR.r[31].UL[0],
+			cpuRegs.GPR.r[29].UL[0],
+			cpuRegs.GPR.r[28].UL[0],
+			cpuRegs.CP0.n.EPC,
+			cpuRegs.CP0.n.ErrorEPC,
+			cpuRegs.CP0.n.Cause,
+			cpuRegs.CP0.n.Status.val,
+			static_cast<unsigned long long>(cpuRegs.cycle),
+			static_cast<unsigned long long>(cpuRegs.nextEventCycle));
+	}
 
 	pxAssert(startpc);
 

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "ImGui/ImGuiManager.h"
+#include "FW.h"
 #include "Input/InputManager.h"
 #include "Input/InputSource.h"
 #include "SIO/Pad/Pad.h"
@@ -110,6 +111,7 @@ namespace InputManager
 	static void AddHotkeyBindings(SettingsInterface& si, bool is_profile);
 	static void AddPadBindings(SettingsInterface& si, u32 pad, bool is_profile);
 	static void AddUSBBindings(SettingsInterface& si, u32 port, bool is_profile);
+	static void AddFireWireBindings(SettingsInterface& si, bool is_profile);
 	static void UpdateContinuedVibration();
 	static void GenerateRelativeMouseEvents();
 
@@ -1458,6 +1460,39 @@ void InputManager::PauseVibration()
 	}
 }
 
+void InputManager::AddFireWireBindings(SettingsInterface& si, bool is_profile)
+{
+	FireWire::ResetP1IOBindState();
+
+	for (const InputBindingInfo& bi : FireWire::GetP1IOBindings())
+	{
+		const std::string bind_name(FireWire::GetConfigSubKey(bi.name));
+		switch (bi.bind_type)
+		{
+			case InputBindingInfo::Type::Button:
+			case InputBindingInfo::Type::Axis:
+			case InputBindingInfo::Type::HalfAxis:
+			{
+				const std::vector<std::string> bindings(si.GetStringList(FireWire::GetConfigSection(), bind_name.c_str()));
+				if (!bindings.empty())
+				{
+					const float sensitivity = si.GetFloatValue(FireWire::GetConfigSection(), fmt::format("{}Scale", bi.name).c_str(), 1.0f);
+					const float deadzone = si.GetFloatValue(FireWire::GetConfigSection(), fmt::format("{}Deadzone", bi.name).c_str(), 0.0f);
+					AddBindings(
+						bindings, InputAxisEventHandler{[bind_index = bi.bind_index, sensitivity, deadzone](InputBindingKey key, float value) {
+							FireWire::SetP1IOBindValue(bind_index, ApplySingleBindingScale(sensitivity, deadzone, value));
+						}},
+						bi.bind_type, si, FireWire::GetConfigSection(), bind_name.c_str(), is_profile);
+				}
+			}
+			break;
+
+			default:
+				break;
+		}
+	}
+}
+
 void InputManager::UpdateContinuedVibration()
 {
 	// update vibration intensities, so if the game does a long effect, it continues
@@ -1581,6 +1616,7 @@ void InputManager::ReloadBindings(SettingsInterface& si, SettingsInterface& bind
 
 	for (u32 port = 0; port < USB::NUM_PORTS; port++)
 		AddUSBBindings(binding_si, port, is_binding_profile);
+	AddFireWireBindings(binding_si, is_binding_profile);
 
 	UpdateHostMouseMode();
 }

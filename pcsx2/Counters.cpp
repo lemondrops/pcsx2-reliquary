@@ -6,6 +6,7 @@
 
 #include "Common.h"
 #include "R3000A.h"
+#include "Memory.h"
 #include "Counters.h"
 #include "IopCounters.h"
 
@@ -20,6 +21,9 @@
 #include "Recording/InputRecording.h"
 #include "VMManager.h"
 #include "VUmicro.h"
+
+#include <cstdlib>
+#include <cstring>
 
 static const uint EECNT_FUTURE_TARGET = 0x10000000;
 
@@ -484,6 +488,172 @@ static __fi void DoFMVSwitch()
 	}
 }
 
+static u8 TraceWe2K3ReadEe8(u32 address)
+{
+	if (!eeMem || address >= Ps2MemSize::ExposedRam)
+		return 0;
+
+	return eeMem->Main[address];
+}
+
+static u32 TraceWe2K3ReadEe32(u32 address)
+{
+	if (!eeMem || address + sizeof(u32) > Ps2MemSize::ExposedRam)
+		return 0;
+
+	u32 value = 0;
+	std::memcpy(&value, &eeMem->Main[address], sizeof(value));
+	return value;
+}
+
+struct TraceWe2K3NetworkSnapshot
+{
+	u32 setup_offset;
+	u32 ip_valid;
+	u32 init_param;
+	u32 callback_handle;
+	u32 callback_status;
+	u32 callback_count;
+	u32 net_state;
+	u32 retry;
+	u32 err;
+	u32 wait;
+	u32 status;
+	u32 status_arg;
+	u32 gate;
+	u32 next;
+	u32 ui_state;
+	u32 ui_net_active;
+	u32 prep_state;
+	u32 prep_result;
+	u32 flow_state;
+	u32 flow_next;
+	u32 flow_gate;
+	u32 upinfo_state;
+	u32 upinfo_result;
+	u32 upinfo_len0;
+	u32 upinfo_sum0;
+	u32 upinfo_len1;
+	u32 upinfo_sum1;
+	u32 upinfo_len2;
+	u32 upinfo_sum2;
+	u32 upinfo_len3;
+	u32 upinfo_sum3;
+	u32 upinfo_len4;
+	u32 upinfo_sum4;
+	u32 checksum_sector;
+	u32 checksum_remaining;
+	u32 checksum_sum;
+	u8 setup_flag;
+	u8 ip0;
+	u8 ip1;
+	u8 ip2;
+	u8 ip3;
+};
+
+static void TraceWe2K3NetworkFrameState()
+{
+	if (!std::getenv("PCSX2_WE2K3_NET_TRACE"))
+		return;
+
+	TraceWe2K3NetworkSnapshot snapshot = {};
+	snapshot.setup_offset = TraceWe2K3ReadEe32(0x01bf01b8);
+	snapshot.setup_flag = (snapshot.setup_offset < 0x10000) ? TraceWe2K3ReadEe8(0x01beef80 + snapshot.setup_offset) : 0;
+	snapshot.ip_valid = TraceWe2K3ReadEe32(0x01b59024);
+	snapshot.ip0 = TraceWe2K3ReadEe8(0x01b58fa6);
+	snapshot.ip1 = TraceWe2K3ReadEe8(0x01b58fa7);
+	snapshot.ip2 = TraceWe2K3ReadEe8(0x01b58fa8);
+	snapshot.ip3 = TraceWe2K3ReadEe8(0x01b58fa9);
+	snapshot.init_param = TraceWe2K3ReadEe32(0x01d67bf0);
+	snapshot.callback_handle = TraceWe2K3ReadEe32(0x01d67bd8);
+	snapshot.callback_status = TraceWe2K3ReadEe32(0x01d67bf4);
+	snapshot.callback_count = TraceWe2K3ReadEe32(0x01d67bf8);
+	snapshot.net_state = TraceWe2K3ReadEe32(0x01d67c00);
+	snapshot.retry = TraceWe2K3ReadEe32(0x01d67c04);
+	snapshot.err = TraceWe2K3ReadEe32(0x01d67c08);
+	snapshot.wait = TraceWe2K3ReadEe32(0x01d67c0c);
+	snapshot.status = TraceWe2K3ReadEe32(0x01d67c10);
+	snapshot.status_arg = TraceWe2K3ReadEe32(0x01d67c14);
+	snapshot.gate = TraceWe2K3ReadEe32(0x01d67c18);
+	snapshot.next = TraceWe2K3ReadEe32(0x01d67c1c);
+	snapshot.ui_state = TraceWe2K3ReadEe32(0x0040d0d0);
+	snapshot.ui_net_active = TraceWe2K3ReadEe32(0x0040d0e8);
+	snapshot.prep_state = TraceWe2K3ReadEe32(0x01bf03e0);
+	snapshot.prep_result = TraceWe2K3ReadEe32(0x01bf03e4);
+	snapshot.flow_state = TraceWe2K3ReadEe32(0x01bf03f8);
+	snapshot.flow_next = TraceWe2K3ReadEe32(0x01bf03fc);
+	snapshot.flow_gate = TraceWe2K3ReadEe32(0x01bf0404);
+	snapshot.upinfo_state = TraceWe2K3ReadEe32(0x01bf046c);
+	snapshot.upinfo_result = TraceWe2K3ReadEe32(0x01bf049c);
+	snapshot.upinfo_len0 = TraceWe2K3ReadEe32(0x01bf0474);
+	snapshot.upinfo_sum0 = TraceWe2K3ReadEe32(0x01bf0478);
+	snapshot.upinfo_len1 = TraceWe2K3ReadEe32(0x01bf047c);
+	snapshot.upinfo_sum1 = TraceWe2K3ReadEe32(0x01bf0480);
+	snapshot.upinfo_len2 = TraceWe2K3ReadEe32(0x01bf0484);
+	snapshot.upinfo_sum2 = TraceWe2K3ReadEe32(0x01bf0488);
+	snapshot.upinfo_len3 = TraceWe2K3ReadEe32(0x01bf048c);
+	snapshot.upinfo_sum3 = TraceWe2K3ReadEe32(0x01bf0490);
+	snapshot.upinfo_len4 = TraceWe2K3ReadEe32(0x01bf0494);
+	snapshot.upinfo_sum4 = TraceWe2K3ReadEe32(0x01bf0498);
+	snapshot.checksum_sector = TraceWe2K3ReadEe32(0x01b51c10);
+	snapshot.checksum_remaining = TraceWe2K3ReadEe32(0x01b51c14);
+	snapshot.checksum_sum = TraceWe2K3ReadEe32(0x01b51c18);
+
+	static bool have_previous = false;
+	static TraceWe2K3NetworkSnapshot previous = {};
+	const bool changed = !have_previous || std::memcmp(&snapshot, &previous, sizeof(snapshot)) != 0;
+	if (!changed && (g_FrameCount % 300) != 0)
+		return;
+
+	have_previous = true;
+	previous = snapshot;
+
+	const bool static_ip_ok = snapshot.ip_valid != 0 && !((snapshot.ip0 == 0 && snapshot.ip1 == 0 && snapshot.ip2 == 0 && snapshot.ip3 == 0) || (snapshot.ip0 == 0xa9 && snapshot.ip1 == 0xfe));
+	Console.WriteLn("[WE2K3_NET] frame=%u changed=%u setup_offset=0x%08x setup_flag=0x%02x ip_valid=0x%08x ip=%u.%u.%u.%u would_register=%u init_param=0x%08x callback_handle=0x%08x callback_status=0x%08x callback_count=0x%08x net_state=0x%08x retry=0x%08x err=0x%08x wait=0x%08x status=0x%08x status_arg=0x%08x gate=0x%08x next=0x%08x ui_state=0x%08x ui_net_active=0x%08x prep_state=0x%08x prep_result=0x%08x flow_state=0x%08x flow_next=0x%08x flow_gate=0x%08x upinfo_state=0x%08x upinfo_ticks=0x%08x upinfo_result=0x%08x upinfo_len_sum=0x%08x/0x%08x,0x%08x/0x%08x,0x%08x/0x%08x,0x%08x/0x%08x,0x%08x/0x%08x checksum_sector=0x%08x checksum_remaining=0x%08x checksum_sum=0x%08x",
+		g_FrameCount,
+		changed ? 1 : 0,
+		snapshot.setup_offset,
+		snapshot.setup_flag,
+		snapshot.ip_valid,
+		snapshot.ip0, snapshot.ip1, snapshot.ip2, snapshot.ip3,
+		(snapshot.setup_flag != 0 && static_ip_ok) ? 1 : 0,
+		snapshot.init_param,
+		snapshot.callback_handle,
+		snapshot.callback_status,
+		snapshot.callback_count,
+		snapshot.net_state,
+		snapshot.retry,
+		snapshot.err,
+		snapshot.wait,
+		snapshot.status,
+		snapshot.status_arg,
+		snapshot.gate,
+		snapshot.next,
+		snapshot.ui_state,
+		snapshot.ui_net_active,
+		snapshot.prep_state,
+		snapshot.prep_result,
+		snapshot.flow_state,
+		snapshot.flow_next,
+		snapshot.flow_gate,
+		snapshot.upinfo_state,
+		TraceWe2K3ReadEe32(0x01bf0470),
+		snapshot.upinfo_result,
+		snapshot.upinfo_len0,
+		snapshot.upinfo_sum0,
+		snapshot.upinfo_len1,
+		snapshot.upinfo_sum1,
+		snapshot.upinfo_len2,
+		snapshot.upinfo_sum2,
+		snapshot.upinfo_len3,
+		snapshot.upinfo_sum3,
+		snapshot.upinfo_len4,
+		snapshot.upinfo_sum4,
+		snapshot.checksum_sector,
+		snapshot.checksum_remaining,
+		snapshot.checksum_sum);
+}
+
 static __fi void VSyncStart(u64 sCycle)
 {
 	// End-of-frame tasks.
@@ -500,6 +670,7 @@ static __fi void VSyncStart(u64 sCycle)
 	VMManager::Internal::PollInputOnCPUThread();
 
 	EECNT_LOG("    ================  EE COUNTER VSYNC START (frame: %d)  ================", g_FrameCount);
+	TraceWe2K3NetworkFrameState();
 
 	// Memcard auto ejection - Uses a tick system timed off of real time, decrementing one tick per frame.
 	AutoEject::CountDownTicks();
