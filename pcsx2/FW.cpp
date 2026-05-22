@@ -92,6 +92,16 @@ namespace
 	constexpr u32 KONAMI_BBSRAM_STATUS_OFFSET = 0x00080000;
 	constexpr u32 KONAMI_BOOTROM_STATUS_OFFSET = 0x00090000;
 	constexpr u32 KONAMI_FSCI_STATUS_OFFSET = 0x000a0000;
+	constexpr u32 KONAMI_BBSRAM_EAMUSEMENT_OFFSET = 0x684;
+	constexpr u32 KONAMI_BBSRAM_NETWORK_ID_OFFSET = 0x686;
+	constexpr u32 KONAMI_EE_NET_READY_ADDRESS = 0x01b59024;
+	constexpr u32 KONAMI_EE_NET_IP_ADDRESS = 0x01b58fa6;
+	constexpr u32 KONAMI_EE_ERROR_DISPLAY_ADDRESS = 0x01b58a50;
+	constexpr u32 KONAMI_EE_PENDING_ERROR_ADDRESS = 0x0040d10c;
+	constexpr u32 KONAMI_EE_MAIN_STATE_ADDRESS = 0x0040d0d0;
+	constexpr u32 KONAMI_EE_SECURITY_RESULT_ADDRESS = 0x0040d0f8;
+	constexpr u32 KONAMI_EE_SETUP_STATE_ADDRESS = 0x01bf04d8;
+	constexpr u32 KONAMI_EE_SECURITY_BOOT_MODE_ADDRESS = 0x01d67bf0;
 	constexpr u32 KONAMI_CROM_BASE = 0xf0000400;
 	constexpr u32 KONAMI_BOOT_READY_OFFSET_HIGH = 0xfffd;
 	constexpr u32 KONAMI_BOOT_READY_OFFSET_LOW = 0x05735734;
@@ -118,6 +128,7 @@ namespace
 	constexpr u32 P1IO_SOURCE_TEST = 1u << 15;
 	constexpr u32 P1IO_SOURCE_SERVICE = 1u << 14;
 	constexpr u32 SECTOR_SIZE = 0x200;
+	constexpr u32 KONAMI_DBUF_WRITEB_MAX_PAYLOAD = 0x200;
 	constexpr u32 BOOTROM_SIZE = 0x10000;
 	constexpr u32 BBSRAM_SIZE = 0x2000;
 	constexpr const char* WE2K3_BLOB_PATH = "";
@@ -220,6 +231,16 @@ namespace
 		0, 0, 0, 0, 0, 0, 0, 0,
 	};
 	constexpr u8 KONAMI_NET_SECONDARY_DNS[] = {0, 0, 0, 0};
+	// WE2K3 accepts a programmed backup Dallas key record when no new security key is inserted.
+	constexpr u8 KONAMI_DALLAS_BOOTROM_RECORD[] = {
+		0x00, 0x04, 0x5f, 0x00, 0x00, 0x01, 0x00, 0x00,
+		0x8c, 0x02, 0x4d, 0x83, 0x06, 0xd2, 0x00, 0x00,
+		'G', 'E', 'C', '2', '7', 0x00, 0x00, 0x00,
+		0x20, 0x03, 'J', 'A', 'E', 0x00, 0x8f, 0x43,
+	};
+	constexpr u32 KONAMI_DALLAS_KEY_RESPONSE[] = {
+		0x00000000, 0x5f040001, 0x00010000,
+	};
 	constexpr u32 KONAMI_DALLAS_NO_KEY_RESPONSE[] = {
 		0x01000000, 0x00000000, 0x00000000,
 	};
@@ -281,6 +302,46 @@ namespace
 		u16 source_port = 0;
 	};
 
+	struct EeNetworkStateSnapshot
+	{
+		u32 boot_state_machine = 0;
+		u32 boot_retry = 0;
+		u32 boot_gate = 0;
+		u32 boot_context = 0;
+		u32 boot_root = 0;
+		u32 boot_status = 0;
+		u32 boot_net_state = 0;
+		u32 boot_net_subcode = 0;
+		u32 pcb_gate = 0;
+		u32 pcb_tick = 0;
+		u32 pcb_context = 0;
+		u32 pcb_status = 0;
+		u32 pcb_net_state = 0;
+		u32 pcb_net_subcode = 0;
+		u32 preflight_net_ready = 0;
+		u32 preflight_ip = 0;
+		u32 backup_eamusement = 0;
+		u32 backup_network_id = 0;
+		u32 main_state = 0;
+		u32 main_substate = 0;
+		u32 security_result = 0;
+		u32 setup_phase = 0;
+		u32 setup_step = 0;
+		u32 setup_ticks = 0;
+		u32 setup_arg = 0;
+		u32 setup_result = 0;
+		u32 setup_timer = 0;
+		u32 setup_error_a = 0;
+		u32 setup_error_b = 0;
+		u32 security_boot_mode = 0;
+		u32 display_error_major = 0;
+		u32 display_error_subcode = 0;
+		u32 pending_error_major = 0;
+		u32 pending_error_subcode = 0;
+		u32 pending_error_detail = 0;
+		u32 p1io_bind_state = 0;
+	};
+
 	// Captured from the WE2K3 Python1 IO board's config-ROM reads in python1-boot-ioerror.nosy.
 	constexpr u32 KONAMI_IO_BOARD_CROM[] = {
 		0x0404a1a4, 0x31333934, 0x407d8002, 0x00000000, 0x00000000, 0x00053f04,
@@ -296,6 +357,7 @@ namespace
 	std::vector<PendingDbufDmaWrite> s_pending_dbuf_r0_rx_dma;
 	std::vector<u32> s_dbuf_r0_rx_fifo;
 	std::vector<PendingNetPacket> s_net_rx_packets[KONAMI_NET_CHANNEL_COUNT];
+	std::array<u8, 64> s_net_property_response;
 	std::vector<u8> s_uart_rx_fifo;
 	u8 s_bootrom[BOOTROM_SIZE];
 	u8 s_bbsram[BBSRAM_SIZE];
@@ -318,6 +380,8 @@ namespace
 	u32 s_pht_log_count;
 	u32 s_runtime_log_count;
 	u32 s_p1io_log_count;
+	EeNetworkStateSnapshot s_last_ee_network_state;
+	bool s_has_last_ee_network_state;
 #ifndef _WIN32
 	void WriteTraceErrorMarker(const char* message, int error)
 	{
@@ -422,6 +486,14 @@ namespace
 		DevCon.WriteLn("FW HLE: %s addr=0x%x bytes=0x%x data=%08x %08x %08x %08x", prefix, address, byte_count, words[0], words[1], words[2], words[3]);
 	}
 
+	u8 ReadEeMain8(u32 address)
+	{
+		if (!eeMem || address >= Ps2MemSize::ExposedRam)
+			return 0;
+
+		return eeMem->Main[address];
+	}
+
 	u32 ReadEeMain32(u32 address)
 	{
 		if (!eeMem || address + sizeof(u32) > Ps2MemSize::ExposedRam)
@@ -432,19 +504,117 @@ namespace
 		return value;
 	}
 
+	u32 ReadEeMainIp(u32 address)
+	{
+		return (static_cast<u32>(ReadEeMain8(address)) << 24) |
+			(static_cast<u32>(ReadEeMain8(address + 1)) << 16) |
+			(static_cast<u32>(ReadEeMain8(address + 2)) << 8) |
+			static_cast<u32>(ReadEeMain8(address + 3));
+	}
+
+	u16 ReadEeMain16(u32 address)
+	{
+		if (!eeMem || address + sizeof(u16) > Ps2MemSize::ExposedRam)
+			return 0;
+
+		u16 value = 0;
+		std::memcpy(&value, &eeMem->Main[address], sizeof(value));
+		return value;
+	}
+
+	u32 GetP1IOBindState();
+
+	bool SameEeNetworkState(const EeNetworkStateSnapshot& lhs, const EeNetworkStateSnapshot& rhs)
+	{
+		return std::memcmp(&lhs, &rhs, sizeof(lhs)) == 0;
+	}
+
 	void SampleEeNetworkState(const char* context)
 	{
 		if (!std::getenv("PCSX2_FW_TRACE_EE_NETWORK_STATE"))
 			return;
 
-		FwTrace("ee network state sample context=%s init=0x%x callback_status=0x%x callback_count=0x%x machine_state=0x%x retry=0x%x gate=0x%x",
-			context,
-			ReadEeMain32(0x01d67bf0),
-			ReadEeMain32(0x01d67bf4),
-			ReadEeMain32(0x01d67bf8),
-			ReadEeMain32(0x01d67c00),
-			ReadEeMain32(0x01d67c04),
-			ReadEeMain32(0x01d67c18));
+		EeNetworkStateSnapshot state;
+		state.boot_state_machine = ReadEeMain32(0x01d67c00);
+		state.boot_retry = ReadEeMain32(0x01d67c04);
+		state.boot_gate = ReadEeMain32(0x01d67c18);
+		state.boot_context = ReadEeMain32(0x01d67d38);
+		if (state.boot_context != 0)
+		{
+			state.boot_root = ReadEeMain32(state.boot_context + 4);
+			if (state.boot_root != 0)
+				state.boot_status = ReadEeMain32(state.boot_root + 0x58);
+			if (state.boot_status != 0)
+			{
+				state.boot_net_state = ReadEeMain32(state.boot_status + 0x24);
+				state.boot_net_subcode = ReadEeMain32(state.boot_status + 0x28);
+			}
+		}
+
+		state.pcb_gate = ReadEeMain32(0x01d6dcc0);
+		state.pcb_tick = ReadEeMain32(0x01d6dcc4);
+		state.pcb_context = ReadEeMain32(0x01d6dcc8);
+		if (state.pcb_context != 0)
+		{
+			state.pcb_status = ReadEeMain32(state.pcb_context + 0x5c);
+			if (state.pcb_status != 0)
+			{
+				state.pcb_net_state = ReadEeMain32(state.pcb_status + 0x24);
+				state.pcb_net_subcode = ReadEeMain32(state.pcb_status + 0x28);
+			}
+		}
+		state.preflight_net_ready = ReadEeMain32(KONAMI_EE_NET_READY_ADDRESS);
+		state.preflight_ip = ReadEeMainIp(KONAMI_EE_NET_IP_ADDRESS);
+		state.backup_eamusement = s_bbsram[KONAMI_BBSRAM_EAMUSEMENT_OFFSET];
+		state.backup_network_id = s_bbsram[KONAMI_BBSRAM_NETWORK_ID_OFFSET];
+		state.main_state = ReadEeMain32(KONAMI_EE_MAIN_STATE_ADDRESS);
+		state.main_substate = ReadEeMain32(KONAMI_EE_MAIN_STATE_ADDRESS + 8);
+		state.security_result = ReadEeMain32(KONAMI_EE_SECURITY_RESULT_ADDRESS);
+		state.setup_phase = ReadEeMain32(KONAMI_EE_SETUP_STATE_ADDRESS);
+		state.setup_step = ReadEeMain32(KONAMI_EE_SETUP_STATE_ADDRESS + 4);
+		state.setup_ticks = ReadEeMain32(KONAMI_EE_SETUP_STATE_ADDRESS + 8);
+		state.setup_arg = ReadEeMain32(KONAMI_EE_SETUP_STATE_ADDRESS + 0xc);
+		state.setup_result = ReadEeMain32(KONAMI_EE_SETUP_STATE_ADDRESS + 0x10);
+		state.setup_timer = ReadEeMain32(KONAMI_EE_SETUP_STATE_ADDRESS + 0x14);
+		state.setup_error_a = ReadEeMain32(KONAMI_EE_SETUP_STATE_ADDRESS + 0x18);
+		state.setup_error_b = ReadEeMain32(KONAMI_EE_SETUP_STATE_ADDRESS + 0x1c);
+		state.security_boot_mode = ReadEeMain32(KONAMI_EE_SECURITY_BOOT_MODE_ADDRESS);
+		state.display_error_major = ReadEeMain16(KONAMI_EE_ERROR_DISPLAY_ADDRESS);
+		state.display_error_subcode = ReadEeMain16(KONAMI_EE_ERROR_DISPLAY_ADDRESS + 2);
+		state.pending_error_major = ReadEeMain32(KONAMI_EE_PENDING_ERROR_ADDRESS);
+		state.pending_error_subcode = ReadEeMain32(KONAMI_EE_PENDING_ERROR_ADDRESS + 4);
+		state.pending_error_detail = ReadEeMain32(KONAMI_EE_PENDING_ERROR_ADDRESS + 8);
+		state.p1io_bind_state = GetP1IOBindState();
+
+		if (s_has_last_ee_network_state && SameEeNetworkState(state, s_last_ee_network_state))
+			return;
+		s_last_ee_network_state = state;
+		s_has_last_ee_network_state = true;
+
+		DevCon.WriteLn("FW HLE: EE NET state context=%s boot_sm=0x%x boot_gate=0x%x boot_mode=%u boot_ctx=0x%x boot_status=0x%x boot_net=%u/%u pcb_gate=0x%x pcb_ctx=0x%x pcb_status=0x%x pcb_net=%u/%u preflight_ready=%u preflight_ip=%u.%u.%u.%u backup_eamusement=%u backup_network_id=%u main=%u/%u security_result=%u setup=%u/%u result=%u timer=%u errors=%u/%u display=%u/%u pending=%u/%u/%u p1io=0x%x",
+			context, state.boot_state_machine, state.boot_gate, state.security_boot_mode,
+			state.boot_context, state.boot_status, state.boot_net_state, state.boot_net_subcode,
+			state.pcb_gate, state.pcb_context, state.pcb_status,
+			state.pcb_net_state, state.pcb_net_subcode, state.preflight_net_ready,
+			(state.preflight_ip >> 24) & 0xff, (state.preflight_ip >> 16) & 0xff,
+			(state.preflight_ip >> 8) & 0xff, state.preflight_ip & 0xff,
+			state.backup_eamusement, state.backup_network_id, state.main_state, state.main_substate,
+			state.security_result, state.setup_phase, state.setup_step,
+			state.setup_result, state.setup_timer, state.setup_error_a, state.setup_error_b,
+			state.display_error_major, state.display_error_subcode, state.pending_error_major,
+			state.pending_error_subcode, state.pending_error_detail, state.p1io_bind_state);
+		FwTrace("ee net context=%s boot_sm=0x%x boot_retry=0x%x boot_gate=0x%x boot_mode=%u boot_ctx=0x%x boot_root=0x%x boot_status=0x%x boot_net=%u/%u pcb_gate=0x%x pcb_tick=0x%x pcb_ctx=0x%x pcb_status=0x%x pcb_net=%u/%u preflight_ready=%u preflight_ip=0x%x backup_eamusement=%u backup_network_id=%u main=%u/%u security_result=%u setup=%u/%u ticks=%u arg=%u result=%u timer=%u errors=%u/%u display=%u/%u pending=%u/%u/%u p1io=0x%x",
+			context, state.boot_state_machine, state.boot_retry, state.boot_gate,
+			state.security_boot_mode, state.boot_context, state.boot_root, state.boot_status,
+			state.boot_net_state, state.boot_net_subcode,
+			state.pcb_gate, state.pcb_tick, state.pcb_context, state.pcb_status,
+			state.pcb_net_state, state.pcb_net_subcode, state.preflight_net_ready,
+			state.preflight_ip, state.backup_eamusement, state.backup_network_id,
+			state.main_state, state.main_substate, state.security_result,
+			state.setup_phase, state.setup_step, state.setup_ticks, state.setup_arg,
+			state.setup_result, state.setup_timer, state.setup_error_a, state.setup_error_b,
+			state.display_error_major, state.display_error_subcode, state.pending_error_major,
+			state.pending_error_subcode, state.pending_error_detail, state.p1io_bind_state);
 	}
 
 	u32 ByteSwap32(u32 value);
@@ -577,15 +747,27 @@ namespace
 		else if (bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0x00 &&
 			CalculateAcioChecksum(bytes.data(), static_cast<u32>(bytes.size() - 1)) == bytes.back())
 		{
-			const u8 response[] = {0x00, 0x00};
+			const u8 ok_response[] = {0x00, 0x00};
 			switch (bytes[3])
 			{
 				case 0x00:
 				case 0x01:
 				case 0x10:
 				case 0x11:
-					QueueExternalIoWrappedResponse(bytes, response, sizeof(response));
+				case 0x12:
+				case 0x14:
+				case 0x15:
+				case 0x16:
+				case 0x1e:
+				case 0x1f:
+					QueueExternalIoWrappedResponse(bytes, ok_response, sizeof(ok_response));
 					break;
+				case 0x18:
+				{
+					const std::array<u8, 0x82> empty_card_data = {};
+					QueueExternalIoWrappedResponse(bytes, empty_card_data.data(), static_cast<u32>(empty_card_data.size()));
+					break;
+				}
 				default:
 					break;
 			}
@@ -725,7 +907,8 @@ namespace
 	{
 		s_ubuf_rx_fifo.push_back(value);
 		UpdateUbufRxLevel();
-		DevCon.WriteLn("FW HLE: UBUF rx queue value=0x%x level=%zu", value, s_ubuf_rx_fifo.size());
+		if (FW_VERBOSE_LOGS)
+			DevCon.WriteLn("FW HLE: UBUF rx queue value=0x%x level=%zu", value, s_ubuf_rx_fifo.size());
 	}
 
 	u32 PopUbufRx()
@@ -736,7 +919,7 @@ namespace
 		u32 value = s_ubuf_rx_fifo.front();
 		s_ubuf_rx_fifo.erase(s_ubuf_rx_fifo.begin());
 		UpdateUbufRxLevel();
-		if (ShouldLogLimited(s_ubuf_log_count, FW_UBUF_LOG_LIMIT))
+		if (FW_VERBOSE_LOGS && ShouldLogLimited(s_ubuf_log_count, FW_UBUF_LOG_LIMIT))
 			DevCon.WriteLn("FW HLE: UBUF rx pop value=0x%x remaining=%zu", value, s_ubuf_rx_fifo.size());
 		return value;
 	}
@@ -758,10 +941,8 @@ namespace
 		s_dbuf_r0_rx_fifo.erase(s_dbuf_r0_rx_fifo.begin());
 		UpdateDbufR0RxLevel();
 		const bool became_empty = s_dbuf_r0_rx_fifo.empty();
-		if (became_empty)
-		{
+		if (FW_VERBOSE_LOGS && became_empty && ShouldLogLimited(s_dbuf_log_count, FW_RUNTIME_LOG_LIMIT))
 			DevCon.WriteLn("FW HLE: DBUF R0 rx pop value=0x%x remaining=%zu", value, s_dbuf_r0_rx_fifo.size());
-		}
 		if (became_empty)
 			FlushPendingDbufR0RxPacket();
 		return value;
@@ -832,7 +1013,8 @@ namespace
 		const u32 tlabel = (request_header >> 10) & 0x3f;
 		const u32 dest_node = request_offset_high >> 16;
 		const u32 bus_id = dest_node >> 6;
-		DevCon.WriteLn("FW HLE: queue UBUF WRITE_RESPONSE req_hdr=0x%x tlabel=0x%x dest_node=0x%x bus=0x%x", request_header, tlabel, dest_node, bus_id);
+		if (FW_VERBOSE_LOGS)
+			DevCon.WriteLn("FW HLE: queue UBUF WRITE_RESPONSE req_hdr=0x%x tlabel=0x%x dest_node=0x%x bus=0x%x", request_header, tlabel, dest_node, bus_id);
 
 		QueueUbufRx((bus_id << 22) | (KONAMI_RESPONSE_SPEED << 16) | (tlabel << 10) | (1u << 8) | (IEEE1394_TCODE_WRITE_RESPONSE << 4));
 		QueueUbufRx((dest_node << 16));
@@ -844,7 +1026,8 @@ namespace
 	void AckTransmit(u32 ack)
 	{
 		fwRu32(0x843c) = ack << 28;
-		DevCon.WriteLn("FW HLE: tx ack ack=0x%x ack_status=0x%x", ack, fwRu32(0x843c));
+		if (FW_VERBOSE_LOGS)
+			DevCon.WriteLn("FW HLE: tx ack ack=0x%x ack_status=0x%x", ack, fwRu32(0x843c));
 		RaiseIntr0(FW_INTR0_AckRcvd);
 	}
 
@@ -853,7 +1036,8 @@ namespace
 		const u32 tlabel = (request_header >> 10) & 0x3f;
 		const u32 dest_node = request_offset_high >> 16;
 		const u32 bus_id = dest_node >> 6;
-		DevCon.WriteLn("FW HLE: queue UBUF READQ_RESPONSE req_hdr=0x%x tlabel=0x%x dest_node=0x%x bus=0x%x value=0x%x", request_header, tlabel, dest_node, bus_id, value);
+		if (FW_VERBOSE_LOGS)
+			DevCon.WriteLn("FW HLE: queue UBUF READQ_RESPONSE req_hdr=0x%x tlabel=0x%x dest_node=0x%x bus=0x%x value=0x%x", request_header, tlabel, dest_node, bus_id, value);
 
 		QueueUbufRx((bus_id << 22) | (KONAMI_RESPONSE_SPEED << 16) | (tlabel << 10) | (1u << 8) | (IEEE1394_TCODE_READQ_RESPONSE << 4));
 		QueueUbufRx((dest_node << 16));
@@ -996,7 +1180,8 @@ namespace
 			return false;
 		}
 
-		DevCon.WriteLn("FW HLE: FireWire DMA WRITEB off_hi=0x1000 off_low=0x%x bytes=0x%zx", dest, data.size());
+		if (FW_VERBOSE_LOGS)
+			DevCon.WriteLn("FW HLE: FireWire DMA WRITEB off_hi=0x1000 off_low=0x%x bytes=0x%zx", dest, data.size());
 		FwTrace("sector direct dma dest=0x%x bytes=0x%zx", dest, data.size());
 
 		for (size_t offset = 0; offset < data.size(); offset += SECTOR_SIZE)
@@ -1063,7 +1248,8 @@ namespace
 		{
 			const PendingDbufDmaWrite& dma = s_pending_dbuf_r0_rx_dma.front();
 			const bool dma_written = iopMemSafeWriteBytes(dma.dest, dma.data.data(), static_cast<u32>(dma.data.size()));
-			DevCon.WriteLn("FW HLE: FireWire DMA WRITEB off_hi=0x1000 off_low=0x%x bytes=0x%zx ok=%u", dma.dest, dma.data.size(), dma_written ? 1 : 0);
+			if (FW_VERBOSE_LOGS)
+				DevCon.WriteLn("FW HLE: FireWire DMA WRITEB off_hi=0x1000 off_low=0x%x bytes=0x%zx ok=%u", dma.dest, dma.data.size(), dma_written ? 1 : 0);
 			FwTrace("deliver dma dest=0x%x bytes=0x%zx ok=%u", dma.dest, dma.data.size(), dma_written ? 1 : 0);
 		}
 
@@ -1072,7 +1258,8 @@ namespace
 		s_pending_dbuf_r0_rx_fifo.erase(s_pending_dbuf_r0_rx_fifo.begin(), s_pending_dbuf_r0_rx_fifo.begin() + packet_quads);
 		if (!s_pending_dbuf_r0_rx_dma.empty())
 			s_pending_dbuf_r0_rx_dma.erase(s_pending_dbuf_r0_rx_dma.begin());
-		DevCon.WriteLn("FW HLE: queued deferred DBUF R0 rx packet quads=0x%zx level=0x%x pending_quads=0x%zx pending_dma=0x%zx", packet_quads, fwRu32(0x84c0), s_pending_dbuf_r0_rx_fifo.size(), s_pending_dbuf_r0_rx_dma.size());
+		if (FW_VERBOSE_LOGS)
+			DevCon.WriteLn("FW HLE: queued deferred DBUF R0 rx packet quads=0x%zx level=0x%x pending_quads=0x%zx pending_dma=0x%zx", packet_quads, fwRu32(0x84c0), s_pending_dbuf_r0_rx_fifo.size(), s_pending_dbuf_r0_rx_dma.size());
 		// DRFR is reserved for self-ID in Konami's stack; it drains DBUF before the RX task can parse async packets.
 		RaiseIntr0(FW_INTR0_URx);
 	}
@@ -1180,8 +1367,12 @@ namespace
 		DevCon.WriteLn("FW HLE: DALLAS command subop=0x%x key=0x%x offset=0x%x bytes=0x%x dest=0x%x", subop, key, offset, byte_count, dest);
 		FwTrace("dallas subop=0x%x key=0x%x offset=0x%x bytes=0x%x dest=0x%x", subop, key, offset, byte_count, dest);
 
-		QueuePendingDbufBlockWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, KONAMI_DALLAS_NO_KEY_RESPONSE,
-			sizeof(KONAMI_DALLAS_NO_KEY_RESPONSE) / sizeof(KONAMI_DALLAS_NO_KEY_RESPONSE[0]));
+		// Key slot 0 is the installed security key. Slot 1 is the removable/programming slot, which
+		// must report empty for the programmed-backup-key path used by WE2K3 attract/game start.
+		const bool probe_current_key = subop == 0 && key == 0;
+		const u32* response = probe_current_key ? KONAMI_DALLAS_KEY_RESPONSE : KONAMI_DALLAS_NO_KEY_RESPONSE;
+		QueuePendingDbufBlockWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, response,
+			sizeof(KONAMI_DALLAS_KEY_RESPONSE) / sizeof(KONAMI_DALLAS_KEY_RESPONSE[0]));
 		return true;
 	}
 
@@ -1249,7 +1440,13 @@ namespace
 		if (subop == 0)
 		{
 			if (byte_count != 0 && dest != 0)
-				QueuePendingDbufByteWrite(0x1000, dest, s_bootrom + offset, byte_count);
+			{
+				for (u32 transfer_offset = 0; transfer_offset < byte_count; transfer_offset += KONAMI_DBUF_WRITEB_MAX_PAYLOAD)
+				{
+					const u32 chunk = std::min<u32>(KONAMI_DBUF_WRITEB_MAX_PAYLOAD, byte_count - transfer_offset);
+					QueuePendingDbufByteWrite(0x1000, dest + transfer_offset, s_bootrom + offset + transfer_offset, chunk);
+				}
+			}
 			QueuePendingDbufQuadWrite(0xfffe, KONAMI_BOOTROM_STATUS_OFFSET, 0x41000000);
 			return true;
 		}
@@ -1266,6 +1463,18 @@ namespace
 		return true;
 	}
 
+	void BuildOfflineConfiguredIp()
+	{
+		u32 network_id = s_bbsram[KONAMI_BBSRAM_NETWORK_ID_OFFSET];
+		if (network_id < 1 || network_id > 6)
+			network_id = 1;
+
+		s_net_property_response[0] = 192;
+		s_net_property_response[1] = 168;
+		s_net_property_response[2] = 1;
+		s_net_property_response[3] = static_cast<u8>(10 + network_id);
+	}
+
 	bool TryGetNetProperty(u32 property, u32 requested_bytes, const u8** response, u32* response_bytes)
 	{
 		const u8* data = nullptr;
@@ -1274,8 +1483,17 @@ namespace
 		switch (property)
 		{
 			case 0x101:
-				data = KONAMI_NET_FORCE_OFFLINE ? KONAMI_NET_OFFLINE_IP_ADDRESS : KONAMI_NET_IP_ADDRESS;
-				data_bytes = KONAMI_NET_FORCE_OFFLINE ? sizeof(KONAMI_NET_OFFLINE_IP_ADDRESS) : sizeof(KONAMI_NET_IP_ADDRESS);
+				if (KONAMI_NET_FORCE_OFFLINE)
+				{
+					BuildOfflineConfiguredIp();
+					data = s_net_property_response.data();
+					data_bytes = sizeof(KONAMI_NET_OFFLINE_IP_ADDRESS);
+				}
+				else
+				{
+					data = KONAMI_NET_IP_ADDRESS;
+					data_bytes = sizeof(KONAMI_NET_IP_ADDRESS);
+				}
 				break;
 			case 1:
 				data = KONAMI_NET_SUBNET_MASK;
@@ -1670,7 +1888,8 @@ namespace
 	bool TryHleKonamiCommand(u32 offset_low, const u32* payload, u32 payload_quads)
 	{
 		const u32 command_offset = offset_low & 0xfff;
-		DevCon.WriteLn("FW HLE: TryHleKonamiCommand offset_low=0x%x command_offset=0x%x payload_quads=0x%x", offset_low, command_offset, payload_quads);
+		if (FW_VERBOSE_LOGS)
+			DevCon.WriteLn("FW HLE: TryHleKonamiCommand offset_low=0x%x command_offset=0x%x payload_quads=0x%x", offset_low, command_offset, payload_quads);
 		FwTrace("cmd offset_low=0x%x command_offset=0x%x quads=0x%x p0=0x%x p1=0x%x p2=0x%x p3=0x%x", offset_low, command_offset, payload_quads,
 			payload_quads > 0 ? payload[0] : 0, payload_quads > 1 ? payload[1] : 0, payload_quads > 2 ? payload[2] : 0, payload_quads > 3 ? payload[3] : 0);
 		if (command_offset != KONAMI_CF_COMMAND_OFFSET && command_offset != KONAMI_ATA_COMMAND_OFFSET && payload_quads >= 1)
@@ -1750,8 +1969,9 @@ namespace
 		const u32 p5 = payload_quads > 5 ? payload[5] : 0;
 		const u32 p6 = payload_quads > 6 ? payload[6] : 0;
 		const u32 p7 = payload_quads > 7 ? payload[7] : 0;
-		DevCon.WriteLn("FW HLE: Konami command off=0x%x subop=0x%x w1=0x%x w2=0x%x w3=0x%x w4=0x%x w5=0x%x w6=0x%x w7=0x%x",
-			command_offset, subop, sector, count, dest, p4, p5, p6, p7);
+		if (FW_VERBOSE_LOGS)
+			DevCon.WriteLn("FW HLE: Konami command off=0x%x subop=0x%x w1=0x%x w2=0x%x w3=0x%x w4=0x%x w5=0x%x w6=0x%x w7=0x%x",
+				command_offset, subop, sector, count, dest, p4, p5, p6, p7);
 
 		if (command_offset == KONAMI_CF_COMMAND_OFFSET && subop == 0 && HleReadSectors(sector, count, dest))
 		{
@@ -1770,7 +1990,8 @@ namespace
 
 	void LogRuntimePayloadPreview(const char* prefix, u32 offset_high, u32 offset_low, const u32* payload, u32 payload_quads, bool handled)
 	{
-		ShouldLogLimited(s_runtime_log_count, FW_RUNTIME_LOG_LIMIT);
+		if (!FW_VERBOSE_LOGS || !ShouldLogLimited(s_runtime_log_count, FW_RUNTIME_LOG_LIMIT))
+			return;
 
 		const u32 p0 = payload_quads > 0 ? payload[0] : 0;
 		const u32 p1 = payload_quads > 1 ? payload[1] : 0;
@@ -1856,8 +2077,9 @@ namespace
 
 		const u32 header = s_ubuf_tx_fifo[0];
 		const u32 tcode = (header >> 4) & 0xf;
-		DevCon.WriteLn("FW HLE: process UBUF tx quads=%zu hdr=0x%x tcode=0x%x(%s) tlabel=0x%x speed=0x%x",
-			s_ubuf_tx_fifo.size(), header, tcode, TcodeName(tcode), (header >> 10) & 0x3f, (header >> 16) & 0x7);
+		if (FW_VERBOSE_LOGS)
+			DevCon.WriteLn("FW HLE: process UBUF tx quads=%zu hdr=0x%x tcode=0x%x(%s) tlabel=0x%x speed=0x%x",
+				s_ubuf_tx_fifo.size(), header, tcode, TcodeName(tcode), (header >> 10) & 0x3f, (header >> 16) & 0x7);
 
 		if ((tcode == IEEE1394_TCODE_WRITEQ || tcode == IEEE1394_TCODE_WRITEB) && s_ubuf_tx_fifo.size() >= 4)
 		{
@@ -1866,8 +2088,9 @@ namespace
 			const u32 payload_start = (tcode == IEEE1394_TCODE_WRITEQ) ? 3 : 4;
 			const u32 payload_quads = (s_ubuf_tx_fifo.size() > payload_start) ? static_cast<u32>(s_ubuf_tx_fifo.size() - payload_start) : 0;
 			const u32 block_count = (tcode == IEEE1394_TCODE_WRITEB && s_ubuf_tx_fifo.size() > 3) ? s_ubuf_tx_fifo[3] : 0;
-			DevCon.WriteLn("FW HLE: UBUF tx write raw off_hi=0x%x off_low=0x%x payload_start=0x%x payload_quads=0x%x block_count=0x%x",
-				offset_high, offset_low, payload_start, payload_quads, block_count);
+			if (FW_VERBOSE_LOGS)
+				DevCon.WriteLn("FW HLE: UBUF tx write raw off_hi=0x%x off_low=0x%x payload_start=0x%x payload_quads=0x%x block_count=0x%x",
+					offset_high, offset_low, payload_start, payload_quads, block_count);
 
 			bool handled = false;
 			if (payload_quads != 0)
@@ -1890,10 +2113,12 @@ namespace
 			const u32 offset_low = s_ubuf_tx_fifo[2];
 			u32 value = 0;
 			const bool handled = TryReadKonamiQuadlet(offset_high, offset_low, &value);
-			ShouldLogLimited((offset_high & 0xffff) == KONAMI_BOOT_READY_OFFSET_HIGH ? s_runtime_log_count : s_crom_log_count,
-				((offset_high & 0xffff) == KONAMI_BOOT_READY_OFFSET_HIGH) ? FW_RUNTIME_LOG_LIMIT : FW_CROM_LOG_LIMIT);
-			DevCon.WriteLn("FW HLE: UBUF read hdr=0x%x tlabel=0x%x node=0x%x off_hi=0x%x off_low=0x%x value=0x%x handled=%u",
-				header, (header >> 10) & 0x3f, offset_high >> 16, offset_high & 0xffff, offset_low, value, handled ? 1 : 0);
+			if (FW_VERBOSE_LOGS && ShouldLogLimited((offset_high & 0xffff) == KONAMI_BOOT_READY_OFFSET_HIGH ? s_runtime_log_count : s_crom_log_count,
+				((offset_high & 0xffff) == KONAMI_BOOT_READY_OFFSET_HIGH) ? FW_RUNTIME_LOG_LIMIT : FW_CROM_LOG_LIMIT))
+			{
+				DevCon.WriteLn("FW HLE: UBUF read hdr=0x%x tlabel=0x%x node=0x%x off_hi=0x%x off_low=0x%x value=0x%x handled=%u",
+					header, (header >> 10) & 0x3f, offset_high >> 16, offset_high & 0xffff, offset_low, value, handled ? 1 : 0);
+			}
 			AckTransmit(KONAMI_ACK_PEND);
 			QueueReadResponse(header, offset_high, value);
 		}
@@ -2667,6 +2892,7 @@ void logFwAction(u32 addr, u32 value, bool write)
 		std::memset(s_bootrom, 0xff, sizeof(s_bootrom));
 		std::memcpy(s_bootrom, KONAMI_FACTORY_MAC, sizeof(KONAMI_FACTORY_MAC));
 		std::memcpy(s_bootrom + 0xf000, KONAMI_MAC_BACKUP, sizeof(KONAMI_MAC_BACKUP));
+		std::memcpy(s_bootrom + 0xf030, KONAMI_DALLAS_BOOTROM_RECORD, sizeof(KONAMI_DALLAS_BOOTROM_RECORD));
 		LoadBbsram();
 		for (auto& packets : s_net_rx_packets)
 			packets.clear();
@@ -2692,6 +2918,7 @@ void logFwAction(u32 addr, u32 value, bool write)
 		s_pht_log_count = 0;
 		s_runtime_log_count = 0;
 		s_p1io_log_count = 0;
+		s_has_last_ee_network_state = false;
 		FwTrace("FWopen");
 	// Initializing our registers.
 	fwregs = (s8*)calloc(0x10000, 1);
