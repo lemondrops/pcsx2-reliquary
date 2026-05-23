@@ -28,12 +28,14 @@
 #include "common/Threading.h"
 
 #include <cctype>
+#include <cstdlib>
 #include <ctime>
 #include <type_traits>
 #ifndef _WIN32
 #include <time.h>
 #endif
 #include <memory>
+#include <string>
 
 cdvdStruct cdvd;
 
@@ -109,6 +111,25 @@ uint16_t g_cardKeyStore[96] = {
 uint8_t g_KeyStoreKey[16] = {/* SHA256: f7c9233b37a7662a882eca096f43b35af74b3de6030c1ad5185692332e96aecb */};
 
 uint8_t MG_IV_NULL[8] = {0};
+
+static std::string cdvdBytesToHex(const u8* data, size_t size)
+{
+	static constexpr char hex[] = "0123456789ABCDEF";
+	std::string ret;
+	ret.resize(size * 2);
+	for (size_t i = 0; i < size; i++)
+	{
+		ret[i * 2] = hex[data[i] >> 4];
+		ret[i * 2 + 1] = hex[data[i] & 0x0f];
+	}
+	return ret;
+}
+
+static bool shouldLogCdvdMgAuth()
+{
+	static const bool enabled = std::getenv("PCSX2_PY1_MG_AUTH_TRACE") != nullptr;
+	return enabled;
+}
 
 u8 temp_mechaver[4] = {0, 0, 0, 0};
 
@@ -2779,6 +2800,18 @@ MECHA_RESULT generateCardChallenge()
 	xor_bit(cdvd.memcard_iv, cdvd.memcard_challenge2, cdvd.memcard_challenge3, 8);
 	doubleDesEncrypt(cdvd.memcard_key, cdvd.memcard_challenge3);
 
+	if (shouldLogCdvdMgAuth())
+	{
+		Console.WriteLnFmt("[PY1MG][CDVD] generateCardChallenge slot={} index={} iv={} seed={} nonce={} card_iv_seed={} card_iv={} card_iv2={} key1={} key2={} memcard_key={} random={} challenge1={} challenge2={} challenge3={}",
+			static_cast<unsigned>(cdvd.cardKeySlot), static_cast<unsigned>(cdvd.cardKeyIndex),
+			cdvdBytesToHex(cdvd.memcard_iv, 8), cdvdBytesToHex(cdvd.memcard_seed, 8), cdvdBytesToHex(cdvd.memcard_nonce, 8),
+			cdvdBytesToHex(cardIVSeed, 8), cdvdBytesToHex(g_keyStore.CardIV[cdvd.cardKeyIndex], 8),
+			cdvdBytesToHex(g_keyStore.CardIV2[cdvd.cardKeyIndex], 8), cdvdBytesToHex(key1, 16), cdvdBytesToHex(key2, 16),
+			cdvdBytesToHex(cdvd.memcard_key, 16), cdvdBytesToHex(cdvd.memcard_random, 8),
+			cdvdBytesToHex(cdvd.memcard_challenge1, 8), cdvdBytesToHex(cdvd.memcard_challenge2, 8),
+			cdvdBytesToHex(cdvd.memcard_challenge3, 8));
+	}
+
 	return MECHA_RESULT_CARD_CHALLANGE_GENERATED;
 }
 
@@ -2787,25 +2820,51 @@ MECHA_RESULT verifyCardChallenge()
 	uint8_t rp1[8];
 	memcpy(rp1, cdvd.memcard_reponse1, 8);
 	doubleDesDecrypt(cdvd.memcard_key, rp1);
+	uint8_t rp1Decrypted[8];
+	memcpy(rp1Decrypted, rp1, 8);
 	xor_bit(rp1, g_keyStore.ChallengeIV, rp1, 8);
 	if (memcmp(cdvd.memcard_nonce, rp1, 8) != 0)
 	{
+		if (shouldLogCdvdMgAuth())
+		{
+			Console.WriteLnFmt("[PY1MG][CDVD] verifyCardChallenge invalid_response1 response1={} rp1_dec={} nonce_candidate={} expected_nonce={} challenge_iv={}",
+				cdvdBytesToHex(cdvd.memcard_reponse1, 8), cdvdBytesToHex(rp1Decrypted, 8), cdvdBytesToHex(rp1, 8),
+				cdvdBytesToHex(cdvd.memcard_nonce, 8), cdvdBytesToHex(g_keyStore.ChallengeIV, 8));
+		}
 		Console.Error("Invalid response1");
 		return MECHA_RESULT_FAILED;
 	}
 	uint8_t rp2[8];
 	memcpy(rp2, cdvd.memcard_reponse2, 8);
 	doubleDesDecrypt(cdvd.memcard_key, rp2);
+	uint8_t rp2Decrypted[8];
+	memcpy(rp2Decrypted, rp2, 8);
 	xor_bit(rp2, cdvd.memcard_reponse1, rp2, 8);
 	if (memcmp(cdvd.memcard_random, rp2, 8) != 0)
 	{
+		if (shouldLogCdvdMgAuth())
+		{
+			Console.WriteLnFmt("[PY1MG][CDVD] verifyCardChallenge invalid_response2 response2={} rp2_dec={} random_candidate={} expected_random={} response1={}",
+				cdvdBytesToHex(cdvd.memcard_reponse2, 8), cdvdBytesToHex(rp2Decrypted, 8), cdvdBytesToHex(rp2, 8),
+				cdvdBytesToHex(cdvd.memcard_random, 8), cdvdBytesToHex(cdvd.memcard_reponse1, 8));
+		}
 		Console.Error("Invalid response2");
 		return MECHA_RESULT_FAILED;
 	}
 	uint8_t rp3[8];
 	memcpy(rp3, cdvd.memcard_reponse3, 8);
 	doubleDesDecrypt(cdvd.memcard_key, rp3);
+	uint8_t rp3Decrypted[8];
+	memcpy(rp3Decrypted, rp3, 8);
 	xor_bit(cdvd.memcard_reponse2, rp3, cdvd.CardKey[cdvd.cardKeySlot], 8);
+	if (shouldLogCdvdMgAuth())
+	{
+		Console.WriteLnFmt("[PY1MG][CDVD] verifyCardChallenge slot={} response1={} response2={} response3={} rp1_dec={} nonce_candidate={} rp2_dec={} random_candidate={} rp3_dec={} card_key={} memcard_key={}",
+			static_cast<unsigned>(cdvd.cardKeySlot), cdvdBytesToHex(cdvd.memcard_reponse1, 8), cdvdBytesToHex(cdvd.memcard_reponse2, 8),
+			cdvdBytesToHex(cdvd.memcard_reponse3, 8), cdvdBytesToHex(rp1Decrypted, 8), cdvdBytesToHex(rp1, 8),
+			cdvdBytesToHex(rp2Decrypted, 8), cdvdBytesToHex(rp2, 8), cdvdBytesToHex(rp3Decrypted, 8),
+			cdvdBytesToHex(cdvd.CardKey[cdvd.cardKeySlot], 8), cdvdBytesToHex(cdvd.memcard_key, 16));
+	}
 	return MECHA_RESULT_CARD_VERIFIED;
 }
 
@@ -3867,6 +3926,12 @@ static void cdvdWrite16(u8 rt) // SCOMMAND
 							cdvd.cardKeyIndex = cardKeyIndex;
 							cdvd.mecha_state = MECHA_STATE_KEY_INDEXES_SET;
 							cdvd.SCMDResultBuff[0] = 0;
+							if (shouldLogCdvdMgAuth())
+							{
+								Console.WriteLnFmt("[PY1MG][CDVD] auth81 param=0x{:02X} slot={} index={}",
+									static_cast<unsigned>(cdvd.SCMDParamBuff[0]), static_cast<unsigned>(cdvd.cardKeySlot),
+									static_cast<unsigned>(cdvd.cardKeyIndex));
+							}
 						}
 					}
 				}
@@ -3880,6 +3945,11 @@ static void cdvdWrite16(u8 rt) // SCOMMAND
 					memcpy(cdvd.memcard_seed, &cdvd.SCMDParamBuff[8], 8);
 					cdvd.mecha_state = MECHA_STATE_CARD_IV_SEED_SET;
 					cdvd.SCMDResultBuff[0] = 0;
+					if (shouldLogCdvdMgAuth())
+					{
+						Console.WriteLnFmt("[PY1MG][CDVD] auth82 iv={} seed={}",
+							cdvdBytesToHex(cdvd.memcard_iv, 8), cdvdBytesToHex(cdvd.memcard_seed, 8));
+					}
 				}
 				else
 				{
@@ -3894,6 +3964,8 @@ static void cdvdWrite16(u8 rt) // SCOMMAND
 				{
 					memcpy(cdvd.memcard_nonce, cdvd.SCMDParamBuff, 8);
 					cdvd.mecha_state = MECHA_STATE_CARD_NONCE_SET;
+					if (shouldLogCdvdMgAuth())
+						Console.WriteLnFmt("[PY1MG][CDVD] auth83 nonce={}", cdvdBytesToHex(cdvd.memcard_nonce, 8));
 					executeMechaHandler();
 					cdvd.SCMDResultBuff[0] = 0;
 				}
@@ -3912,6 +3984,8 @@ static void cdvdWrite16(u8 rt) // SCOMMAND
 					memcpy(&cdvd.SCMDResultBuff[1], cdvd.memcard_challenge1, 8);
 					memcpy(&cdvd.SCMDResultBuff[9], cdvd.memcard_challenge2, 4);
 					cdvd.mecha_state = MECHA_STATE_CARD_CHALLENGE12_SENT;
+					if (shouldLogCdvdMgAuth())
+						Console.WriteLnFmt("[PY1MG][CDVD] auth84 result={}", cdvdBytesToHex(&cdvd.SCMDResultBuff[1], 12));
 				}
 				else
 				{
@@ -3929,6 +4003,8 @@ static void cdvdWrite16(u8 rt) // SCOMMAND
 					memcpy(&cdvd.SCMDResultBuff[1], &cdvd.memcard_challenge2[4], 4);
 					memcpy(&cdvd.SCMDResultBuff[5], cdvd.memcard_challenge3, 8);
 					cdvd.mecha_state = MECHA_STATE_CARD_CHALLENGE23_SENT;
+					if (shouldLogCdvdMgAuth())
+						Console.WriteLnFmt("[PY1MG][CDVD] auth85 result={}", cdvdBytesToHex(&cdvd.SCMDResultBuff[1], 12));
 				}
 				else
 				{
@@ -3945,6 +4021,11 @@ static void cdvdWrite16(u8 rt) // SCOMMAND
 					memcpy(cdvd.memcard_reponse2, &cdvd.SCMDParamBuff[8], 8);
 					cdvd.mecha_state = MECHA_STATE_CARD_RESPONSE12_RECEIVED;
 					cdvd.SCMDResultBuff[0] = 0;
+					if (shouldLogCdvdMgAuth())
+					{
+						Console.WriteLnFmt("[PY1MG][CDVD] auth86 response1={} response2={}",
+							cdvdBytesToHex(cdvd.memcard_reponse1, 8), cdvdBytesToHex(cdvd.memcard_reponse2, 8));
+					}
 				}
 				else
 				{
@@ -3959,6 +4040,8 @@ static void cdvdWrite16(u8 rt) // SCOMMAND
 				{
 					memcpy(cdvd.memcard_reponse3, cdvd.SCMDParamBuff, 8);
 					cdvd.mecha_state = MECHA_STATE_CARD_RESPONSE3_RECEIVED;
+					if (shouldLogCdvdMgAuth())
+						Console.WriteLnFmt("[PY1MG][CDVD] auth87 response3={}", cdvdBytesToHex(cdvd.memcard_reponse3, 8));
 					executeMechaHandler();
 					cdvd.SCMDResultBuff[0] = 0;
 				}
@@ -3978,6 +4061,12 @@ static void cdvdWrite16(u8 rt) // SCOMMAND
 				else
 				{
 					cdvd.SCMDResultBuff[0] = 0x80;
+				}
+				if (shouldLogCdvdMgAuth())
+				{
+					Console.WriteLnFmt("[PY1MG][CDVD] auth88 state={} result=0x{:02X} card_key={}",
+						static_cast<unsigned>(cdvd.mecha_state), static_cast<unsigned>(cdvd.SCMDResultBuff[0]),
+						cdvdBytesToHex(cdvd.CardKey[cdvd.cardKeySlot], 8));
 				}
 				break;
 

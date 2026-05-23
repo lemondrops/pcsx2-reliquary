@@ -15,7 +15,9 @@
 #include "common/Path.h"
 
 #include <array>
+#include <cstdlib>
 #include <cstring>
+#include <string>
 
 #define MC_LOG_ENABLE 0
 #define MC_LOG if (MC_LOG_ENABLE) DevCon
@@ -56,6 +58,54 @@ namespace
 	};
 
 	static std::array<MemoryCardAuthState, 8> s_auth_state;
+
+	static std::string bytesToHex(const u8* data, size_t size)
+	{
+		static constexpr char hex[] = "0123456789ABCDEF";
+		std::string ret;
+		ret.resize(size * 2);
+		for (size_t i = 0; i < size; i++)
+		{
+			ret[i * 2] = hex[data[i] >> 4];
+			ret[i * 2 + 1] = hex[data[i] & 0x0f];
+		}
+		return ret;
+	}
+
+	template <size_t N>
+	static std::string bytesToHex(const std::array<u8, N>& data)
+	{
+		return bytesToHex(data.data(), data.size());
+	}
+
+	static std::string bytesToHexReverse(const u8* data, size_t size)
+	{
+		static constexpr char hex[] = "0123456789ABCDEF";
+		std::string ret;
+		ret.resize(size * 2);
+		for (size_t i = 0; i < size; i++)
+		{
+			const u8 value = data[size - 1 - i];
+			ret[i * 2] = hex[value >> 4];
+			ret[i * 2 + 1] = hex[value & 0x0f];
+		}
+		return ret;
+	}
+
+	template <size_t N>
+	static std::string bytesToHexReverse(const std::array<u8, N>& data)
+	{
+		return bytesToHexReverse(data.data(), data.size());
+	}
+
+	static bool shouldLogMemoryCardAuth(u32 slot)
+	{
+		static const bool enabled = std::getenv("PCSX2_PY1_MG_AUTH_TRACE") != nullptr;
+		return enabled &&
+			(EmuConfig.Mcd[slot].KeySource == MemoryCardKeySource::Arcade ||
+				EmuConfig.Mcd[slot].Key == MemoryCardKey::Arcade ||
+				EmuConfig.Mcd[slot].Key == MemoryCardKey::Conquest);
+	}
 
 	static u32 getActiveMemoryCardSlot()
 	{
@@ -152,6 +202,13 @@ static void generateIvSeedNonce(u32 slot, MemoryCardAuthState& auth)
 		auth.seed[i] = source[i] ^ auth.iv[i];
 		auth.nonce[i] = static_cast<u8>(rand());
 	}
+
+	if (shouldLogMemoryCardAuth(slot))
+	{
+		Console.WriteLnFmt("[PY1MG][MCD] slot={} generated source={} iv={} seed={} nonce={} wire_iv={} wire_seed={} wire_nonce={}",
+			slot, bytesToHex(source), bytesToHex(auth.iv), bytesToHex(auth.seed), bytesToHex(auth.nonce),
+			bytesToHexReverse(auth.iv), bytesToHexReverse(auth.seed), bytesToHexReverse(auth.nonce));
+	}
 }
 
 static void generateResponse(MemoryCardAuthState& auth)
@@ -183,6 +240,15 @@ static void generateResponse(MemoryCardAuthState& auth)
 	static constexpr Bytes8 cardKey = {'M', 'e', 'c', 'h', 'a', 'P', 'w', 'n'};
 	xor_bit(cardKey.data(), auth.mechaResponse2.data(), auth.mechaResponse3.data(), auth.mechaResponse3.size());
 	doubleDesEncrypt(auth.key, auth.mechaResponse3.data());
+
+	const u32 slot = getActiveMemoryCardSlot();
+	if (shouldLogMemoryCardAuth(slot))
+	{
+		Console.WriteLnFmt("[PY1MG][MCD] slot={} response card_key={} challenge1_dec={} response1={} response2={} response3={} wire_response1={} wire_response2={} wire_response3={}",
+			slot, bytesToHex(cardKey), bytesToHex(auth.mechaChallenge1), bytesToHex(auth.mechaResponse1),
+			bytesToHex(auth.mechaResponse2), bytesToHex(auth.mechaResponse3), bytesToHexReverse(auth.mechaResponse1),
+			bytesToHexReverse(auth.mechaResponse2), bytesToHexReverse(auth.mechaResponse3));
+	}
 }
 
 // Check if the memcard is for PS1, and if we are working on a command sent over SIO2.
@@ -605,6 +671,8 @@ void MemoryCardProtocol::AuthXor()
 	MemoryCardAuthState& auth = getActiveAuthState(slot);
 	const u8 modeByte = g_Sio2FifoIn.front();
 	g_Sio2FifoIn.pop_front();
+	if (shouldLogMemoryCardAuth(slot))
+		Console.WriteLnFmt("[PY1MG][MCD] AuthXor slot={} mode=0x{:02X}", slot, static_cast<unsigned>(modeByte));
 
 	switch (modeByte)
 	{
@@ -624,6 +692,9 @@ void MemoryCardProtocol::AuthXor()
 			}
 			g_Sio2FifoOut.push_back(xorResult);
 			g_Sio2FifoOut.push_back(mcd->term);
+			if (shouldLogMemoryCardAuth(slot))
+				Console.WriteLnFmt("[PY1MG][MCD] AuthXor slot={} return_iv={} wire={} xor=0x{:02X}",
+					slot, bytesToHex(auth.iv), bytesToHexReverse(auth.iv), static_cast<unsigned>(xorResult));
 			break;
 		}
 		case 0x02: // get seed
@@ -640,6 +711,9 @@ void MemoryCardProtocol::AuthXor()
 			}
 			g_Sio2FifoOut.push_back(xorResult);
 			g_Sio2FifoOut.push_back(mcd->term);
+			if (shouldLogMemoryCardAuth(slot))
+				Console.WriteLnFmt("[PY1MG][MCD] AuthXor slot={} return_seed={} wire={} xor=0x{:02X}",
+					slot, bytesToHex(auth.seed), bytesToHexReverse(auth.seed), static_cast<unsigned>(xorResult));
 			break;
 		}
 		case 0x04: // get nonce
@@ -656,6 +730,9 @@ void MemoryCardProtocol::AuthXor()
 			}
 			g_Sio2FifoOut.push_back(xorResult);
 			g_Sio2FifoOut.push_back(mcd->term);
+			if (shouldLogMemoryCardAuth(slot))
+				Console.WriteLnFmt("[PY1MG][MCD] AuthXor slot={} return_nonce={} wire={} xor=0x{:02X}",
+					slot, bytesToHex(auth.nonce), bytesToHexReverse(auth.nonce), static_cast<unsigned>(xorResult));
 			break;
 		}
 		case 0x06:
@@ -666,6 +743,9 @@ void MemoryCardProtocol::AuthXor()
 				g_Sio2FifoIn.pop_front();
 				auth.mechaChallenge3[7 - i] = val;
 			}
+			if (shouldLogMemoryCardAuth(slot))
+				Console.WriteLnFmt("[PY1MG][MCD] AuthXor slot={} challenge3={} wire={}",
+					slot, bytesToHex(auth.mechaChallenge3), bytesToHexReverse(auth.mechaChallenge3));
 			The2bTerminator(14);
 			break;
 		}
@@ -677,6 +757,9 @@ void MemoryCardProtocol::AuthXor()
 				g_Sio2FifoIn.pop_front();
 				auth.mechaChallenge2[7 - i] = val;
 			}
+			if (shouldLogMemoryCardAuth(slot))
+				Console.WriteLnFmt("[PY1MG][MCD] AuthXor slot={} challenge2={} wire={}",
+					slot, bytesToHex(auth.mechaChallenge2), bytesToHexReverse(auth.mechaChallenge2));
 			The2bTerminator(14);
 			break;
 		}
@@ -688,6 +771,9 @@ void MemoryCardProtocol::AuthXor()
 				g_Sio2FifoIn.pop_front();
 				auth.mechaChallenge1[7 - i] = val;
 			}
+			if (shouldLogMemoryCardAuth(slot))
+				Console.WriteLnFmt("[PY1MG][MCD] AuthXor slot={} challenge1={} wire={}",
+					slot, bytesToHex(auth.mechaChallenge1), bytesToHexReverse(auth.mechaChallenge1));
 			The2bTerminator(14);
 			break;
 		}
@@ -706,6 +792,9 @@ void MemoryCardProtocol::AuthXor()
 			}
 			g_Sio2FifoOut.push_back(xorResult);
 			g_Sio2FifoOut.push_back(mcd->term);
+			if (shouldLogMemoryCardAuth(slot))
+				Console.WriteLnFmt("[PY1MG][MCD] AuthXor slot={} return_response1={} wire={} xor=0x{:02X}",
+					slot, bytesToHex(auth.mechaResponse1), bytesToHexReverse(auth.mechaResponse1), static_cast<unsigned>(xorResult));
 			break;
 		}
 		case 0x11: // CardResponse2
@@ -722,6 +811,9 @@ void MemoryCardProtocol::AuthXor()
 			}
 			g_Sio2FifoOut.push_back(xorResult);
 			g_Sio2FifoOut.push_back(mcd->term);
+			if (shouldLogMemoryCardAuth(slot))
+				Console.WriteLnFmt("[PY1MG][MCD] AuthXor slot={} return_response2={} wire={} xor=0x{:02X}",
+					slot, bytesToHex(auth.mechaResponse2), bytesToHexReverse(auth.mechaResponse2), static_cast<unsigned>(xorResult));
 			break;
 		}
 		case 0x13: // CardResponse3
@@ -740,6 +832,9 @@ void MemoryCardProtocol::AuthXor()
 
 			g_Sio2FifoOut.push_back(xorResult);
 			g_Sio2FifoOut.push_back(mcd->term);
+			if (shouldLogMemoryCardAuth(slot))
+				Console.WriteLnFmt("[PY1MG][MCD] AuthXor slot={} return_response3={} wire={} xor=0x{:02X}",
+					slot, bytesToHex(auth.mechaResponse3), bytesToHexReverse(auth.mechaResponse3), static_cast<unsigned>(xorResult));
 			break;
 		}
 		case 0x00:
@@ -768,9 +863,12 @@ void MemoryCardProtocol::AuthCrypt()
 {
 	MC_LOG.WriteLn("%s", __FUNCTION__);
 	PS1_FAIL();
-	MemoryCardAuthState& auth = getActiveAuthState(getActiveMemoryCardSlot());
+	const u32 slot = getActiveMemoryCardSlot();
+	MemoryCardAuthState& auth = getActiveAuthState(slot);
 	const u8 modeByte = g_Sio2FifoIn.front();
 	g_Sio2FifoIn.pop_front();
+	if (shouldLogMemoryCardAuth(slot))
+		Console.WriteLnFmt("[PY1MG][MCD] AuthCrypt slot={} mode=0x{:02X}", slot, static_cast<unsigned>(modeByte));
 
 	switch (modeByte)
 	{
@@ -790,6 +888,9 @@ void MemoryCardProtocol::AuthCrypt()
 				auth.cryptXorResult ^= val;
 				auth.cryptBuf[i] = val;
 			}
+			if (shouldLogMemoryCardAuth(slot))
+				Console.WriteLnFmt("[PY1MG][MCD] AuthCrypt slot={} input={} xor=0x{:02X}",
+					slot, bytesToHex(auth.cryptBuf.data(), 8), static_cast<unsigned>(auth.cryptXorResult));
 			The2bTerminator(14);
 			break;
 		case 0x43:
@@ -802,6 +903,9 @@ void MemoryCardProtocol::AuthCrypt()
 			}
 			g_Sio2FifoOut.push_back(auth.cryptXorResult);
 			g_Sio2FifoOut.push_back(mcd->term);
+			if (shouldLogMemoryCardAuth(slot))
+				Console.WriteLnFmt("[PY1MG][MCD] AuthCrypt slot={} output={} xor=0x{:02X}",
+					slot, bytesToHex(auth.cryptBuf.data(), 8), static_cast<unsigned>(auth.cryptXorResult));
 			break;
 		default:
 			Console.Warning("%s(queue) Unexpected modeByte (%02X), please report to the PCSX2 team", __FUNCTION__, modeByte);
@@ -825,7 +929,14 @@ void MemoryCardProtocol::AuthReset()
 	{
 		mcd->term = Terminator::READY;
 		const u32 slot = getActiveMemoryCardSlot();
-		getActiveAuthState(slot).key = getConfiguredKey(slot);
+		MemoryCardAuthState& auth = getActiveAuthState(slot);
+		auth.key = getConfiguredKey(slot);
+		if (shouldLogMemoryCardAuth(slot))
+		{
+			Console.WriteLnFmt("[PY1MG][MCD] AuthReset slot={} key_source={} key_selector={} source={} key={}",
+				slot, static_cast<unsigned>(EmuConfig.Mcd[slot].KeySource), static_cast<unsigned>(EmuConfig.Mcd[slot].Key),
+				bytesToHex(getConfiguredKeySource(slot)), bytesToHex(auth.key, 16));
+		}
 		The2bTerminator(5);
 	}
 }
@@ -834,11 +945,17 @@ void MemoryCardProtocol::AuthKeySelect()
 {
 	MC_LOG.WriteLn("%s", __FUNCTION__);
 	PS1_FAIL();
+	const u32 slot = getActiveMemoryCardSlot();
 	const u8 data = g_Sio2FifoIn.front();
 	g_Sio2FifoIn.pop_front();
 	if (data == 1)
 	{
-		getActiveAuthState(getActiveMemoryCardSlot()).key = cex_key.data();
+		getActiveAuthState(slot).key = cex_key.data();
+	}
+	if (shouldLogMemoryCardAuth(slot))
+	{
+		Console.WriteLnFmt("[PY1MG][MCD] AuthKeySelect slot={} data=0x{:02X} active_key={}",
+			slot, static_cast<unsigned>(data), bytesToHex(getActiveAuthState(slot).key, 16));
 	}
 	The2bTerminator(5);
 }

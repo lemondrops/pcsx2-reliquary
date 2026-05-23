@@ -37,7 +37,7 @@ namespace GameList
 	enum : u32
 	{
 		GAME_LIST_CACHE_SIGNATURE = 0x45434C47,
-		GAME_LIST_CACHE_VERSION = 34,
+		GAME_LIST_CACHE_VERSION = 35,
 
 
 		PLAYED_TIME_SERIAL_LENGTH = 32,
@@ -61,7 +61,10 @@ namespace GameList
 	static Region ParseDatabaseRegion(const std::string_view db_region);
 	static bool GetElfListEntry(const std::string& path, GameList::Entry* entry);
 	static bool GetIsoListEntry(const std::string& path, GameList::Entry* entry);
+	static bool GetPython1ListEntry(const std::string& path, GameList::Entry* entry);
 	static bool GetPython2ListEntry(const std::string& path, GameList::Entry* entry);
+	static std::string GetRelativeGameIniPath(const std::string& path, const INISettingsInterface& ini, const char* key);
+	static u32 HashPathForUniqueId(const std::string_view path);
 
 	static bool GetGameListEntryFromCache(const std::string& path, GameList::Entry* entry);
 	static void ScanDirectory(const char* path, bool recursive, bool only_cache, const std::vector<std::string>& excluded_paths,
@@ -101,6 +104,7 @@ const char* GameList::EntryTypeToString(EntryType type, bool translate)
 		TRANSLATE_NOOP("GameList", "PS2 Disc"),
 		TRANSLATE_NOOP("GameList", "PS1 Disc"),
 		TRANSLATE_NOOP("GameList", "ELF"),
+		TRANSLATE_NOOP("GameList", "Python 1"),
 		TRANSLATE_NOOP("GameList", "Python 2"),
 		TRANSLATE_NOOP("GameList", "Invalid"),
 	};
@@ -235,6 +239,9 @@ bool GameList::IsScannableFilename(const std::string_view path)
 
 void GameList::FillBootParametersForEntry(VMBootParameters* params, const Entry* entry)
 {
+	params->is_python1 = false;
+	params->python1_crc = 0;
+	params->python1_serial = "";
 	params->is_python2 = false;
 	params->python2_crc = 0;
 	params->python2_serial = "";
@@ -252,11 +259,19 @@ void GameList::FillBootParametersForEntry(VMBootParameters* params, const Entry*
 		params->source_type = params->filename.empty() ? CDVD_SourceType::NoDisc : CDVD_SourceType::Iso;
 		params->elf_override = entry->path;
 	}
-	else if (entry->type == GameList::EntryType::Python2)
+	else if (entry->type == GameList::EntryType::Python1 || entry->type == GameList::EntryType::Python2)
 	{
 		params->filename.clear();
 		params->source_type = CDVD_SourceType::NoDisc;
 		params->elf_override.clear();
+
+		if (entry->type == GameList::EntryType::Python1)
+		{
+			params->is_python1 = true;
+			params->python1_crc = entry->crc;
+			params->python1_serial = entry->serial;
+			return;
+		}
 
 		params->is_python2 = true;
 		params->python2_crc = entry->crc;
@@ -286,6 +301,26 @@ void GameList::FillBootParametersForEntry(VMBootParameters* params, const Entry*
 		params->source_type = CDVD_SourceType::NoDisc;
 		params->elf_override.clear();
 	}
+}
+
+std::string GameList::GetRelativeGameIniPath(const std::string& path, const INISettingsInterface& ini, const char* key)
+{
+	std::string value;
+	ini.GetStringValue("Game", key, &value);
+	if (!value.empty() && !Path::IsAbsolute(value))
+		value = std::string(Path::Canonicalize(Path::Combine(Path::GetDirectory(path), value)));
+	return value;
+}
+
+u32 GameList::HashPathForUniqueId(const std::string_view path)
+{
+	u32 hash = 2166136261u;
+	for (const char ch : path)
+	{
+		hash ^= static_cast<u8>(std::tolower(static_cast<unsigned char>(ch)));
+		hash *= 16777619u;
+	}
+	return hash ? hash : 1u;
 }
 
 bool GameList::GetIsoSerialAndCRC(const std::string& path, s32* disc_type, std::string* serial, u32* crc)
@@ -473,6 +508,58 @@ bool GameList::GetIsoListEntry(const std::string& path, GameList::Entry* entry)
 }
 
 // clang-format off
+bool GameList::GetPython1ListEntry(const std::string& path, GameList::Entry* entry)
+{
+	std::unique_ptr<INISettingsInterface> new_interface = std::make_unique<INISettingsInterface>(path);
+	if (!new_interface->Load())
+	{
+		Console.Error("Failed to parse Python 1 game entry ini '%s'", new_interface->GetFileName().c_str());
+		return false;
+	}
+
+	const std::string hdd_image_path = GetRelativeGameIniPath(path, *new_interface, "HddImagePath");
+	const std::string bbsram_path = GetRelativeGameIniPath(path, *new_interface, "BBSRamPath");
+	const std::string io_bootrom_path = GetRelativeGameIniPath(path, *new_interface, "IOBootRomPath");
+	const std::string dongle_black_path = GetRelativeGameIniPath(path, *new_interface, "DongleBlackPath");
+	const std::string dongle_white_path = GetRelativeGameIniPath(path, *new_interface, "DongleWhitePath");
+	const std::string memory_card_dongle_path = GetRelativeGameIniPath(path, *new_interface, "MemoryCardDonglePath");
+
+	std::string game_title = new_interface->GetStringValue("Game", "Name", path.c_str());
+	u32 forced_crc = new_interface->GetUIntValue("Game", "UniqueId", HashPathForUniqueId(path));
+	std::string forced_serial = new_interface->GetStringValue("Game", "GameSerial", "PYTHON100001");
+	std::string region = new_interface->GetStringValue("Game", "Region", "NTSC-J");
+
+	entry->path = path;
+	entry->serial = forced_serial;
+	entry->crc = forced_crc;
+	entry->title = game_title;
+	entry->type = EntryType::Python1;
+	entry->compatibility_rating = CompatibilityRating::Unknown;
+	entry->region = ParseDatabaseRegion(region);
+
+	std::string filename(VMManager::GetGameSettingsPath(entry->serial, entry->crc));
+	std::unique_ptr<INISettingsInterface> sif = std::make_unique<INISettingsInterface>(std::move(filename));
+	if (FileSystem::FileExists(sif->GetFileName().c_str()))
+		sif->Load();
+
+	sif->SetStringValue("Python1/Game", "HddImageFile", hdd_image_path.c_str());
+	sif->SetStringValue("Python1/Game", "BBSRamFile", bbsram_path.c_str());
+	sif->SetStringValue("Python1/Game", "IOBootRomFile", io_bootrom_path.c_str());
+	sif->SetStringValue("Python1/Game", "DongleBlackFile", dongle_black_path.c_str());
+	sif->SetStringValue("Python1/Game", "DongleWhiteFile", dongle_white_path.c_str());
+	sif->SetStringValue("Python1/Game", "MemoryCardDongleFile", memory_card_dongle_path.c_str());
+	sif->SetBoolValue("DEV9/Hdd", "HddEnable", false);
+	sif->SetStringValue("DEV9/Hdd", "HddFile", "");
+	sif->SetStringValue("Security", "MgKeyStoreMode", Pcsx2Config::GetSecurityKeyStoreModeName(SecurityKeyStoreMode::Arcade));
+	sif->SetBoolValue("MemoryCards", "Slot1_Enable", true);
+	sif->SetStringValue("MemoryCards", "Slot1_Filename", memory_card_dongle_path.c_str());
+	sif->SetStringValue("MemoryCards", "Slot1_KeySource", Pcsx2Config::McdOptions::KeySourceNames[static_cast<size_t>(MemoryCardKeySource::Arcade)]);
+	sif->SetStringValue("MemoryCards", "Slot1_Key", Pcsx2Config::McdOptions::KeyNames[static_cast<size_t>(MemoryCardKey::Arcade)]);
+	sif->Save();
+
+	return true;
+}
+
 bool GameList::GetPython2ListEntry(const std::string& path, GameList::Entry* entry)
 {
 	std::unique_ptr<INISettingsInterface> new_interface = std::make_unique<INISettingsInterface>(std::move(path));
@@ -637,6 +724,8 @@ bool GameList::PopulateEntryFromPath(const std::string& path, GameList::Entry* e
 {
 	if (VMManager::IsElfFileName(path.c_str()))
 		return GetElfListEntry(path, entry);
+	else if (StringUtil::EndsWithNoCase(path.c_str(), ".py1"))
+		return GetPython1ListEntry(path, entry);
 	else if (StringUtil::EndsWithNoCase(path.c_str(), ".py2"))
 		return GetPython2ListEntry(path, entry);
 	else

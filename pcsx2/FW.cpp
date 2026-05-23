@@ -7,7 +7,11 @@
 #include "R3000A.h"
 #include "FW.h"
 
+#include "Host.h"
+
 #include "common/Console.h"
+#include "common/FileSystem.h"
+#include "common/Path.h"
 #include "common/SettingsInterface.h"
 
 #include <algorithm>
@@ -89,6 +93,7 @@ namespace
 	constexpr u32 KONAMI_DALLAS_STATUS_OFFSET = 0x00010000;
 	constexpr u32 KONAMI_UART_STATUS_OFFSET = 0x00030000;
 	constexpr u32 KONAMI_CF_STATUS_OFFSET = 0x00050000;
+	constexpr u32 KONAMI_ATA_STATUS_OFFSET = 0x00060000;
 	constexpr u32 KONAMI_BBSRAM_STATUS_OFFSET = 0x00080000;
 	constexpr u32 KONAMI_BOOTROM_STATUS_OFFSET = 0x00090000;
 	constexpr u32 KONAMI_FSCI_STATUS_OFFSET = 0x000a0000;
@@ -131,8 +136,10 @@ namespace
 	constexpr u32 KONAMI_DBUF_WRITEB_MAX_PAYLOAD = 0x200;
 	constexpr u32 BOOTROM_SIZE = 0x10000;
 	constexpr u32 BBSRAM_SIZE = 0x2000;
-	constexpr const char* WE2K3_BLOB_PATH = "";
-	constexpr const char* WE2K3_BBSRAM_PATH = "";
+	constexpr u32 DALLAS_DONGLE_SLOT_COUNT = 2;
+	constexpr u32 DALLAS_DONGLE_SERIAL_SIZE = 8;
+	constexpr u32 DALLAS_DONGLE_PAYLOAD_SIZE = 0x20;
+	constexpr u32 DALLAS_DONGLE_TOTAL_SIZE = DALLAS_DONGLE_SERIAL_SIZE + DALLAS_DONGLE_PAYLOAD_SIZE;
 	constexpr const char* FIREWIRE_CONFIG_SECTION = "FireWire";
 	constexpr const char* P1IO_CONFIG_PREFIX = "P1IO_";
 	// EE byte-swaps the JAMMA word, then maps source bit 8 to P1 bit 0x200.
@@ -232,22 +239,22 @@ namespace
 	};
 	constexpr u8 KONAMI_NET_SECONDARY_DNS[] = {0, 0, 0, 0};
 	// WE2K3 accepts a programmed backup Dallas key record when no new security key is inserted.
-	constexpr u8 KONAMI_DALLAS_BOOTROM_RECORD[] = {
+	constexpr u8 KONAMI_WE2K3_DALLAS_BOOTROM_RECORD[] = {
 		0x00, 0x04, 0x5f, 0x00, 0x00, 0x01, 0x00, 0x00,
 		0x8c, 0x02, 0x4d, 0x83, 0x06, 0xd2, 0x00, 0x00,
 		'G', 'E', 'C', '2', '7', 0x00, 0x00, 0x00,
 		0x20, 0x03, 'J', 'A', 'E', 0x00, 0x8f, 0x43,
 	};
-	constexpr u32 KONAMI_DALLAS_KEY_RESPONSE[] = {
+	constexpr u32 KONAMI_DEFAULT_DALLAS_KEY_RESPONSE[] = {
 		0x00000000, 0x5f040001, 0x00010000,
 	};
 	constexpr u32 KONAMI_DALLAS_NO_KEY_RESPONSE[] = {
 		0x01000000, 0x00000000, 0x00000000,
 	};
 	constexpr u8 KONAMI_FSCI_SERIAL_STREAM[] =
-		"@0DM00045F000001AF"
-		"@0DM00045F000001AF"
-		"@0DM00045F000001AF";
+		"@09T00000000D5\n" // Time/status tick.
+		"@03D00A4\n"       // Distribution/status OK.
+		"@0DM00045F000001AF\n";
 	constexpr u8 KONAMI_EXTERNAL_IO_SYNC_RESPONSE[] = {
 		0xaa, 0xaa, 0xaa, 0x55,
 	};
@@ -361,6 +368,10 @@ namespace
 	std::vector<u8> s_uart_rx_fifo;
 	u8 s_bootrom[BOOTROM_SIZE];
 	u8 s_bbsram[BBSRAM_SIZE];
+	std::array<u32, 3> s_dallas_key_response;
+	std::array<std::array<u8, DALLAS_DONGLE_TOTAL_SIZE>, DALLAS_DONGLE_SLOT_COUNT> s_dallas_dongle_slots;
+	std::array<bool, DALLAS_DONGLE_SLOT_COUNT> s_dallas_dongle_loaded;
+	bool s_fsci_serial_stream_sent;
 	bool s_bbsram_dirty;
 	std::vector<u32> s_pht_tx_fifo[2];
 	u32 s_pht_tx_expected_bytes[2];
@@ -472,7 +483,7 @@ namespace
 
 	void TraceBytesToConsoleWhenEnabled(const char* prefix, u32 address, const u8* data, u32 byte_count)
 	{
-		if (std::getenv("PCSX2_WE2K3_NET_TRACE") == nullptr || byte_count == 0)
+		if (std::getenv("PCSX2_P1IO_NET_TRACE") == nullptr || byte_count == 0)
 			return;
 
 		const u32 trace_count = std::min<u32>(byte_count, 0x40);
@@ -800,10 +811,214 @@ namespace
 		s_uart_rx_fifo.erase(s_uart_rx_fifo.begin(), s_uart_rx_fifo.begin() + byte_count);
 	}
 
-	const char* GetBbsramPath()
+	std::string GetPython1GamePath(const char* key, const char* env_key)
 	{
-		const char* path = std::getenv("PCSX2_FW_BBSRAM_FILE");
-		return (path && path[0]) ? path : WE2K3_BBSRAM_PATH;
+		const char* env_path = std::getenv(env_key);
+		return (env_path && env_path[0]) ? std::string(env_path) : Host::GetStringSettingValue("Python1/Game", key, "");
+	}
+
+	std::string GetHddImagePath()
+	{
+		return GetPython1GamePath("HddImageFile", "PCSX2_FW_HDD_IMAGE_FILE");
+	}
+
+	std::string GetBbsramPath()
+	{
+		return GetPython1GamePath("BBSRamFile", "PCSX2_FW_BBSRAM_FILE");
+	}
+
+	std::string GetBootromPath()
+	{
+		return GetPython1GamePath("IOBootRomFile", "PCSX2_FW_BOOTROM_FILE");
+	}
+
+	std::string GetDallasDonglePath(u32 slot)
+	{
+		return slot == 0 ?
+			GetPython1GamePath("DongleBlackFile", "PCSX2_FW_DONGLE_BLACK_FILE") :
+			GetPython1GamePath("DongleWhiteFile", "PCSX2_FW_DONGLE_WHITE_FILE");
+	}
+
+	void SetDefaultDallasKeyResponse()
+	{
+		s_dallas_key_response = {
+			KONAMI_DEFAULT_DALLAS_KEY_RESPONSE[0],
+			KONAMI_DEFAULT_DALLAS_KEY_RESPONSE[1],
+			KONAMI_DEFAULT_DALLAS_KEY_RESPONSE[2],
+		};
+	}
+
+	void SetDallasKeyResponseFromId(const u8* id)
+	{
+		s_dallas_key_response = {
+			0,
+			0x01u | (static_cast<u32>(id[0]) << 8) | (static_cast<u32>(id[1]) << 16) | (static_cast<u32>(id[2]) << 24),
+			static_cast<u32>(id[3]) | (static_cast<u32>(id[4]) << 8) | (static_cast<u32>(id[5]) << 16),
+		};
+	}
+
+	u32 PackDallasSerialResponseWord(const u8* data)
+	{
+		return (static_cast<u32>(data[0]) << 24) | (static_cast<u32>(data[1]) << 16) |
+			(static_cast<u32>(data[2]) << 8) | static_cast<u32>(data[3]);
+	}
+
+	std::array<u32, 3> BuildDallasDongleSerialResponse(u32 slot)
+	{
+		const std::array<u8, DALLAS_DONGLE_TOTAL_SIZE>& dongle = s_dallas_dongle_slots[slot];
+		return {{0, PackDallasSerialResponseWord(dongle.data()), PackDallasSerialResponseWord(dongle.data() + 4)}};
+	}
+
+	void UpdateDallasKeyResponseFromBootrom()
+	{
+		SetDefaultDallasKeyResponse();
+		for (u32 offset = 0xf000; offset <= BOOTROM_SIZE - 0x20; offset += 0x20)
+		{
+			const u8* record = s_bootrom + offset;
+			if (record[0x10] != 'G' || record[0x1a] != 'J' || record[0x1b] != 'A')
+				continue;
+
+			SetDallasKeyResponseFromId(record);
+			FwTrace("dallas id from bootrom offset=0x%x id=%02x%02x%02x%02x%02x%02x", offset,
+				record[0], record[1], record[2], record[3], record[4], record[5]);
+			return;
+		}
+	}
+
+	bool EnsureParentDirectoryForFile(const std::string& path)
+	{
+		const std::string directory(Path::GetDirectory(path));
+		return directory.empty() || FileSystem::CreateDirectoryPath(directory.c_str(), false);
+	}
+
+	bool WriteBinaryFile(const std::string& path, const void* data, size_t size)
+	{
+		if (path.empty() || !EnsureParentDirectoryForFile(path))
+			return false;
+
+		std::FILE* file = std::fopen(path.c_str(), "wb");
+		if (!file)
+			return false;
+
+		const size_t written = std::fwrite(data, 1, size, file);
+		std::fclose(file);
+		return written == size;
+	}
+
+	u8 CalculateDallasCrc8(const u8* data, u32 size, u8 crc)
+	{
+		for (u32 index = 0; index < size; index++)
+		{
+			u8 in_byte = data[index];
+			for (u32 bit = 0; bit < 8; bit++)
+			{
+				const u8 mix = (crc ^ in_byte) & 1;
+				crc >>= 1;
+				if (mix != 0)
+					crc ^= 0x8c;
+				in_byte >>= 1;
+			}
+		}
+		return crc;
+	}
+
+	bool NormalizeDallasDongleData(const u8* raw, std::array<u8, DALLAS_DONGLE_TOTAL_SIZE>* output)
+	{
+		const bool mame_format =
+			((~CalculateDallasCrc8(raw, DALLAS_DONGLE_PAYLOAD_SIZE - 1, 0xff)) & 0xff) == raw[DALLAS_DONGLE_PAYLOAD_SIZE - 1] &&
+			CalculateDallasCrc8(raw + DALLAS_DONGLE_PAYLOAD_SIZE, DALLAS_DONGLE_SERIAL_SIZE - 1, 0) == raw[DALLAS_DONGLE_TOTAL_SIZE - 1];
+		if (mame_format)
+		{
+			std::memcpy(output->data(), raw + DALLAS_DONGLE_PAYLOAD_SIZE, DALLAS_DONGLE_SERIAL_SIZE);
+			std::memcpy(output->data() + DALLAS_DONGLE_SERIAL_SIZE, raw, DALLAS_DONGLE_PAYLOAD_SIZE);
+			return true;
+		}
+
+		const bool old_format =
+			CalculateDallasCrc8(raw, DALLAS_DONGLE_SERIAL_SIZE - 1, 0) == raw[DALLAS_DONGLE_SERIAL_SIZE - 1] &&
+			((~CalculateDallasCrc8(raw + DALLAS_DONGLE_SERIAL_SIZE, DALLAS_DONGLE_PAYLOAD_SIZE - 1, 0xff)) & 0xff) == raw[DALLAS_DONGLE_TOTAL_SIZE - 1];
+		if (old_format)
+		{
+			std::memcpy(output->data(), raw, DALLAS_DONGLE_TOTAL_SIZE);
+			return true;
+		}
+
+		return false;
+	}
+
+	void LoadDallasDongles()
+	{
+		for (u32 slot = 0; slot < DALLAS_DONGLE_SLOT_COUNT; slot++)
+		{
+			s_dallas_dongle_slots[slot].fill(0);
+			s_dallas_dongle_loaded[slot] = false;
+
+			const std::string path = GetDallasDonglePath(slot);
+			if (path.empty())
+			{
+				FwTrace("dallas dongle slot=%u path=<empty>", slot);
+				continue;
+			}
+
+			std::FILE* file = std::fopen(path.c_str(), "rb");
+			if (!file)
+			{
+				DevCon.WriteLn("FW HLE: failed to open Dallas dongle slot=%u path=%s", slot, path.c_str());
+				continue;
+			}
+
+			u8 raw[DALLAS_DONGLE_TOTAL_SIZE] = {};
+			const size_t read = std::fread(raw, 1, sizeof(raw), file);
+			std::fclose(file);
+			if (read != sizeof(raw) || !NormalizeDallasDongleData(raw, &s_dallas_dongle_slots[slot]))
+			{
+				DevCon.WriteLn("FW HLE: invalid Dallas dongle slot=%u path=%s bytes=0x%zx", slot, path.c_str(), read);
+				continue;
+			}
+
+			s_dallas_dongle_loaded[slot] = true;
+			FwTrace("dallas dongle slot=%u path=%s serial=%02x%02x%02x%02x%02x%02x%02x%02x",
+				slot, path.c_str(),
+				s_dallas_dongle_slots[slot][0], s_dallas_dongle_slots[slot][1],
+				s_dallas_dongle_slots[slot][2], s_dallas_dongle_slots[slot][3],
+				s_dallas_dongle_slots[slot][4], s_dallas_dongle_slots[slot][5],
+				s_dallas_dongle_slots[slot][6], s_dallas_dongle_slots[slot][7]);
+		}
+	}
+
+	void BuildGeneratedBootrom()
+	{
+		std::memset(s_bootrom, 0xff, sizeof(s_bootrom));
+		std::memcpy(s_bootrom, KONAMI_FACTORY_MAC, sizeof(KONAMI_FACTORY_MAC));
+		std::memcpy(s_bootrom + 0xf000, KONAMI_MAC_BACKUP, sizeof(KONAMI_MAC_BACKUP));
+		std::memcpy(s_bootrom + 0xf030, KONAMI_WE2K3_DALLAS_BOOTROM_RECORD, sizeof(KONAMI_WE2K3_DALLAS_BOOTROM_RECORD));
+	}
+
+	void LoadBootrom()
+	{
+		BuildGeneratedBootrom();
+
+		const std::string path = GetBootromPath();
+		if (path.empty())
+		{
+			UpdateDallasKeyResponseFromBootrom();
+			FwTrace("bootrom generated in-memory path=<empty> bytes=0x%x", BOOTROM_SIZE);
+			return;
+		}
+
+		std::FILE* file = std::fopen(path.c_str(), "rb");
+		if (!file)
+		{
+			UpdateDallasKeyResponseFromBootrom();
+			const bool created = WriteBinaryFile(path, s_bootrom, sizeof(s_bootrom));
+			FwTrace("bootrom create path=%s bytes=0x%x ok=%u", path.c_str(), BOOTROM_SIZE, created ? 1 : 0);
+			return;
+		}
+
+		const size_t read = std::fread(s_bootrom, 1, sizeof(s_bootrom), file);
+		std::fclose(file);
+		UpdateDallasKeyResponseFromBootrom();
+		FwTrace("bootrom load path=%s bytes=0x%zx ok=%u", path.c_str(), read, read == sizeof(s_bootrom) ? 1 : 0);
 	}
 
 	void LoadBbsram()
@@ -811,17 +1026,24 @@ namespace
 		std::memset(s_bbsram, 0, sizeof(s_bbsram));
 		s_bbsram_dirty = false;
 
-		const char* path = GetBbsramPath();
-		std::FILE* file = std::fopen(path, "rb");
+		const std::string path = GetBbsramPath();
+		if (path.empty())
+		{
+			FwTrace("bbsram load path=<empty> bytes=0 ok=0");
+			return;
+		}
+
+		std::FILE* file = std::fopen(path.c_str(), "rb");
 		if (!file)
 		{
-			FwTrace("bbsram load path=%s bytes=0 ok=0", path);
+			const bool created = WriteBinaryFile(path, s_bbsram, sizeof(s_bbsram));
+			FwTrace("bbsram create path=%s bytes=0x%x ok=%u", path.c_str(), BBSRAM_SIZE, created ? 1 : 0);
 			return;
 		}
 
 		const size_t read = std::fread(s_bbsram, 1, sizeof(s_bbsram), file);
 		std::fclose(file);
-		FwTrace("bbsram load path=%s bytes=0x%zx ok=%u", path, read, read == sizeof(s_bbsram) ? 1 : 0);
+		FwTrace("bbsram load path=%s bytes=0x%zx ok=%u", path.c_str(), read, read == sizeof(s_bbsram) ? 1 : 0);
 		TraceBytes("bbsram load data", 0, s_bbsram, std::min<u32>(0x40, static_cast<u32>(read)));
 	}
 
@@ -830,17 +1052,23 @@ namespace
 		if (!s_bbsram_dirty)
 			return;
 
-		const char* path = GetBbsramPath();
-		std::FILE* file = std::fopen(path, "wb");
+		const std::string path = GetBbsramPath();
+		if (path.empty())
+		{
+			FwTrace("bbsram save path=<empty> bytes=0 ok=0");
+			return;
+		}
+
+		std::FILE* file = std::fopen(path.c_str(), "wb");
 		if (!file)
 		{
-			FwTrace("bbsram save path=%s bytes=0 ok=0", path);
+			FwTrace("bbsram save path=%s bytes=0 ok=0", path.c_str());
 			return;
 		}
 
 		const size_t written = std::fwrite(s_bbsram, 1, sizeof(s_bbsram), file);
 		std::fclose(file);
-		FwTrace("bbsram save path=%s bytes=0x%zx ok=%u", path, written, written == sizeof(s_bbsram) ? 1 : 0);
+		FwTrace("bbsram save path=%s bytes=0x%zx ok=%u", path.c_str(), written, written == sizeof(s_bbsram) ? 1 : 0);
 		if (written == sizeof(s_bbsram))
 			s_bbsram_dirty = false;
 	}
@@ -1165,7 +1393,7 @@ namespace
 		return checksum;
 	}
 
-	bool QueuePendingSectorAndStatusPackets(u32 dest, const std::vector<u8>& data)
+	bool QueuePendingSectorAndStatusPackets(u32 dest, const std::vector<u8>& data, u32 status_offset)
 	{
 		s_pending_dbuf_r0_rx_fifo.clear();
 		s_pending_dbuf_r0_rx_dma.clear();
@@ -1207,7 +1435,7 @@ namespace
 			s_pending_dbuf_r0_rx_fifo.push_back(2);
 		}
 
-		QueuePendingDbufQuadWrite(0xfffe, KONAMI_CF_STATUS_OFFSET, ByteSwap32(CalculateReadStatusChecksum(data)));
+		QueuePendingDbufQuadWrite(0xfffe, status_offset, ByteSwap32(CalculateReadStatusChecksum(data)));
 		return true;
 	}
 
@@ -1264,7 +1492,7 @@ namespace
 		RaiseIntr0(FW_INTR0_URx);
 	}
 
-	bool HleReadSectors(u32 sector, u32 count, u32 dest)
+	bool HleReadSectors(u32 sector, u32 count, u32 dest, u32 status_offset)
 	{
 		if (count == 0)
 			return true;
@@ -1277,17 +1505,24 @@ namespace
 			return false;
 		}
 
+		const std::string path = GetHddImagePath();
+		if (path.empty())
+		{
+			DevCon.WriteLn("FW HLE: no Python 1 HDD image configured");
+			return false;
+		}
+
 		std::vector<u8> data(static_cast<size_t>(bytes64));
-		std::FILE* file = std::fopen(WE2K3_BLOB_PATH, "rb");
+		std::FILE* file = std::fopen(path.c_str(), "rb");
 		if (!file)
 		{
-			DevCon.WriteLn("FW HLE: failed to open %s", WE2K3_BLOB_PATH);
+			DevCon.WriteLn("FW HLE: failed to open %s", path.c_str());
 			return false;
 		}
 
 		if (std::fseek(file, static_cast<long>(offset), SEEK_SET) != 0)
 		{
-			DevCon.WriteLn("FW HLE: failed to seek %s to 0x%llx", WE2K3_BLOB_PATH, static_cast<unsigned long long>(offset));
+			DevCon.WriteLn("FW HLE: failed to seek %s to 0x%llx", path.c_str(), static_cast<unsigned long long>(offset));
 			std::fclose(file);
 			return false;
 		}
@@ -1297,11 +1532,11 @@ namespace
 		std::fclose(file);
 		if (read != bytes)
 		{
-			DevCon.WriteLn("FW HLE: short read %s offset=0x%llx requested=0x%zx read=0x%zx", WE2K3_BLOB_PATH, static_cast<unsigned long long>(offset), bytes, read);
+			DevCon.WriteLn("FW HLE: short read %s offset=0x%llx requested=0x%zx read=0x%zx", path.c_str(), static_cast<unsigned long long>(offset), bytes, read);
 			return false;
 		}
 
-		return QueuePendingSectorAndStatusPackets(dest, data);
+		return QueuePendingSectorAndStatusPackets(dest, data, status_offset);
 	}
 
 	bool HleBbsramCommand(const u32* payload, u32 payload_quads)
@@ -1369,10 +1604,57 @@ namespace
 
 		// Key slot 0 is the installed security key. Slot 1 is the removable/programming slot, which
 		// must report empty for the programmed-backup-key path used by WE2K3 attract/game start.
-		const bool probe_current_key = subop == 0 && key == 0;
-		const u32* response = probe_current_key ? KONAMI_DALLAS_KEY_RESPONSE : KONAMI_DALLAS_NO_KEY_RESPONSE;
-		QueuePendingDbufBlockWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, response,
-			sizeof(KONAMI_DALLAS_KEY_RESPONSE) / sizeof(KONAMI_DALLAS_KEY_RESPONSE[0]));
+		if (subop == 0)
+		{
+			if (key < DALLAS_DONGLE_SLOT_COUNT && s_dallas_dongle_loaded[key])
+			{
+				const std::array<u32, 3> response = BuildDallasDongleSerialResponse(key);
+				QueuePendingDbufBlockWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, response.data(), static_cast<u32>(response.size()));
+				return true;
+			}
+
+			const bool probe_current_key = key == 0;
+			const u32* response = probe_current_key ? s_dallas_key_response.data() : KONAMI_DALLAS_NO_KEY_RESPONSE;
+			QueuePendingDbufBlockWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, response, static_cast<u32>(s_dallas_key_response.size()));
+			return true;
+		}
+
+		if (subop == 1)
+		{
+			if (key >= DALLAS_DONGLE_SLOT_COUNT || !s_dallas_dongle_loaded[key] ||
+				offset > DALLAS_DONGLE_PAYLOAD_SIZE || byte_count > DALLAS_DONGLE_PAYLOAD_SIZE - offset)
+			{
+				QueuePendingDbufQuadWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, KONAMI_DALLAS_NO_KEY_RESPONSE[0]);
+				return true;
+			}
+
+			if (byte_count != 0 && dest != 0)
+				QueuePendingDbufByteWrite(0x1000, dest, s_dallas_dongle_slots[key].data() + DALLAS_DONGLE_SERIAL_SIZE + offset, byte_count);
+			QueuePendingDbufQuadWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, 0);
+			return true;
+		}
+
+		if (subop == 2)
+		{
+			if (key >= DALLAS_DONGLE_SLOT_COUNT || !s_dallas_dongle_loaded[key] ||
+				offset > DALLAS_DONGLE_PAYLOAD_SIZE || byte_count > DALLAS_DONGLE_PAYLOAD_SIZE - offset)
+			{
+				QueuePendingDbufQuadWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, KONAMI_DALLAS_NO_KEY_RESPONSE[0]);
+				return true;
+			}
+
+			if (byte_count != 0 && dest != 0 &&
+				!iopMemSafeReadBytes(dest, s_dallas_dongle_slots[key].data() + DALLAS_DONGLE_SERIAL_SIZE + offset, byte_count))
+			{
+				DevCon.WriteLn("FW HLE: failed Dallas dongle write DMA read src=0x%x bytes=0x%x", dest, byte_count);
+				QueuePendingDbufQuadWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, KONAMI_DALLAS_NO_KEY_RESPONSE[0]);
+				return true;
+			}
+			QueuePendingDbufQuadWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, 0);
+			return true;
+		}
+
+		QueuePendingDbufQuadWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, KONAMI_DALLAS_NO_KEY_RESPONSE[0]);
 		return true;
 	}
 
@@ -1384,10 +1666,29 @@ namespace
 		DevCon.WriteLn("FW HLE: FSCI command subop=0x%x bytes=0x%x dest=0x%x", subop, byte_count, dest);
 		FwTrace("fsci subop=0x%x bytes=0x%x dest=0x%x", subop, byte_count, dest);
 
+		if (subop == 0)
+		{
+			s_fsci_serial_stream_sent = false;
+			QueuePendingDbufQuadWrite(0xfffe, KONAMI_FSCI_STATUS_OFFSET, 0);
+			return true;
+		}
+
 		if (subop == 2 && byte_count != 0 && dest != 0)
 		{
+			if (s_fsci_serial_stream_sent)
+			{
+				QueuePendingDbufQuadWrite(0xfffe, KONAMI_FSCI_STATUS_OFFSET, 0);
+				return true;
+			}
+
 			const u32 response_bytes = std::min<u32>(byte_count, sizeof(KONAMI_FSCI_SERIAL_STREAM) - 1);
-			QueuePendingDbufByteWrite(0x1000, dest, KONAMI_FSCI_SERIAL_STREAM, response_bytes);
+			if (!iopMemSafeWriteBytes(dest, KONAMI_FSCI_SERIAL_STREAM, response_bytes))
+			{
+				DevCon.WriteLn("FW HLE: failed FSCI DMA write dest=0x%x bytes=0x%x", dest, response_bytes);
+				QueuePendingDbufQuadWrite(0xfffe, KONAMI_FSCI_STATUS_OFFSET, 0);
+				return true;
+			}
+			s_fsci_serial_stream_sent = true;
 			QueuePendingDbufQuadWrite(0xfffe, KONAMI_FSCI_STATUS_OFFSET, ByteSwap32(response_bytes));
 			return true;
 		}
@@ -1962,9 +2263,10 @@ namespace
 			return false;
 
 		const u32 subop = payload[0];
-		const u32 sector = payload[1];
-		const u32 count = payload[2];
-		const u32 dest = payload[3];
+		const u32 sector = command_offset == KONAMI_ATA_COMMAND_OFFSET && payload_quads >= 5 ? payload[2] : payload[1];
+		const u32 count = command_offset == KONAMI_ATA_COMMAND_OFFSET && payload_quads >= 5 ? payload[3] : payload[2];
+		const u32 dest = command_offset == KONAMI_ATA_COMMAND_OFFSET && payload_quads >= 5 ? payload[4] : payload[3];
+		const u32 ata_device = command_offset == KONAMI_ATA_COMMAND_OFFSET && payload_quads >= 5 ? payload[1] : 0;
 		const u32 p4 = payload_quads > 4 ? payload[4] : 0;
 		const u32 p5 = payload_quads > 5 ? payload[5] : 0;
 		const u32 p6 = payload_quads > 6 ? payload[6] : 0;
@@ -1973,17 +2275,24 @@ namespace
 			DevCon.WriteLn("FW HLE: Konami command off=0x%x subop=0x%x w1=0x%x w2=0x%x w3=0x%x w4=0x%x w5=0x%x w6=0x%x w7=0x%x",
 				command_offset, subop, sector, count, dest, p4, p5, p6, p7);
 
-		if (command_offset == KONAMI_CF_COMMAND_OFFSET && subop == 0 && HleReadSectors(sector, count, dest))
+		if (command_offset == KONAMI_CF_COMMAND_OFFSET && subop == 0 && HleReadSectors(sector, count, dest, KONAMI_CF_STATUS_OFFSET))
 		{
 			if (ShouldLogLimited(s_sector_read_log_count, FW_SECTOR_LOG_LIMIT))
-				DevCon.WriteLn("FW HLE: WE2K3 CF read sector=0x%x count=0x%x bytes=0x%x dest=0x%x", sector, count, count * SECTOR_SIZE, dest);
+				DevCon.WriteLn("FW HLE: P1IO CF read sector=0x%x count=0x%x bytes=0x%x dest=0x%x", sector, count, count * SECTOR_SIZE, dest);
+			return true;
+		}
+		if (command_offset == KONAMI_ATA_COMMAND_OFFSET && subop == 0 && HleReadSectors(sector, count, dest, KONAMI_ATA_STATUS_OFFSET))
+		{
+			if (ShouldLogLimited(s_sector_read_log_count, FW_SECTOR_LOG_LIMIT))
+				DevCon.WriteLn("FW HLE: P1IO ATA read device=0x%x sector=0x%x count=0x%x bytes=0x%x dest=0x%x", ata_device, sector, count, count * SECTOR_SIZE, dest);
 			return true;
 		}
 		else if (ShouldLogLimited(s_discovery_log_count, FW_DISCOVERY_LOG_LIMIT))
 		{
-			DevCon.WriteLn("FW HLE: unhandled Konami command off=0x%x subop=0x%x sector=0x%x count=0x%x dest=0x%x", command_offset, subop, sector, count, dest);
+			DevCon.WriteLn("FW HLE: unhandled Konami command off=0x%x subop=0x%x sector=0x%x count=0x%x dest=0x%x p4=0x%x p5=0x%x p6=0x%x p7=0x%x",
+				command_offset, subop, sector, count, dest, p4, p5, p6, p7);
 		}
-		FwTrace("unhandled cmd off=0x%x subop=0x%x sector=0x%x count=0x%x dest=0x%x", command_offset, subop, sector, count, dest);
+		FwTrace("unhandled cmd off=0x%x subop=0x%x sector=0x%x count=0x%x dest=0x%x p4=0x%x p5=0x%x p6=0x%x p7=0x%x", command_offset, subop, sector, count, dest, p4, p5, p6, p7);
 
 		return false;
 	}
@@ -2889,11 +3198,10 @@ void logFwAction(u32 addr, u32 value, bool write)
 		s_pending_dbuf_r0_rx_fifo.clear();
 		s_pending_dbuf_r0_rx_dma.clear();
 		s_dbuf_r0_rx_fifo.clear();
-		std::memset(s_bootrom, 0xff, sizeof(s_bootrom));
-		std::memcpy(s_bootrom, KONAMI_FACTORY_MAC, sizeof(KONAMI_FACTORY_MAC));
-		std::memcpy(s_bootrom + 0xf000, KONAMI_MAC_BACKUP, sizeof(KONAMI_MAC_BACKUP));
-		std::memcpy(s_bootrom + 0xf030, KONAMI_DALLAS_BOOTROM_RECORD, sizeof(KONAMI_DALLAS_BOOTROM_RECORD));
+		LoadBootrom();
 		LoadBbsram();
+		LoadDallasDongles();
+		s_fsci_serial_stream_sent = false;
 		for (auto& packets : s_net_rx_packets)
 			packets.clear();
 		FireWire::ResetP1IOBindState();

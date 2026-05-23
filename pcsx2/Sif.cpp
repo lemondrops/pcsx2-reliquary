@@ -221,7 +221,7 @@ static u32 SifTraceSidFromServerData(u32 sd)
 
 void SifTraceRpcPacket(const char* direction, u32 addr, const u32* words, int count, bool dest_is_iop)
 {
-	if ((!SifIopFsTraceEnabled() && !SifWe2K3NetTraceEnabled()) || count < 4)
+	if (count < 4)
 		return;
 
 	const u32 psize = words[0] & 0xff;
@@ -240,6 +240,9 @@ void SifTraceRpcPacket(const char* direction, u32 addr, const u32* words, int co
 	const u32 SIF_CMD_RPC_BIND = 0x80000009u;
 	const u32 SIF_CMD_RPC_CALL = 0x8000000au;
 	const u32 SIF_CMD_RPC_RDATA = 0x8000000cu;
+
+	if (!SifIopFsTraceEnabled() && !SifWe2K3NetTraceEnabled())
+		return;
 
 	if (cid == SIF_CMD_RPC_BIND && count >= 9)
 	{

@@ -39,6 +39,7 @@ class DEV9SettingsWidget;
 class AchievementSettingsWidget;
 class AdvancedSettingsWidget;
 class DebugSettingsWidget;
+class Python1SettingsWidget;
 class Python2SettingsWidget;
 
 class SettingsWindow final : public QWidget
@@ -72,6 +73,7 @@ public:
 	__fi MemoryCardSettingsWidget* getMemoryCardSettingsWidget() const { return m_memory_card_settings; }
 	__fi FolderSettingsWidget* getFolderSettingsWidget() const { return m_folder_settings; }
 	__fi DEV9SettingsWidget* getDEV9SettingsWidget() const { return m_dev9_settings; }
+	__fi Python1SettingsWidget* getPython1SettingsWidget() const { return m_python1_settings; }
 	__fi Python2SettingsWidget* getPython2SettingsWidget() const { return m_python2_settings; }
 	__fi AchievementSettingsWidget* getAchievementSettingsWidget() const { return m_achievement_settings; }
 	__fi AdvancedSettingsWidget* getAdvancedSettingsWidget() const { return m_advanced_settings; }
@@ -120,7 +122,7 @@ protected:
 private:
 	enum : u32
 	{
-		MAX_SETTINGS_WIDGETS = 15
+		MAX_SETTINGS_WIDGETS = 16
 	};
 
 	void setupUi(const GameList::Entry* game);
@@ -147,6 +149,7 @@ private:
 	MemoryCardSettingsWidget* m_memory_card_settings = nullptr;
 	FolderSettingsWidget* m_folder_settings = nullptr;
 	DEV9SettingsWidget* m_dev9_settings = nullptr;
+	Python1SettingsWidget* m_python1_settings = nullptr;
 	Python2SettingsWidget* m_python2_settings = nullptr;
 	AchievementSettingsWidget* m_achievement_settings = nullptr;
 	AdvancedSettingsWidget* m_advanced_settings = nullptr;

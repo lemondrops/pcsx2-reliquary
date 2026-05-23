@@ -184,6 +184,10 @@ static bool s_fast_boot_requested = false;
 static bool s_gs_open_on_initialize = false;
 static bool s_thread_affinities_set = false;
 
+static bool s_is_python1 = false;
+static u32 s_python1_crc = 0;
+static std::string s_python1_serial;
+
 static bool s_is_python2 = false;
 static u32 s_python2_crc = 0;
 static std::string s_python2_serial;
@@ -1083,7 +1087,12 @@ void VMManager::UpdateDiscDetails(bool booting)
 		if (!s_elf_override.empty())
 			s_disc_crc = cdvdGetElfCRC(s_elf_override);
 
-		if (s_is_python2)
+		if (s_is_python1)
+		{
+			s_disc_crc = s_python1_crc;
+			s_disc_serial = s_python1_serial;
+		}
+		else if (s_is_python2)
 		{
 			s_disc_crc = s_python2_crc;
 			s_disc_serial = s_python2_serial;
@@ -1366,6 +1375,18 @@ VMBootResult VMManager::Initialize(const VMBootParameters& boot_params, Error* e
 	{
 		Error::SetString(error, TRANSLATE_STR("VMManager", "The virtual machine is already running."));
 		return VMBootResult::StartupFailure;
+	}
+
+	s_is_python1 = boot_params.is_python1.has_value() && boot_params.is_python1.value();
+	if (s_is_python1)
+	{
+		s_python1_crc = boot_params.python1_crc.has_value() ? boot_params.python1_crc.value() : 0;
+		s_python1_serial = boot_params.python1_serial.has_value() ? boot_params.python1_serial.value() : "";
+	}
+	else
+	{
+		s_python1_crc = 0;
+		s_python1_serial = "";
 	}
 
 	s_is_python2 = boot_params.is_python2.has_value() && boot_params.is_python2.value();
@@ -2477,7 +2498,7 @@ bool VMManager::IsSaveStateFileName(const std::string_view path)
 
 bool VMManager::IsDiscFileName(const std::string_view path)
 {
-	static const char* extensions[] = {".iso", ".bin", ".img", ".mdf", ".gz", ".cso", ".zso", ".chd", ".py2"};
+	static const char* extensions[] = {".iso", ".bin", ".img", ".mdf", ".gz", ".cso", ".zso", ".chd", ".py1", ".py2"};
 
 	for (const char* test_extension : extensions)
 	{
