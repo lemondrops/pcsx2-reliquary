@@ -2238,7 +2238,7 @@ namespace
 		return {{
 			ByteSwap32(JAMMA_COIN1_COUNTER_BASE + s_p1io_coin_counters[0]), ByteSwap32(s_p1io_coin_counters[1]),
 			0x00000000, 0x00000000,
-			JAMMA_P1_JVS_PRESENT | ByteSwap32(source_bits), 0x80000000, 0x00000000, 0x01020101,
+			ByteSwap32(source_bits), 0x80000000, 0x00000000, 0x01020101,
 			jamma_status,
 		}};
 	}
