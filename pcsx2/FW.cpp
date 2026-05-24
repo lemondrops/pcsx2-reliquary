@@ -251,10 +251,15 @@ namespace
 	constexpr u32 KONAMI_DALLAS_NO_KEY_RESPONSE[] = {
 		0x01000000, 0x00000000, 0x00000000,
 	};
-	constexpr u8 KONAMI_FSCI_SERIAL_STREAM[] =
-		"@09T00000000D5\n" // Time/status tick.
-		"@03D00A4\n"       // Distribution/status OK.
-		"@0DM00045F000001AF\n";
+	constexpr u8 KONAMI_FSCI_MAC_STREAM[] =
+		"@0DM00045F000001AF"
+		"@0DM00045F000001AF"
+		"@0DM00045F000001AF";
+	constexpr u32 KONAMI_FSCI_LEGACY_MAC_READS = 3;
+	constexpr u8 KONAMI_FSCI_CONFIG_STREAM[] =
+		"@09T00000000D5" // Time/status tick.
+		"@03D00A4"       // Distribution/status OK.
+		"@0DM00045F000001AF";
 	constexpr u8 KONAMI_EXTERNAL_IO_SYNC_RESPONSE[] = {
 		0xaa, 0xaa, 0xaa, 0x55,
 	};
@@ -371,7 +376,7 @@ namespace
 	std::array<u32, 3> s_dallas_key_response;
 	std::array<std::array<u8, DALLAS_DONGLE_TOTAL_SIZE>, DALLAS_DONGLE_SLOT_COUNT> s_dallas_dongle_slots;
 	std::array<bool, DALLAS_DONGLE_SLOT_COUNT> s_dallas_dongle_loaded;
-	bool s_fsci_serial_stream_sent;
+	u32 s_fsci_read_count;
 	bool s_bbsram_dirty;
 	std::vector<u32> s_pht_tx_fifo[2];
 	u32 s_pht_tx_expected_bytes[2];
@@ -1668,27 +1673,36 @@ namespace
 
 		if (subop == 0)
 		{
-			s_fsci_serial_stream_sent = false;
+			s_fsci_read_count = 0;
 			QueuePendingDbufQuadWrite(0xfffe, KONAMI_FSCI_STATUS_OFFSET, 0);
 			return true;
 		}
 
 		if (subop == 2 && byte_count != 0 && dest != 0)
 		{
-			if (s_fsci_serial_stream_sent)
+			// WE2K3 consumes only the first nine valid frames and treats T/D as a programmed
+			// board response. Pop'n keeps polling, then evaluates parsed frames after no-data.
+			const bool legacy_mac_phase = s_fsci_read_count < KONAMI_FSCI_LEGACY_MAC_READS;
+			const bool config_phase = s_fsci_read_count == KONAMI_FSCI_LEGACY_MAC_READS;
+			if (!legacy_mac_phase && !config_phase)
 			{
+				s_fsci_read_count++;
 				QueuePendingDbufQuadWrite(0xfffe, KONAMI_FSCI_STATUS_OFFSET, 0);
 				return true;
 			}
 
-			const u32 response_bytes = std::min<u32>(byte_count, sizeof(KONAMI_FSCI_SERIAL_STREAM) - 1);
-			if (!iopMemSafeWriteBytes(dest, KONAMI_FSCI_SERIAL_STREAM, response_bytes))
+			const u8* response = legacy_mac_phase ? KONAMI_FSCI_MAC_STREAM : KONAMI_FSCI_CONFIG_STREAM;
+			const u32 response_size = legacy_mac_phase ?
+				(sizeof(KONAMI_FSCI_MAC_STREAM) - 1) :
+				(sizeof(KONAMI_FSCI_CONFIG_STREAM) - 1);
+			const u32 response_bytes = std::min<u32>(byte_count, response_size);
+			if (!iopMemSafeWriteBytes(dest, response, response_bytes))
 			{
 				DevCon.WriteLn("FW HLE: failed FSCI DMA write dest=0x%x bytes=0x%x", dest, response_bytes);
 				QueuePendingDbufQuadWrite(0xfffe, KONAMI_FSCI_STATUS_OFFSET, 0);
 				return true;
 			}
-			s_fsci_serial_stream_sent = true;
+			s_fsci_read_count++;
 			QueuePendingDbufQuadWrite(0xfffe, KONAMI_FSCI_STATUS_OFFSET, ByteSwap32(response_bytes));
 			return true;
 		}
@@ -3201,7 +3215,7 @@ void logFwAction(u32 addr, u32 value, bool write)
 		LoadBootrom();
 		LoadBbsram();
 		LoadDallasDongles();
-		s_fsci_serial_stream_sent = false;
+		s_fsci_read_count = 0;
 		for (auto& packets : s_net_rx_packets)
 			packets.clear();
 		FireWire::ResetP1IOBindState();
