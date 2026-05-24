@@ -130,6 +130,18 @@ namespace
 	constexpr u32 P1IO_SOURCE_P1_BUTTON3 = 1u << 6;
 	constexpr u32 P1IO_SOURCE_P1_BUTTON4 = 1u << 7;
 	constexpr u32 P1IO_SOURCE_P1_BUTTON5 = 1u << 8;
+	constexpr u32 P1IO_SOURCE_P1_BUTTON6 = 1u << 9;
+	constexpr u32 P1IO_SOURCE_P2_START = 1u << 27;
+	constexpr u32 P1IO_SOURCE_P2_UP = 1u << 18;
+	constexpr u32 P1IO_SOURCE_P2_DOWN = 1u << 19;
+	constexpr u32 P1IO_SOURCE_P2_LEFT = 1u << 16;
+	constexpr u32 P1IO_SOURCE_P2_RIGHT = 1u << 17;
+	constexpr u32 P1IO_SOURCE_P2_BUTTON1 = 1u << 20;
+	constexpr u32 P1IO_SOURCE_P2_BUTTON2 = 1u << 21;
+	constexpr u32 P1IO_SOURCE_P2_BUTTON3 = 1u << 22;
+	constexpr u32 P1IO_SOURCE_P2_BUTTON4 = 1u << 23;
+	constexpr u32 P1IO_SOURCE_P2_BUTTON5 = 1u << 24;
+	constexpr u32 P1IO_SOURCE_P2_BUTTON6 = 1u << 25;
 	constexpr u32 P1IO_SOURCE_TEST = 1u << 15;
 	constexpr u32 P1IO_SOURCE_SERVICE = 1u << 14;
 	constexpr u32 SECTOR_SIZE = 0x200;
@@ -166,6 +178,17 @@ namespace
 		P1IO_BIND_P1_BUTTON4,
 		P1IO_BIND_P1_BUTTON5,
 		P1IO_BIND_P1_BUTTON6,
+		P1IO_BIND_P2_START,
+		P1IO_BIND_P2_UP,
+		P1IO_BIND_P2_DOWN,
+		P1IO_BIND_P2_LEFT,
+		P1IO_BIND_P2_RIGHT,
+		P1IO_BIND_P2_BUTTON1,
+		P1IO_BIND_P2_BUTTON2,
+		P1IO_BIND_P2_BUTTON3,
+		P1IO_BIND_P2_BUTTON4,
+		P1IO_BIND_P2_BUTTON5,
+		P1IO_BIND_P2_BUTTON6,
 		P1IO_BIND_COUNT,
 	};
 
@@ -191,6 +214,17 @@ namespace
 		{"P1Button4", "P1 Button 4", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P1_BUTTON4, GenericInputBinding::Triangle},
 		{"P1Button5", "P1 Button 5", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P1_BUTTON5, GenericInputBinding::L1},
 		{"P1Button6", "P1 Button 6", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P1_BUTTON6, GenericInputBinding::R1},
+		{"P2Start", "P2 Start", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P2_START, GenericInputBinding::Unknown},
+		{"P2Up", "P2 Up", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P2_UP, GenericInputBinding::Unknown},
+		{"P2Down", "P2 Down", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P2_DOWN, GenericInputBinding::Unknown},
+		{"P2Left", "P2 Left", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P2_LEFT, GenericInputBinding::Unknown},
+		{"P2Right", "P2 Right", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P2_RIGHT, GenericInputBinding::Unknown},
+		{"P2Button1", "P2 Button 1", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P2_BUTTON1, GenericInputBinding::Unknown},
+		{"P2Button2", "P2 Button 2", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P2_BUTTON2, GenericInputBinding::Unknown},
+		{"P2Button3", "P2 Button 3", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P2_BUTTON3, GenericInputBinding::Unknown},
+		{"P2Button4", "P2 Button 4", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P2_BUTTON4, GenericInputBinding::Unknown},
+		{"P2Button5", "P2 Button 5", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P2_BUTTON5, GenericInputBinding::Unknown},
+		{"P2Button6", "P2 Button 6", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P2_BUTTON6, GenericInputBinding::Unknown},
 	};
 
 	// P1IO's input report is still being documented, so keep the bit layout centralized.
@@ -2163,6 +2197,30 @@ namespace
 			source_bits |= P1IO_SOURCE_P1_BUTTON4;
 		if (bind_state & (1u << P1IO_BIND_P1_BUTTON5))
 			source_bits |= P1IO_SOURCE_P1_BUTTON5;
+		if (bind_state & (1u << P1IO_BIND_P1_BUTTON6))
+			source_bits |= P1IO_SOURCE_P1_BUTTON6;
+		if (bind_state & (1u << P1IO_BIND_P2_START))
+			source_bits |= P1IO_SOURCE_P2_START;
+		if (bind_state & (1u << P1IO_BIND_P2_UP))
+			source_bits |= P1IO_SOURCE_P2_UP;
+		if (bind_state & (1u << P1IO_BIND_P2_DOWN))
+			source_bits |= P1IO_SOURCE_P2_DOWN;
+		if (bind_state & (1u << P1IO_BIND_P2_LEFT))
+			source_bits |= P1IO_SOURCE_P2_LEFT;
+		if (bind_state & (1u << P1IO_BIND_P2_RIGHT))
+			source_bits |= P1IO_SOURCE_P2_RIGHT;
+		if (bind_state & (1u << P1IO_BIND_P2_BUTTON1))
+			source_bits |= P1IO_SOURCE_P2_BUTTON1;
+		if (bind_state & (1u << P1IO_BIND_P2_BUTTON2))
+			source_bits |= P1IO_SOURCE_P2_BUTTON2;
+		if (bind_state & (1u << P1IO_BIND_P2_BUTTON3))
+			source_bits |= P1IO_SOURCE_P2_BUTTON3;
+		if (bind_state & (1u << P1IO_BIND_P2_BUTTON4))
+			source_bits |= P1IO_SOURCE_P2_BUTTON4;
+		if (bind_state & (1u << P1IO_BIND_P2_BUTTON5))
+			source_bits |= P1IO_SOURCE_P2_BUTTON5;
+		if (bind_state & (1u << P1IO_BIND_P2_BUTTON6))
+			source_bits |= P1IO_SOURCE_P2_BUTTON6;
 		return source_bits;
 	}
 
