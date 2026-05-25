@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "IopDma.h"
+#include "IopHw.h"
 #include "IopMem.h"
 #include "Memory.h"
 #include "R3000A.h"
 #include "FW.h"
+
+#include "Common.h"
 
 #include "Host.h"
 
@@ -13,6 +16,7 @@
 #include "common/FileSystem.h"
 #include "common/Path.h"
 #include "common/SettingsInterface.h"
+#include "common/StringUtil.h"
 
 #include <algorithm>
 #include <atomic>
@@ -46,6 +50,13 @@ namespace
 	constexpr u32 FW_RUNTIME_LOG_LIMIT = 256;
 	constexpr u32 UART_RX_QUEUE_LIMIT = 0x400;
 	constexpr u32 UART_CALLBACK_BYTE_LIMIT = 38;
+	constexpr u64 KONAMI_STORAGE_READ_BYTES_PER_SECOND = 24ull * 1024 * 1024;
+	constexpr u32 KONAMI_ADPCM_HEADER_SIZE = 0x10;
+	constexpr u32 KONAMI_ADPCM_MAX_ENCODED_BYTES = 32 * 1024 * 1024;
+	constexpr u32 KONAMI_ADPCM_INPUT_SAMPLE_RATE = 22050;
+	constexpr u32 KONAMI_ADPCM_OUTPUT_SAMPLE_RATE = 48000;
+	constexpr u32 KONAMI_ADPCM_FADE_SAMPLES = KONAMI_ADPCM_OUTPUT_SAMPLE_RATE / 200; // 5 ms.
+	constexpr float KONAMI_ADPCM_LOWPASS_ALPHA = 0.60f;
 
 	constexpr u32 FW_INTR0_DRFR = 0x00000001;
 	constexpr u32 FW_INTR0_PBCntR = 0x00000200;
@@ -94,6 +105,7 @@ namespace
 	constexpr u32 KONAMI_UART_STATUS_OFFSET = 0x00030000;
 	constexpr u32 KONAMI_CF_STATUS_OFFSET = 0x00050000;
 	constexpr u32 KONAMI_ATA_STATUS_OFFSET = 0x00060000;
+	constexpr u32 KONAMI_ADPCM_STATUS_OFFSET = 0x00070000;
 	constexpr u32 KONAMI_BBSRAM_STATUS_OFFSET = 0x00080000;
 	constexpr u32 KONAMI_BOOTROM_STATUS_OFFSET = 0x00090000;
 	constexpr u32 KONAMI_FSCI_STATUS_OFFSET = 0x000a0000;
@@ -152,6 +164,9 @@ namespace
 	constexpr u32 DALLAS_DONGLE_SERIAL_SIZE = 8;
 	constexpr u32 DALLAS_DONGLE_PAYLOAD_SIZE = 0x20;
 	constexpr u32 DALLAS_DONGLE_TOTAL_SIZE = DALLAS_DONGLE_SERIAL_SIZE + DALLAS_DONGLE_PAYLOAD_SIZE;
+	constexpr const char* PYTHON1_GAME_CONFIG_SECTION = "Python1/Game";
+	constexpr const char* PYTHON1_IO_MODE_JVS = "JVS";
+	constexpr const char* PYTHON1_IO_MODE_EXTIO = "EXTIO";
 	constexpr const char* FIREWIRE_CONFIG_SECTION = "FireWire";
 	constexpr const char* P1IO_CONFIG_PREFIX = "P1IO_";
 	// EE byte-swaps the JAMMA word, then maps source bit 8 to P1 bit 0x200.
@@ -190,6 +205,12 @@ namespace
 		P1IO_BIND_P2_BUTTON5,
 		P1IO_BIND_P2_BUTTON6,
 		P1IO_BIND_COUNT,
+	};
+
+	enum class Python1IOMode
+	{
+		JVS,
+		EXTIO,
 	};
 
 	struct P1IOJammaMapping
@@ -333,6 +354,17 @@ namespace
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x03, 0x00, 0x00, 0x00, 0x00,
 	};
+	constexpr s32 KONAMI_ADPCM_STEPS[] = {
+		256, 272, 304, 336, 368, 400, 448, 496, 544, 592, 656, 720,
+		800, 880, 960, 1056, 1168, 1280, 1408, 1552, 1712, 1888, 2080, 2288,
+		2512, 2768, 3040, 3344, 3680, 4048, 4464, 4912, 5392, 5936, 6528, 7184,
+		7904, 8704, 9568, 10528, 11584, 12736, 14016, 15408, 16960, 18656, 20512, 22576,
+		24832,
+	};
+	constexpr s32 KONAMI_ADPCM_INDEX_CHANGES[] = {
+		-1, -1, -1, -1, 2, 4, 6, 8,
+		-1, -1, -1, -1, 2, 4, 6, 8,
+	};
 
 	struct PendingDbufDmaWrite
 	{
@@ -341,11 +373,40 @@ namespace
 		std::vector<u8> data;
 	};
 
+	struct PendingSectorStatusWrite
+	{
+		u64 ready_cycle = 0;
+		u32 status_offset = 0;
+		u32 checksum = 0;
+	};
+
 	struct PendingNetPacket
 	{
 		std::vector<u8> data;
 		u32 source_ip = 0;
 		u16 source_port = 0;
+	};
+
+	struct SubboardAdpcmPlayback
+	{
+		std::vector<u8> encoded;
+		std::vector<std::array<s16, 2>> samples;
+		std::array<s32, 2> decoder_step_index = {};
+		std::array<s32, 2> decoder_pcm_sample = {};
+		size_t position = 0;
+		size_t loop_start = 0;
+		size_t loop_end = 0;
+		u32 resample_accumulator = 0;
+		u32 volume_left = 0;
+		u32 volume_right = 0;
+		std::array<float, 2> filter_state = {};
+		u32 fade_in_remaining = 0;
+		u32 fade_out_remaining = 0;
+		u32 sector = 0;
+		bool playing = false;
+		bool looping = false;
+		bool stopping = false;
+		bool filter_initialized = false;
 	};
 
 	struct EeNetworkStateSnapshot
@@ -401,7 +462,10 @@ namespace
 	std::vector<u32> s_ubuf_tx_fifo;
 	std::vector<u32> s_pending_dbuf_r0_rx_fifo;
 	std::vector<PendingDbufDmaWrite> s_pending_dbuf_r0_rx_dma;
+	std::vector<PendingSectorStatusWrite> s_pending_sector_status_writes;
 	std::vector<u32> s_dbuf_r0_rx_fifo;
+	std::FILE* s_hdd_image_file = nullptr;
+	std::string s_hdd_image_open_path;
 	std::vector<PendingNetPacket> s_net_rx_packets[KONAMI_NET_CHANNEL_COUNT];
 	std::array<u8, 64> s_net_property_response;
 	std::vector<u8> s_uart_rx_fifo;
@@ -430,6 +494,8 @@ namespace
 	u32 s_pht_log_count;
 	u32 s_runtime_log_count;
 	u32 s_p1io_log_count;
+	u64 s_next_sector_read_ready_cycle;
+	SubboardAdpcmPlayback s_subboard_adpcm;
 	EeNetworkStateSnapshot s_last_ee_network_state;
 	bool s_has_last_ee_network_state;
 #ifndef _WIN32
@@ -736,7 +802,29 @@ namespace
 		QueueUartBytes(packet.data(), static_cast<u32>(packet.size()));
 	}
 
-	void HandleAcioUartWrite(const u32* payload, u32 payload_quads, u32 byte_count)
+	Python1IOMode GetPython1IOMode()
+	{
+		const std::string mode = Host::GetStringSettingValue(PYTHON1_GAME_CONFIG_SECTION, "IOMode", PYTHON1_IO_MODE_JVS);
+		return StringUtil::Strcasecmp(mode.c_str(), PYTHON1_IO_MODE_EXTIO) == 0 ? Python1IOMode::EXTIO : Python1IOMode::JVS;
+	}
+
+	bool IsPython1ExtioMode()
+	{
+		return GetPython1IOMode() == Python1IOMode::EXTIO;
+	}
+
+	u32 FindChecksummedUartPacketSize(const std::vector<u8>& bytes)
+	{
+		for (u32 packet_size = 6; packet_size <= bytes.size(); packet_size++)
+		{
+			if (CalculateAcioChecksum(bytes.data(), packet_size - 1) == bytes[packet_size - 1])
+				return packet_size;
+		}
+
+		return 0;
+	}
+
+	void HandleAcioUartWrite(const u32* payload, u32 payload_quads, u32 byte_count, bool extio_mode)
 	{
 		std::vector<u8> bytes;
 		bytes.resize(byte_count);
@@ -761,7 +849,7 @@ namespace
 
 		TraceBytes("uart tx", 0, bytes.data(), static_cast<u32>(bytes.size()));
 		TraceBytesToConsoleWhenEnabled("uart tx", payload_quads > 2 ? payload[2] : 0, bytes.data(), static_cast<u32>(bytes.size()));
-		if (bytes.size() == 4 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] == 0xaa && bytes[3] == 0x55)
+		if (bytes.size() >= 4 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] == 0xaa && bytes[3] == 0x55)
 		{
 			QueueUartBytes(KONAMI_EXTERNAL_IO_SYNC_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_SYNC_RESPONSE));
 		}
@@ -781,24 +869,34 @@ namespace
 		{
 			QueueUartBytes(KONAMI_EXTERNAL_IO_STARTUP_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_STARTUP_RESPONSE));
 		}
-		else if (bytes.size() >= 5 && bytes[0] == 0xaa && bytes[1] == 0x01 && bytes[2] == 0x00 && bytes[3] == 0x02)
+		else if (extio_mode && bytes.size() >= 5 && bytes[0] == 0xaa && bytes[1] == 0x01 && bytes[2] == 0x00 && bytes[3] == 0x02)
 		{
 			QueueAcioResponse(KONAMI_ICCA_PRODUCT_RESPONSE, sizeof(KONAMI_ICCA_PRODUCT_RESPONSE));
 		}
-		else if (bytes.size() >= 5 && bytes[0] == 0xaa && bytes[1] == 0x01 && bytes[2] == 0x00 && bytes[3] == 0x03)
+		else if (extio_mode && bytes.size() >= 5 && bytes[0] == 0xaa && bytes[1] == 0x01 && bytes[2] == 0x00 && bytes[3] == 0x03)
 		{
 			QueueAcioResponse(KONAMI_ICCA_STARTUP_RESPONSE, sizeof(KONAMI_ICCA_STARTUP_RESPONSE));
 		}
-		else if (bytes.size() >= 5 && bytes[0] == 0xaa && bytes[1] == 0x01 &&
+		else if (extio_mode && bytes.size() >= 5 && bytes[0] == 0xaa && bytes[1] == 0x01 &&
 			bytes[2] == 0x01 && (bytes[3] == 0x31 || bytes[3] == 0x34 || bytes[3] == 0x35))
 		{
 			QueueAcioResponse(KONAMI_ICCA_STATUS_RESPONSE, sizeof(KONAMI_ICCA_STATUS_RESPONSE));
 		}
-		else if (bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0x00 &&
-			CalculateAcioChecksum(bytes.data(), static_cast<u32>(bytes.size() - 1)) == bytes.back())
+		else if (extio_mode && bytes.size() >= 4 && ((bytes[0] + bytes[1] + bytes[2]) & 0x7f) == bytes[3])
 		{
+			// DDR foot-panel external I/O packets are raw 4-byte writes, not ACIO-framed.
+			constexpr u8 DDR_EXTERNAL_IO_ACK[] = {0x11};
+			QueueUartBytes(DDR_EXTERNAL_IO_ACK, sizeof(DDR_EXTERNAL_IO_ACK));
+		}
+		else if (bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0x00)
+		{
+			const u32 packet_size = FindChecksummedUartPacketSize(bytes);
+			if (packet_size == 0)
+				return;
+
+			std::vector<u8> request(bytes.begin(), bytes.begin() + packet_size);
 			const u8 ok_response[] = {0x00, 0x00};
-			switch (bytes[3])
+			switch (request[3])
 			{
 				case 0x00:
 				case 0x01:
@@ -810,12 +908,12 @@ namespace
 				case 0x16:
 				case 0x1e:
 				case 0x1f:
-					QueueExternalIoWrappedResponse(bytes, ok_response, sizeof(ok_response));
+					QueueExternalIoWrappedResponse(request, ok_response, sizeof(ok_response));
 					break;
 				case 0x18:
 				{
 					const std::array<u8, 0x82> empty_card_data = {};
-					QueueExternalIoWrappedResponse(bytes, empty_card_data.data(), static_cast<u32>(empty_card_data.size()));
+					QueueExternalIoWrappedResponse(request, empty_card_data.data(), static_cast<u32>(empty_card_data.size()));
 					break;
 				}
 				default:
@@ -826,11 +924,11 @@ namespace
 
 	void QueuePendingDbufBlockWrite(u32 offset_high, u32 offset_low, const u32* payload, u32 payload_quads);
 
-	void QueueUartReadData(u32 requested_bytes)
+	bool QueueUartReadData(u32 requested_bytes)
 	{
 		const u32 byte_count = std::min<u32>(requested_bytes, static_cast<u32>(s_uart_rx_fifo.size()));
 		if (byte_count == 0)
-			return;
+			return false;
 
 		std::vector<u32> callback(2 + ((byte_count + 1) / 2));
 		callback[1] = (byte_count << 16) | s_uart_rx_fifo[0];
@@ -848,12 +946,13 @@ namespace
 			word = ByteSwap32(word);
 		QueuePendingDbufBlockWrite(0xfffe, KONAMI_UART_STATUS_OFFSET, callback.data(), static_cast<u32>(callback.size()));
 		s_uart_rx_fifo.erase(s_uart_rx_fifo.begin(), s_uart_rx_fifo.begin() + byte_count);
+		return true;
 	}
 
 	std::string GetPython1GamePath(const char* key, const char* env_key)
 	{
 		const char* env_path = std::getenv(env_key);
-		return (env_path && env_path[0]) ? std::string(env_path) : Host::GetStringSettingValue("Python1/Game", key, "");
+		return (env_path && env_path[0]) ? std::string(env_path) : Host::GetStringSettingValue(PYTHON1_GAME_CONFIG_SECTION, key, "");
 	}
 
 	std::string GetHddImagePath()
@@ -898,14 +997,27 @@ namespace
 
 	u32 PackDallasSerialResponseWord(const u8* data)
 	{
-		return (static_cast<u32>(data[0]) << 24) | (static_cast<u32>(data[1]) << 16) |
-			(static_cast<u32>(data[2]) << 8) | static_cast<u32>(data[3]);
+		// Dallas serial responses are copied out of the status buffer as native words.
+		return static_cast<u32>(data[0]) | (static_cast<u32>(data[1]) << 8) |
+			(static_cast<u32>(data[2]) << 16) | (static_cast<u32>(data[3]) << 24);
 	}
 
 	std::array<u32, 3> BuildDallasDongleSerialResponse(u32 slot)
 	{
 		const std::array<u8, DALLAS_DONGLE_TOTAL_SIZE>& dongle = s_dallas_dongle_slots[slot];
 		return {{0, PackDallasSerialResponseWord(dongle.data()), PackDallasSerialResponseWord(dongle.data() + 4)}};
+	}
+
+	u32 ResolveDallasDongleSlot(u32 key)
+	{
+		if (key < DALLAS_DONGLE_SLOT_COUNT && s_dallas_dongle_loaded[key])
+			return key;
+
+		// DSF's Python 1 security path asks for key index 1, but the physical plug is black.
+		if (key == 1 && !s_dallas_dongle_loaded[1] && s_dallas_dongle_loaded[0])
+			return 0;
+
+		return key;
 	}
 
 	void UpdateDallasKeyResponseFromBootrom()
@@ -1112,6 +1224,28 @@ namespace
 			s_bbsram_dirty = false;
 	}
 
+	void CloseHddImageFile()
+	{
+		if (!s_hdd_image_file)
+			return;
+
+		std::fclose(s_hdd_image_file);
+		s_hdd_image_file = nullptr;
+		s_hdd_image_open_path.clear();
+	}
+
+	std::FILE* GetHddImageFile(const std::string& path)
+	{
+		if (s_hdd_image_file && s_hdd_image_open_path == path)
+			return s_hdd_image_file;
+
+		CloseHddImageFile();
+		s_hdd_image_file = std::fopen(path.c_str(), "rb");
+		if (s_hdd_image_file)
+			s_hdd_image_open_path = path;
+		return s_hdd_image_file;
+	}
+
 	bool ShouldLogLimited(u32& counter, u32 limit)
 	{
 		counter++;
@@ -1121,6 +1255,298 @@ namespace
 	u32 ByteSwap32(u32 value)
 	{
 		return (value >> 24) | ((value >> 8) & 0x0000ff00) | ((value & 0x0000ff00) << 8) | (value << 24);
+	}
+
+	u32 ReadBigEndian32(const u8* data)
+	{
+		return (static_cast<u32>(data[0]) << 24) | (static_cast<u32>(data[1]) << 16) |
+			(static_cast<u32>(data[2]) << 8) | static_cast<u32>(data[3]);
+	}
+
+	void StopSubboardAdpcmPlayback()
+	{
+		s_subboard_adpcm.encoded.clear();
+		s_subboard_adpcm.samples.clear();
+		s_subboard_adpcm.decoder_step_index = {};
+		s_subboard_adpcm.decoder_pcm_sample = {};
+		s_subboard_adpcm.position = 0;
+		s_subboard_adpcm.loop_start = 0;
+		s_subboard_adpcm.loop_end = 0;
+		s_subboard_adpcm.resample_accumulator = 0;
+		s_subboard_adpcm.filter_state = {};
+		s_subboard_adpcm.fade_in_remaining = 0;
+		s_subboard_adpcm.fade_out_remaining = 0;
+		s_subboard_adpcm.sector = 0;
+		s_subboard_adpcm.playing = false;
+		s_subboard_adpcm.looping = false;
+		s_subboard_adpcm.stopping = false;
+		s_subboard_adpcm.filter_initialized = false;
+	}
+
+	void RequestStopSubboardAdpcmPlayback()
+	{
+		if (!s_subboard_adpcm.playing)
+		{
+			StopSubboardAdpcmPlayback();
+			return;
+		}
+
+		s_subboard_adpcm.stopping = true;
+		s_subboard_adpcm.fade_in_remaining = 0;
+		if (s_subboard_adpcm.fade_out_remaining == 0)
+			s_subboard_adpcm.fade_out_remaining = KONAMI_ADPCM_FADE_SAMPLES;
+	}
+
+	void ResetSubboardAdpcmPlayback()
+	{
+		StopSubboardAdpcmPlayback();
+		s_subboard_adpcm.volume_left = 0;
+		s_subboard_adpcm.volume_right = 0;
+	}
+
+	s16 DecodeKonamiAdpcmNibble(u8 nibble, s32& step_index, s32& pcm_sample)
+	{
+		const s32 step = KONAMI_ADPCM_STEPS[step_index];
+		s32 delta = (step >> 3) + ((step >> 2) & -(nibble & 1)) +
+			((step >> 1) & -((nibble >> 1) & 1)) + (step & -((nibble >> 2) & 1));
+		if (nibble & 0x08)
+			delta = -delta;
+
+		step_index = std::clamp<s32>(step_index + KONAMI_ADPCM_INDEX_CHANGES[nibble], 0, 48);
+		pcm_sample = std::clamp<s32>(pcm_sample + delta, -32768, 32767);
+		return static_cast<s16>(pcm_sample);
+	}
+
+	bool EnsureSubboardAdpcmDecoded(size_t position)
+	{
+		if (position >= s_subboard_adpcm.encoded.size())
+			return false;
+
+		while (s_subboard_adpcm.samples.size() <= position)
+		{
+			const u8 byte = s_subboard_adpcm.encoded[s_subboard_adpcm.samples.size()];
+			s_subboard_adpcm.samples.push_back({
+				DecodeKonamiAdpcmNibble(byte >> 4, s_subboard_adpcm.decoder_step_index[0], s_subboard_adpcm.decoder_pcm_sample[0]),
+				DecodeKonamiAdpcmNibble(byte & 0x0f, s_subboard_adpcm.decoder_step_index[1], s_subboard_adpcm.decoder_pcm_sample[1]),
+			});
+		}
+
+		return true;
+	}
+
+	std::array<s16, 2> GetSubboardAdpcmSampleAt(size_t position)
+	{
+		return EnsureSubboardAdpcmDecoded(position) ? s_subboard_adpcm.samples[position] : std::array<s16, 2>{};
+	}
+
+	bool StartSubboardAdpcmPlayback(u32 sector)
+	{
+		const std::string path = GetHddImagePath();
+		if (path.empty())
+		{
+			DevCon.WriteLn("FW HLE: no Python 1 HDD image configured for ADPCM sector=0x%x", sector);
+			StopSubboardAdpcmPlayback();
+			return false;
+		}
+
+		std::FILE* file = GetHddImageFile(path);
+		if (!file)
+		{
+			DevCon.WriteLn("FW HLE: failed to open %s for ADPCM sector=0x%x", path.c_str(), sector);
+			StopSubboardAdpcmPlayback();
+			return false;
+		}
+
+		const u64 offset = static_cast<u64>(sector) * SECTOR_SIZE;
+		if (std::fseek(file, static_cast<long>(offset), SEEK_SET) != 0)
+		{
+			DevCon.WriteLn("FW HLE: failed to seek %s to ADPCM sector=0x%x", path.c_str(), sector);
+			StopSubboardAdpcmPlayback();
+			return false;
+		}
+
+		std::array<u8, KONAMI_ADPCM_HEADER_SIZE> header;
+		if (std::fread(header.data(), 1, header.size(), file) != header.size())
+		{
+			DevCon.WriteLn("FW HLE: short ADPCM header read sector=0x%x", sector);
+			StopSubboardAdpcmPlayback();
+			return false;
+		}
+
+		if (header[0] != 'A' || header[1] != 'D' || header[2] != 'P')
+		{
+			DevCon.WriteLn("FW HLE: ADPCM sector=0x%x missing ADP header magic", sector);
+			FwTrace("adpcm start sector=0x%x invalid_magic=%02x%02x%02x", sector, header[0], header[1], header[2]);
+			StopSubboardAdpcmPlayback();
+			return false;
+		}
+
+		const u32 encoded_size = ReadBigEndian32(header.data() + 4);
+		if (encoded_size == 0 || encoded_size > KONAMI_ADPCM_MAX_ENCODED_BYTES)
+		{
+			DevCon.WriteLn("FW HLE: ADPCM sector=0x%x invalid encoded size=0x%x", sector, encoded_size);
+			StopSubboardAdpcmPlayback();
+			return false;
+		}
+
+		std::vector<u8> encoded(encoded_size);
+		const size_t read = std::fread(encoded.data(), 1, encoded.size(), file);
+		if (read != encoded.size())
+		{
+			DevCon.WriteLn("FW HLE: short ADPCM read sector=0x%x requested=0x%zx read=0x%zx", sector, encoded.size(), read);
+			StopSubboardAdpcmPlayback();
+			return false;
+		}
+
+		bool looping = false;
+		size_t loop_start = 0;
+		size_t loop_end = encoded.size();
+		if (header[3] == 0x02)
+		{
+			const u32 loop_start_file = ReadBigEndian32(header.data() + 8);
+			const u32 loop_end_file = ReadBigEndian32(header.data() + 12);
+			const u32 loop_start_byte = loop_start_file > KONAMI_ADPCM_HEADER_SIZE ? loop_start_file - KONAMI_ADPCM_HEADER_SIZE : 0;
+			const u32 loop_end_byte = loop_end_file > KONAMI_ADPCM_HEADER_SIZE ? std::min(loop_end_file - KONAMI_ADPCM_HEADER_SIZE, encoded_size) : encoded_size;
+			loop_start = std::min<size_t>(loop_start_byte, encoded.size());
+			loop_end = std::min<size_t>(loop_end_byte, encoded.size());
+			looping = loop_start < loop_end;
+		}
+
+		s_subboard_adpcm.encoded = std::move(encoded);
+		s_subboard_adpcm.samples.clear();
+		s_subboard_adpcm.samples.reserve(s_subboard_adpcm.encoded.size());
+		s_subboard_adpcm.decoder_step_index = {};
+		s_subboard_adpcm.decoder_pcm_sample = {};
+		s_subboard_adpcm.position = 0;
+		s_subboard_adpcm.loop_start = loop_start;
+		s_subboard_adpcm.loop_end = loop_end;
+		s_subboard_adpcm.resample_accumulator = 0;
+		s_subboard_adpcm.filter_state = {};
+		s_subboard_adpcm.fade_in_remaining = KONAMI_ADPCM_FADE_SAMPLES;
+		s_subboard_adpcm.fade_out_remaining = 0;
+		s_subboard_adpcm.sector = sector;
+		s_subboard_adpcm.playing = !s_subboard_adpcm.encoded.empty();
+		s_subboard_adpcm.looping = looping;
+		s_subboard_adpcm.stopping = false;
+		s_subboard_adpcm.filter_initialized = false;
+
+		FwTrace("adpcm start sector=0x%x encoded=0x%x frames=0x%zx loop=%u loop_start=0x%zx loop_end=0x%zx vol_l=0x%x vol_r=0x%x",
+			sector, encoded_size, s_subboard_adpcm.encoded.size(), looping ? 1 : 0,
+			s_subboard_adpcm.loop_start, s_subboard_adpcm.loop_end,
+			s_subboard_adpcm.volume_left, s_subboard_adpcm.volume_right);
+		return s_subboard_adpcm.playing;
+	}
+
+	void AdvanceSubboardAdpcmPlayback()
+	{
+		if (!s_subboard_adpcm.playing)
+			return;
+
+		s_subboard_adpcm.position++;
+		const size_t end_position = s_subboard_adpcm.looping ? s_subboard_adpcm.loop_end : s_subboard_adpcm.encoded.size();
+		if (s_subboard_adpcm.position < end_position)
+			return;
+
+		if (s_subboard_adpcm.looping && s_subboard_adpcm.loop_start < s_subboard_adpcm.loop_end)
+		{
+			s_subboard_adpcm.position = s_subboard_adpcm.loop_start;
+			return;
+		}
+
+		StopSubboardAdpcmPlayback();
+	}
+
+	std::array<s16, 2> GetNextSubboardAdpcmSample()
+	{
+		const size_t end_position = s_subboard_adpcm.looping ? s_subboard_adpcm.loop_end : s_subboard_adpcm.encoded.size();
+		const size_t next_position = s_subboard_adpcm.position + 1;
+		if (next_position < end_position)
+			return GetSubboardAdpcmSampleAt(next_position);
+		if (s_subboard_adpcm.looping && s_subboard_adpcm.loop_start < s_subboard_adpcm.loop_end)
+			return GetSubboardAdpcmSampleAt(s_subboard_adpcm.loop_start);
+		return GetSubboardAdpcmSampleAt(s_subboard_adpcm.position);
+	}
+
+	std::array<float, 2> GetInterpolatedSubboardAdpcmSample()
+	{
+		const std::array<s16, 2> current = GetSubboardAdpcmSampleAt(s_subboard_adpcm.position);
+		const std::array<s16, 2> next = GetNextSubboardAdpcmSample();
+		const float fraction = static_cast<float>(s_subboard_adpcm.resample_accumulator) /
+			static_cast<float>(KONAMI_ADPCM_OUTPUT_SAMPLE_RATE);
+		return {
+			static_cast<float>(current[0]) + ((static_cast<float>(next[0]) - static_cast<float>(current[0])) * fraction),
+			static_cast<float>(current[1]) + ((static_cast<float>(next[1]) - static_cast<float>(current[1])) * fraction),
+		};
+	}
+
+	std::array<float, 2> FilterSubboardAdpcmSample(const std::array<float, 2>& sample)
+	{
+		if (!s_subboard_adpcm.filter_initialized)
+		{
+			s_subboard_adpcm.filter_state = sample;
+			s_subboard_adpcm.filter_initialized = true;
+			return sample;
+		}
+
+		for (u32 channel = 0; channel < 2; channel++)
+			s_subboard_adpcm.filter_state[channel] += (sample[channel] - s_subboard_adpcm.filter_state[channel]) * KONAMI_ADPCM_LOWPASS_ALPHA;
+		return s_subboard_adpcm.filter_state;
+	}
+
+	float GetSubboardAdpcmEnvelope(bool* stop_after_mix)
+	{
+		float envelope = 1.0f;
+		if (s_subboard_adpcm.fade_in_remaining != 0)
+		{
+			envelope *= static_cast<float>(KONAMI_ADPCM_FADE_SAMPLES - s_subboard_adpcm.fade_in_remaining) /
+				static_cast<float>(KONAMI_ADPCM_FADE_SAMPLES);
+			s_subboard_adpcm.fade_in_remaining--;
+		}
+
+		if (s_subboard_adpcm.stopping)
+		{
+			envelope *= static_cast<float>(s_subboard_adpcm.fade_out_remaining) /
+				static_cast<float>(KONAMI_ADPCM_FADE_SAMPLES);
+			if (s_subboard_adpcm.fade_out_remaining != 0)
+				s_subboard_adpcm.fade_out_remaining--;
+			if (s_subboard_adpcm.fade_out_remaining == 0 && stop_after_mix)
+				*stop_after_mix = true;
+		}
+
+		return envelope;
+	}
+
+	s32 ScaleSubboardAdpcmSample(float sample, u32 volume, float envelope)
+	{
+		const float clamped_volume = static_cast<float>(std::min<u32>(volume, 0xffff));
+		return static_cast<s32>((sample * clamped_volume * envelope) / 65536.0f);
+	}
+
+	void MixSubboardAdpcmAudio(s32* left, s32* right)
+	{
+		if (!s_subboard_adpcm.playing || !left || !right || s_subboard_adpcm.position >= s_subboard_adpcm.encoded.size())
+			return;
+		if (!EnsureSubboardAdpcmDecoded(s_subboard_adpcm.position))
+		{
+			StopSubboardAdpcmPlayback();
+			return;
+		}
+
+		bool stop_after_mix = false;
+		const float envelope = GetSubboardAdpcmEnvelope(&stop_after_mix);
+		const std::array<float, 2> sample = FilterSubboardAdpcmSample(GetInterpolatedSubboardAdpcmSample());
+		*left += ScaleSubboardAdpcmSample(sample[0], s_subboard_adpcm.volume_left, envelope);
+		*right += ScaleSubboardAdpcmSample(sample[1], s_subboard_adpcm.volume_right, envelope);
+
+		s_subboard_adpcm.resample_accumulator += KONAMI_ADPCM_INPUT_SAMPLE_RATE;
+		while (s_subboard_adpcm.playing && s_subboard_adpcm.resample_accumulator >= KONAMI_ADPCM_OUTPUT_SAMPLE_RATE)
+		{
+			s_subboard_adpcm.resample_accumulator -= KONAMI_ADPCM_OUTPUT_SAMPLE_RATE;
+			AdvanceSubboardAdpcmPlayback();
+		}
+
+		if (stop_after_mix)
+			StopSubboardAdpcmPlayback();
 	}
 
 	const char* TcodeName(u32 tcode)
@@ -1432,49 +1858,95 @@ namespace
 		return checksum;
 	}
 
-	bool QueuePendingSectorAndStatusPackets(u32 dest, const std::vector<u8>& data, u32 status_offset)
+	u64 CalculateStorageReadCycles(size_t byte_count)
 	{
-		s_pending_dbuf_r0_rx_fifo.clear();
-		s_pending_dbuf_r0_rx_dma.clear();
-		const size_t chunks = (data.size() + SECTOR_SIZE - 1) / SECTOR_SIZE;
-		if (ShouldLogLimited(s_sector_read_log_count, FW_SECTOR_LOG_LIMIT))
-			DevCon.WriteLn("FW HLE: queue DBUF WRITEB off_hi=0x1000 off_low=0x%x bytes=0x%zx chunks=0x%zx", dest, data.size(), chunks);
-		FwTrace("sector response queue dest=0x%x bytes=0x%zx chunks=0x%zx pending_before=0x%zx", dest, data.size(), chunks, s_pending_dbuf_r0_rx_fifo.size());
+		const u64 base_cycles = std::max<u64>(1, PSXCLK / 2000); // 0.5 ms command/DMA setup.
+		const u64 transfer_cycles = (static_cast<u64>(byte_count) * PSXCLK + KONAMI_STORAGE_READ_BYTES_PER_SECOND - 1) /
+			KONAMI_STORAGE_READ_BYTES_PER_SECOND;
+		return base_cycles + std::max<u64>(1, transfer_cycles);
+	}
 
-		if (!iopMemSafeWriteBytes(dest, data.data(), static_cast<u32>(data.size())))
+	void SchedulePendingSectorStatusEvent();
+
+	void ServicePendingSectorStatusWrites()
+	{
+		bool queued_status = false;
+		while (!s_pending_sector_status_writes.empty() && s_pending_sector_status_writes.front().ready_cycle <= psxRegs.cycle)
 		{
-			DevCon.WriteLn("FW HLE: failed FireWire DMA write of 0x%zx bytes to IOP 0x%x", data.size(), dest);
+			const PendingSectorStatusWrite status = s_pending_sector_status_writes.front();
+			s_pending_sector_status_writes.erase(s_pending_sector_status_writes.begin());
+			QueuePendingDbufQuadWrite(0xfffe, status.status_offset, ByteSwap32(status.checksum));
+			queued_status = true;
+		}
+
+		if (queued_status)
+			FlushPendingDbufR0RxPacket();
+		SchedulePendingSectorStatusEvent();
+	}
+
+	void SchedulePendingSectorStatusEvent()
+	{
+		if (s_pending_sector_status_writes.empty())
+		{
+			psxRegs.interrupt &= ~(1 << IopEvt_FW);
+			return;
+		}
+
+		const u64 ready_cycle = s_pending_sector_status_writes.front().ready_cycle;
+		const u64 delta = ready_cycle > psxRegs.cycle ? ready_cycle - psxRegs.cycle : 1;
+		PSX_INT(IopEvt_FW, static_cast<s32>(std::min<u64>(delta, 0x7fffffffu)));
+	}
+
+	bool PerformFireWireIopDmaWrite(u32 dest, const u8* data, size_t size)
+	{
+		// HLE the receive-side DMA effect of an async FireWire block write into IOP RAM.
+		if (!iopMemSafeWriteBytes(dest, data, static_cast<u32>(size)))
+		{
+			DevCon.WriteLn("FW HLE: failed FireWire IOP DMA write of 0x%zx bytes to IOP 0x%x", size, dest);
 			return false;
 		}
 
 		if (FW_VERBOSE_LOGS)
-			DevCon.WriteLn("FW HLE: FireWire DMA WRITEB off_hi=0x1000 off_low=0x%x bytes=0x%zx", dest, data.size());
-		FwTrace("sector direct dma dest=0x%x bytes=0x%zx", dest, data.size());
+			DevCon.WriteLn("FW HLE: FireWire IOP DMA off_hi=0x1000 off_low=0x%x bytes=0x%zx", dest, size);
+		FwTrace("firewire iop dma dest=0x%x bytes=0x%zx", dest, size);
+		return true;
+	}
 
-		for (size_t offset = 0; offset < data.size(); offset += SECTOR_SIZE)
+	bool ShouldDeferSectorReadStatus(u32 status_offset)
+	{
+		return status_offset == KONAMI_CF_STATUS_OFFSET || status_offset == KONAMI_ATA_STATUS_OFFSET;
+	}
+
+	void QueueSectorReadStatus(u32 status_offset, u32 checksum, size_t byte_count, bool defer_status)
+	{
+		if (!defer_status)
 		{
-			s_pending_dbuf_r0_rx_dma.emplace_back();
-			size_t chunk = data.size() - offset;
-			if (chunk > SECTOR_SIZE)
-				chunk = SECTOR_SIZE;
-
-			s_pending_dbuf_r0_rx_fifo.push_back((0x3ffu << 22) | (KONAMI_RESPONSE_SPEED << 16) | (IEEE1394_TCODE_WRITEB << 4));
-			s_pending_dbuf_r0_rx_fifo.push_back((LOCAL_NODE_ID << 16) | 0x1000u);
-			s_pending_dbuf_r0_rx_fifo.push_back(dest + static_cast<u32>(offset));
-			s_pending_dbuf_r0_rx_fifo.push_back(static_cast<u32>(chunk) << 16);
-
-			for (size_t chunk_offset = 0; chunk_offset < chunk; chunk_offset += sizeof(u32))
-			{
-				u32 value = 0;
-				for (size_t i = 0; i < sizeof(value) && chunk_offset + i < chunk; i++)
-					value |= static_cast<u32>(data[offset + chunk_offset + i]) << (24 - (i * 8));
-				s_pending_dbuf_r0_rx_fifo.push_back(value);
-			}
-
-			s_pending_dbuf_r0_rx_fifo.push_back(2);
+			QueuePendingDbufQuadWrite(0xfffe, status_offset, ByteSwap32(checksum));
+			return;
 		}
 
-		QueuePendingDbufQuadWrite(0xfffe, status_offset, ByteSwap32(CalculateReadStatusChecksum(data)));
+		const u64 start_cycle = std::max(s_next_sector_read_ready_cycle, psxRegs.cycle);
+		const u64 ready_cycle = start_cycle + CalculateStorageReadCycles(byte_count);
+		s_next_sector_read_ready_cycle = ready_cycle;
+		s_pending_sector_status_writes.push_back({ready_cycle, status_offset, checksum});
+		FwTrace("sector status deferred status=0x%x bytes=0x%zx ready=0x%llx now=0x%llx pending=0x%zx",
+			status_offset, byte_count, static_cast<unsigned long long>(ready_cycle), static_cast<unsigned long long>(psxRegs.cycle),
+			s_pending_sector_status_writes.size());
+		SchedulePendingSectorStatusEvent();
+	}
+
+	bool QueuePendingSectorAndStatusPackets(u32 dest, const std::vector<u8>& data, u32 status_offset, bool defer_status)
+	{
+		const size_t chunks = (data.size() + SECTOR_SIZE - 1) / SECTOR_SIZE;
+		if (ShouldLogLimited(s_sector_read_log_count, FW_SECTOR_LOG_LIMIT))
+			DevCon.WriteLn("FW HLE: FireWire sector DMA off_hi=0x1000 off_low=0x%x bytes=0x%zx chunks=0x%zx", dest, data.size(), chunks);
+		FwTrace("sector dma dest=0x%x bytes=0x%zx chunks=0x%zx status=0x%x pending_before=0x%zx", dest, data.size(), chunks, status_offset, s_pending_dbuf_r0_rx_fifo.size());
+
+		if (!PerformFireWireIopDmaWrite(dest, data.data(), data.size()))
+			return false;
+
+		// Sector payload is already in IOP RAM; only the status write should be visible to the FW stack.
+		QueueSectorReadStatus(status_offset, CalculateReadStatusChecksum(data), data.size(), defer_status);
 		return true;
 	}
 
@@ -1552,7 +2024,7 @@ namespace
 		}
 
 		std::vector<u8> data(static_cast<size_t>(bytes64));
-		std::FILE* file = std::fopen(path.c_str(), "rb");
+		std::FILE* file = GetHddImageFile(path);
 		if (!file)
 		{
 			DevCon.WriteLn("FW HLE: failed to open %s", path.c_str());
@@ -1562,20 +2034,18 @@ namespace
 		if (std::fseek(file, static_cast<long>(offset), SEEK_SET) != 0)
 		{
 			DevCon.WriteLn("FW HLE: failed to seek %s to 0x%llx", path.c_str(), static_cast<unsigned long long>(offset));
-			std::fclose(file);
 			return false;
 		}
 
 		const size_t bytes = static_cast<size_t>(bytes64);
 		const size_t read = std::fread(data.data(), 1, bytes, file);
-		std::fclose(file);
 		if (read != bytes)
 		{
 			DevCon.WriteLn("FW HLE: short read %s offset=0x%llx requested=0x%zx read=0x%zx", path.c_str(), static_cast<unsigned long long>(offset), bytes, read);
 			return false;
 		}
 
-		return QueuePendingSectorAndStatusPackets(dest, data, status_offset);
+		return QueuePendingSectorAndStatusPackets(dest, data, status_offset, ShouldDeferSectorReadStatus(status_offset));
 	}
 
 	bool HleBbsramCommand(const u32* payload, u32 payload_quads)
@@ -1645,9 +2115,10 @@ namespace
 		// must report empty for the programmed-backup-key path used by WE2K3 attract/game start.
 		if (subop == 0)
 		{
-			if (key < DALLAS_DONGLE_SLOT_COUNT && s_dallas_dongle_loaded[key])
+			const u32 slot = ResolveDallasDongleSlot(key);
+			if (slot < DALLAS_DONGLE_SLOT_COUNT && s_dallas_dongle_loaded[slot])
 			{
-				const std::array<u32, 3> response = BuildDallasDongleSerialResponse(key);
+				const std::array<u32, 3> response = BuildDallasDongleSerialResponse(slot);
 				QueuePendingDbufBlockWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, response.data(), static_cast<u32>(response.size()));
 				return true;
 			}
@@ -1660,7 +2131,8 @@ namespace
 
 		if (subop == 1)
 		{
-			if (key >= DALLAS_DONGLE_SLOT_COUNT || !s_dallas_dongle_loaded[key] ||
+			const u32 slot = ResolveDallasDongleSlot(key);
+			if (slot >= DALLAS_DONGLE_SLOT_COUNT || !s_dallas_dongle_loaded[slot] ||
 				offset > DALLAS_DONGLE_PAYLOAD_SIZE || byte_count > DALLAS_DONGLE_PAYLOAD_SIZE - offset)
 			{
 				QueuePendingDbufQuadWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, KONAMI_DALLAS_NO_KEY_RESPONSE[0]);
@@ -1668,14 +2140,15 @@ namespace
 			}
 
 			if (byte_count != 0 && dest != 0)
-				QueuePendingDbufByteWrite(0x1000, dest, s_dallas_dongle_slots[key].data() + DALLAS_DONGLE_SERIAL_SIZE + offset, byte_count);
+				QueuePendingDbufByteWrite(0x1000, dest, s_dallas_dongle_slots[slot].data() + DALLAS_DONGLE_SERIAL_SIZE + offset, byte_count);
 			QueuePendingDbufQuadWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, 0);
 			return true;
 		}
 
 		if (subop == 2)
 		{
-			if (key >= DALLAS_DONGLE_SLOT_COUNT || !s_dallas_dongle_loaded[key] ||
+			const u32 slot = ResolveDallasDongleSlot(key);
+			if (slot >= DALLAS_DONGLE_SLOT_COUNT || !s_dallas_dongle_loaded[slot] ||
 				offset > DALLAS_DONGLE_PAYLOAD_SIZE || byte_count > DALLAS_DONGLE_PAYLOAD_SIZE - offset)
 			{
 				QueuePendingDbufQuadWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, KONAMI_DALLAS_NO_KEY_RESPONSE[0]);
@@ -1683,7 +2156,7 @@ namespace
 			}
 
 			if (byte_count != 0 && dest != 0 &&
-				!iopMemSafeReadBytes(dest, s_dallas_dongle_slots[key].data() + DALLAS_DONGLE_SERIAL_SIZE + offset, byte_count))
+				!iopMemSafeReadBytes(dest, s_dallas_dongle_slots[slot].data() + DALLAS_DONGLE_SERIAL_SIZE + offset, byte_count))
 			{
 				DevCon.WriteLn("FW HLE: failed Dallas dongle write DMA read src=0x%x bytes=0x%x", dest, byte_count);
 				QueuePendingDbufQuadWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, KONAMI_DALLAS_NO_KEY_RESPONSE[0]);
@@ -1757,14 +2230,71 @@ namespace
 		DevCon.WriteLn("FW HLE: UART command subop=0x%x w1=0x%x w2=0x%x status=0x%x", subop, word1, word2, status);
 		FwTrace("uart subop=0x%x w1=0x%x w2=0x%x status=0x%x", subop, word1, word2, status);
 
+		const bool extio_mode = IsPython1ExtioMode();
+		bool queued_read_data = false;
 		if (subop == 1 && word1 != 0)
-			HandleAcioUartWrite(payload, payload_quads, word1);
-		else if (subop == 2)
-			QueueUartReadData(UART_CALLBACK_BYTE_LIMIT);
+			HandleAcioUartWrite(payload, payload_quads, word1, extio_mode);
+		else if (subop == 2 && (extio_mode || !s_uart_rx_fifo.empty()))
+			queued_read_data = QueueUartReadData(UART_CALLBACK_BYTE_LIMIT);
+		else if (!extio_mode && (subop == 1 || subop == 2))
+			FwTrace("uart ignored in JVS mode subop=0x%x bytes=0x%x", subop, word1);
 
 		QueuePendingDbufQuadWrite(0xfffe, KONAMI_UART_STATUS_OFFSET, status);
-		if (subop == 2)
+		if ((extio_mode && subop == 2) || queued_read_data)
 			QueuePendingDbufQuadWrite(0xfffe, KONAMI_UART_STATUS_OFFSET, ByteSwap32(1));
+		return true;
+	}
+
+	bool HleAdpcmCommand(const u32* payload, u32 payload_quads)
+	{
+		const u32 command_words = payload_quads > 0 ? std::min<u32>(payload[0] + 1, payload_quads - 1) : 0;
+		const u32 word0 = payload_quads > 1 ? payload[1] : 0;
+		const u32 word1 = payload_quads > 2 ? payload[2] : 0;
+		const u32 word2 = payload_quads > 3 ? payload[3] : 0;
+		if (ShouldLogLimited(s_runtime_log_count, FW_RUNTIME_LOG_LIMIT))
+			DevCon.WriteLn("FW HLE: ADPCM command words=0x%x w0=0x%x w1=0x%x w2=0x%x", command_words, word0, word1, word2);
+		FwTrace("adpcm words=0x%x w0=0x%x w1=0x%x w2=0x%x", command_words, word0, word1, word2);
+
+		bool has_sector_high = false;
+		bool has_sector_low = false;
+		u32 sector_high = 0;
+		u32 sector_low = 0;
+		for (u32 i = 0; i < command_words; i++)
+		{
+			const u32 word = payload[i + 1];
+			const u32 command = word >> 24;
+			switch (command)
+			{
+				case 0x00:
+					if (word == 0)
+						RequestStopSubboardAdpcmPlayback();
+					break;
+				case 0x02:
+					sector_high = word & 0xffff;
+					has_sector_high = true;
+					break;
+				case 0x03:
+					sector_low = word & 0xffff;
+					has_sector_low = true;
+					break;
+				case 0x04:
+					break;
+				case 0x05:
+					s_subboard_adpcm.volume_left = word & 0xffff;
+					break;
+				case 0x06:
+					s_subboard_adpcm.volume_right = word & 0xffff;
+					break;
+				default:
+					FwTrace("adpcm unknown_word=0x%x", word);
+					break;
+			}
+		}
+
+		if (has_sector_high && has_sector_low)
+			StartSubboardAdpcmPlayback((sector_high << 16) | sector_low);
+
+		QueuePendingDbufQuadWrite(0xfffe, KONAMI_ADPCM_STATUS_OFFSET, 0);
 		return true;
 	}
 
@@ -2238,7 +2768,7 @@ namespace
 		return {{
 			ByteSwap32(JAMMA_COIN1_COUNTER_BASE + s_p1io_coin_counters[0]), ByteSwap32(s_p1io_coin_counters[1]),
 			0x00000000, 0x00000000,
-			ByteSwap32(source_bits), 0x80000000, 0x00000000, 0x01020101,
+			ByteSwap32(source_bits) | JAMMA_P1_JVS_PRESENT, 0x80000000, 0x00000000, 0x01020101,
 			jamma_status,
 		}};
 	}
@@ -2268,6 +2798,9 @@ namespace
 		if (command_offset != KONAMI_CF_COMMAND_OFFSET && command_offset != KONAMI_ATA_COMMAND_OFFSET && payload_quads >= 1)
 		{
 			if (HleNetCommand(command_offset, payload, payload_quads))
+				return true;
+
+			if (command_offset == 0x0d0 && HleAdpcmCommand(payload, payload_quads))
 				return true;
 
 			if (command_offset == 0x100 && HleUartCommand(payload, payload_quads))
@@ -2311,11 +2844,10 @@ namespace
 				}
 
 				const u32 bind_state = GetP1IOBindState();
-				const bool bind_state_changed = UpdateP1IOCoinCounters(bind_state);
+				(void)UpdateP1IOCoinCounters(bind_state);
 				const u32 source_bits = BuildP1IOInputSourceBits(bind_state);
 				const u32 jamma_status = GetP1IOJammaStatus();
-				if ((bind_state_changed || jamma_status != s_last_jamma_input_status) &&
-					WriteP1IOJammaInputReport(s_jamma_input_dest, source_bits, jamma_status))
+				if (WriteP1IOJammaInputReport(s_jamma_input_dest, source_bits, jamma_status))
 					s_last_jamma_input_status = jamma_status;
 				return true;
 			}
@@ -3265,17 +3797,22 @@ void logFwAction(u32 addr, u32 value, bool write)
 	s32 FWopen()
 	{
 		InitializePhyRegisters();
+		CloseHddImageFile();
 		s_ubuf_rx_fifo.clear();
 		s_ubuf_tx_fifo.clear();
 		s_pending_dbuf_r0_rx_fifo.clear();
 		s_pending_dbuf_r0_rx_dma.clear();
+		s_pending_sector_status_writes.clear();
+		psxRegs.interrupt &= ~(1 << IopEvt_FW);
 		s_dbuf_r0_rx_fifo.clear();
+		s_uart_rx_fifo.clear();
 		LoadBootrom();
 		LoadBbsram();
 		LoadDallasDongles();
 		s_fsci_read_count = 0;
 		for (auto& packets : s_net_rx_packets)
 			packets.clear();
+		ResetSubboardAdpcmPlayback();
 		FireWire::ResetP1IOBindState();
 		s_jamma_input_dest = INVALID_JAMMA_INPUT_DEST;
 		s_last_jamma_input_status = JAMMA_STATUS_NEUTRAL;
@@ -3298,6 +3835,7 @@ void logFwAction(u32 addr, u32 value, bool write)
 		s_pht_log_count = 0;
 		s_runtime_log_count = 0;
 		s_p1io_log_count = 0;
+		s_next_sector_read_ready_cycle = 0;
 		s_has_last_ee_network_state = false;
 		FwTrace("FWopen");
 	// Initializing our registers.
@@ -3317,10 +3855,24 @@ void logFwAction(u32 addr, u32 value, bool write)
 void FWclose()
 {
 	SaveBbsramIfDirty();
+	CloseHddImageFile();
+	ResetSubboardAdpcmPlayback();
+	s_pending_sector_status_writes.clear();
+	psxRegs.interrupt &= ~(1 << IopEvt_FW);
 	FwTrace("FWclose");
 	// Freeing the registers.
 	free(fwregs);
 	fwregs = NULL;
+}
+
+void FWsectorReadStatusInterrupt()
+{
+	ServicePendingSectorStatusWrites();
+}
+
+void FWmixSubboardAudio(s32* left, s32* right)
+{
+	MixSubboardAdpcmAudio(left, right);
 }
 
 void PHYWrite()
@@ -3364,6 +3916,7 @@ void PHYRead()
 u32 FWread32(u32 addr)
 {
 	SampleEeNetworkState("fw-read");
+	ServicePendingSectorStatusWrites();
 
 	u32 ret = 0;
 
@@ -3420,6 +3973,7 @@ u32 FWread32(u32 addr)
 void FWwrite32(u32 addr, u32 value)
 {
 	SampleEeNetworkState("fw-write");
+	ServicePendingSectorStatusWrites();
 
 	logFwAction(addr, value, true);
 	switch (addr)

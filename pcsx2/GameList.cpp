@@ -523,6 +523,11 @@ bool GameList::GetPython1ListEntry(const std::string& path, GameList::Entry* ent
 	const std::string dongle_black_path = GetRelativeGameIniPath(path, *new_interface, "DongleBlackPath");
 	const std::string dongle_white_path = GetRelativeGameIniPath(path, *new_interface, "DongleWhitePath");
 	const std::string memory_card_dongle_path = GetRelativeGameIniPath(path, *new_interface, "MemoryCardDonglePath");
+	std::string io_mode = new_interface->GetStringValue("Game", "IOMode", "JVS");
+	if (StringUtil::Strcasecmp(io_mode.c_str(), "EXTIO") == 0)
+		io_mode = "EXTIO";
+	else
+		io_mode = "JVS";
 
 	std::string game_title = new_interface->GetStringValue("Game", "Name", path.c_str());
 	u32 forced_crc = new_interface->GetUIntValue("Game", "UniqueId", HashPathForUniqueId(path));
@@ -548,6 +553,7 @@ bool GameList::GetPython1ListEntry(const std::string& path, GameList::Entry* ent
 	sif->SetStringValue("Python1/Game", "DongleBlackFile", dongle_black_path.c_str());
 	sif->SetStringValue("Python1/Game", "DongleWhiteFile", dongle_white_path.c_str());
 	sif->SetStringValue("Python1/Game", "MemoryCardDongleFile", memory_card_dongle_path.c_str());
+	sif->SetStringValue("Python1/Game", "IOMode", io_mode.c_str());
 	sif->SetBoolValue("DEV9/Hdd", "HddEnable", false);
 	sif->SetStringValue("DEV9/Hdd", "HddFile", "");
 	sif->SetStringValue("Security", "MgKeyStoreMode", Pcsx2Config::GetSecurityKeyStoreModeName(SecurityKeyStoreMode::Arcade));

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "Host/AudioStream.h"
+#include "FW.h"
 #include "SPU2/Debug.h"
 #include "SPU2/defs.h"
 #include "SPU2/spu2.h"
@@ -582,6 +583,7 @@ void spu2Mix()
 	WaveDump::WriteCore(1, CoreSrc_External, Out);
 #endif
 
+	FWmixSubboardAudio(&Out.Left, &Out.Right);
 	spu2Output(Out);
 
 	// Update AutoDMA output positioning

@@ -311,6 +311,7 @@ enum IopEventId
 	IopEvt_CdvdSectorReady,
 	IopEvt_DEV9,
 	IopEvt_USB,
+	IopEvt_FW,
 };
 
 extern void PSX_INT( IopEventId n, s32 ecycle);

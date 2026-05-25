@@ -17,6 +17,9 @@ Python1SettingsWidget::Python1SettingsWidget(const GameList::Entry* entry, Setti
 	SettingsInterface* sif = window->getSettingsInterface();
 
 	m_ui.setupUi(this);
+	m_ui.ioMode->addItem(tr("JVS"), QStringLiteral("JVS"));
+	m_ui.ioMode->addItem(tr("EXTIO"), QStringLiteral("EXTIO"));
+	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.ioMode, "Python1/Game", "IOMode", "JVS");
 
 	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.hddImagePath, "Python1/Game", "HddImageFile", "");
 	m_ui.hddImagePath->setEnabled(true);
