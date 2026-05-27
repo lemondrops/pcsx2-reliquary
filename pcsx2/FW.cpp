@@ -167,6 +167,7 @@ namespace
 	constexpr const char* PYTHON1_GAME_CONFIG_SECTION = "Python1/Game";
 	constexpr const char* PYTHON1_IO_MODE_JVS = "JVS";
 	constexpr const char* PYTHON1_IO_MODE_EXTIO = "EXTIO";
+	constexpr const char* PYTHON1_IO_MODE_POPN = "POPN";
 	constexpr const char* FIREWIRE_CONFIG_SECTION = "FireWire";
 	constexpr const char* P1IO_CONFIG_PREFIX = "P1IO_";
 	// EE byte-swaps the JAMMA word, then maps source bit 8 to P1 bit 0x200.
@@ -211,6 +212,7 @@ namespace
 	{
 		JVS,
 		EXTIO,
+		POPN,
 	};
 
 	struct P1IOJammaMapping
@@ -805,7 +807,11 @@ namespace
 	Python1IOMode GetPython1IOMode()
 	{
 		const std::string mode = Host::GetStringSettingValue(PYTHON1_GAME_CONFIG_SECTION, "IOMode", PYTHON1_IO_MODE_JVS);
-		return StringUtil::Strcasecmp(mode.c_str(), PYTHON1_IO_MODE_EXTIO) == 0 ? Python1IOMode::EXTIO : Python1IOMode::JVS;
+		if (StringUtil::Strcasecmp(mode.c_str(), PYTHON1_IO_MODE_EXTIO) == 0)
+			return Python1IOMode::EXTIO;
+		if (StringUtil::Strcasecmp(mode.c_str(), PYTHON1_IO_MODE_POPN) == 0)
+			return Python1IOMode::POPN;
+		return Python1IOMode::JVS;
 	}
 
 	bool IsPython1ExtioMode()
@@ -2078,14 +2084,33 @@ namespace
 
 		if (subop == 1)
 		{
-			if (byte_count != 0 && dest != 0)
+			if (byte_count != 0)
 			{
-				if (!iopMemSafeReadBytes(dest, s_bbsram + offset, byte_count))
+				bool copied = false;
+				if (dest != 0)
 				{
-					DevCon.WriteLn("FW HLE: failed BBSRAM write DMA read src=0x%x bytes=0x%x", dest, byte_count);
-					return false;
+					copied = iopMemSafeReadBytes(dest, s_bbsram + offset, byte_count);
+					if (copied)
+						TraceIopBuffer("bbsram write source", dest, byte_count);
+					else
+						DevCon.WriteLn("FW HLE: failed BBSRAM write DMA read src=0x%x bytes=0x%x", dest, byte_count);
 				}
-				TraceIopBuffer("bbsram write source", dest, byte_count);
+
+				if (!copied)
+				{
+					const u32 inline_start = dest != 0 ? 3 : 4;
+					const u32 inline_bytes = payload_quads > inline_start ? (payload_quads - inline_start) * sizeof(u32) : 0;
+					if (byte_count > inline_bytes)
+						return false;
+
+					for (u32 i = 0; i < byte_count; i++)
+					{
+						const u32 word = payload[inline_start + (i / sizeof(u32))];
+						s_bbsram[offset + i] = static_cast<u8>(word >> (24 - ((i & 3) * 8)));
+					}
+					FwTrace("bbsram write inline start=0x%x bytes=0x%x", inline_start, byte_count);
+				}
+
 				TraceBytes("bbsram write data", offset, s_bbsram + offset, byte_count);
 				s_bbsram_dirty = true;
 				SaveBbsramIfDirty();
@@ -2187,13 +2212,24 @@ namespace
 
 		if (subop == 2 && byte_count != 0 && dest != 0)
 		{
+			// Pop'n treats a parsed FSCI MAC as an FC/card probe success and skips the
+			// backup-RAM initialization path that loads bbsram0:/settings.
+			if (GetPython1IOMode() == Python1IOMode::POPN)
+			{
+				s_fsci_read_count++;
+				FwTrace("fsci popn idle count=0x%x bytes=0x0", s_fsci_read_count);
+				QueuePendingDbufQuadWrite(0xfffe, KONAMI_FSCI_STATUS_OFFSET, 0);
+				return true;
+			}
+
 			// WE2K3 consumes only the first nine valid frames and treats T/D as a programmed
-			// board response. Pop'n keeps polling, then evaluates parsed frames after no-data.
+			// board response.
 			const bool legacy_mac_phase = s_fsci_read_count < KONAMI_FSCI_LEGACY_MAC_READS;
 			const bool config_phase = s_fsci_read_count == KONAMI_FSCI_LEGACY_MAC_READS;
 			if (!legacy_mac_phase && !config_phase)
 			{
 				s_fsci_read_count++;
+				FwTrace("fsci response count=0x%x bytes=0x0", s_fsci_read_count);
 				QueuePendingDbufQuadWrite(0xfffe, KONAMI_FSCI_STATUS_OFFSET, 0);
 				return true;
 			}
@@ -2210,6 +2246,8 @@ namespace
 				return true;
 			}
 			s_fsci_read_count++;
+			FwTrace("fsci response count=0x%x bytes=0x%x", s_fsci_read_count, response_bytes);
+			TraceIopBuffer("fsci buffer after", dest, response_bytes);
 			QueuePendingDbufQuadWrite(0xfffe, KONAMI_FSCI_STATUS_OFFSET, ByteSwap32(response_bytes));
 			return true;
 		}
@@ -2320,6 +2358,7 @@ namespace
 		{
 			if (byte_count != 0 && dest != 0)
 			{
+				TraceBytes("bootrom read data", offset, s_bootrom + offset, byte_count);
 				for (u32 transfer_offset = 0; transfer_offset < byte_count; transfer_offset += KONAMI_DBUF_WRITEB_MAX_PAYLOAD)
 				{
 					const u32 chunk = std::min<u32>(KONAMI_DBUF_WRITEB_MAX_PAYLOAD, byte_count - transfer_offset);
@@ -2332,8 +2371,18 @@ namespace
 
 		if (subop == 1)
 		{
-			if (byte_count != 0 && dest != 0 && !iopMemSafeReadBytes(dest, s_bootrom + offset, byte_count))
-				DevCon.WriteLn("FW HLE: failed BOOTROM write DMA read src=0x%x bytes=0x%x", dest, byte_count);
+			if (byte_count != 0 && dest != 0)
+			{
+				if (iopMemSafeReadBytes(dest, s_bootrom + offset, byte_count))
+				{
+					TraceIopBuffer("bootrom write source", dest, byte_count);
+					TraceBytes("bootrom write data", offset, s_bootrom + offset, byte_count);
+				}
+				else
+				{
+					DevCon.WriteLn("FW HLE: failed BOOTROM write DMA read src=0x%x bytes=0x%x", dest, byte_count);
+				}
+			}
 			QueuePendingDbufQuadWrite(0xfffe, KONAMI_BOOTROM_STATUS_OFFSET, 0x41000000);
 			return true;
 		}
@@ -2700,58 +2749,96 @@ namespace
 		return bind_state_changed;
 	}
 
-	u32 BuildP1IOInputSourceBits(u32 bind_state)
+	void AddP1IOInputSourceBit(u32& source_bits, u32 bind_state, P1IOBinding binding, u32 source_bit)
+	{
+		if (bind_state & (1u << binding))
+			source_bits |= source_bit;
+	}
+
+	u32 BuildP1IOJVSInputSourceBits(u32 bind_state)
 	{
 		u32 source_bits = 0;
-		if (bind_state & (1u << P1IO_BIND_TEST))
-			source_bits |= P1IO_SOURCE_TEST;
-		if (bind_state & (1u << P1IO_BIND_SERVICE))
-			source_bits |= P1IO_SOURCE_SERVICE;
-		if (bind_state & (1u << P1IO_BIND_P1_START))
-			source_bits |= P1IO_SOURCE_P1_START;
-		if (bind_state & (1u << P1IO_BIND_P1_UP))
-			source_bits |= P1IO_SOURCE_P1_UP;
-		if (bind_state & (1u << P1IO_BIND_P1_DOWN))
-			source_bits |= P1IO_SOURCE_P1_DOWN;
-		if (bind_state & (1u << P1IO_BIND_P1_LEFT))
-			source_bits |= P1IO_SOURCE_P1_LEFT;
-		if (bind_state & (1u << P1IO_BIND_P1_RIGHT))
-			source_bits |= P1IO_SOURCE_P1_RIGHT;
-		if (bind_state & (1u << P1IO_BIND_P1_BUTTON1))
-			source_bits |= P1IO_SOURCE_P1_BUTTON1;
-		if (bind_state & (1u << P1IO_BIND_P1_BUTTON2))
-			source_bits |= P1IO_SOURCE_P1_BUTTON2;
-		if (bind_state & (1u << P1IO_BIND_P1_BUTTON3))
-			source_bits |= P1IO_SOURCE_P1_BUTTON3;
-		if (bind_state & (1u << P1IO_BIND_P1_BUTTON4))
-			source_bits |= P1IO_SOURCE_P1_BUTTON4;
-		if (bind_state & (1u << P1IO_BIND_P1_BUTTON5))
-			source_bits |= P1IO_SOURCE_P1_BUTTON5;
-		if (bind_state & (1u << P1IO_BIND_P1_BUTTON6))
-			source_bits |= P1IO_SOURCE_P1_BUTTON6;
-		if (bind_state & (1u << P1IO_BIND_P2_START))
-			source_bits |= P1IO_SOURCE_P2_START;
-		if (bind_state & (1u << P1IO_BIND_P2_UP))
-			source_bits |= P1IO_SOURCE_P2_UP;
-		if (bind_state & (1u << P1IO_BIND_P2_DOWN))
-			source_bits |= P1IO_SOURCE_P2_DOWN;
-		if (bind_state & (1u << P1IO_BIND_P2_LEFT))
-			source_bits |= P1IO_SOURCE_P2_LEFT;
-		if (bind_state & (1u << P1IO_BIND_P2_RIGHT))
-			source_bits |= P1IO_SOURCE_P2_RIGHT;
-		if (bind_state & (1u << P1IO_BIND_P2_BUTTON1))
-			source_bits |= P1IO_SOURCE_P2_BUTTON1;
-		if (bind_state & (1u << P1IO_BIND_P2_BUTTON2))
-			source_bits |= P1IO_SOURCE_P2_BUTTON2;
-		if (bind_state & (1u << P1IO_BIND_P2_BUTTON3))
-			source_bits |= P1IO_SOURCE_P2_BUTTON3;
-		if (bind_state & (1u << P1IO_BIND_P2_BUTTON4))
-			source_bits |= P1IO_SOURCE_P2_BUTTON4;
-		if (bind_state & (1u << P1IO_BIND_P2_BUTTON5))
-			source_bits |= P1IO_SOURCE_P2_BUTTON5;
-		if (bind_state & (1u << P1IO_BIND_P2_BUTTON6))
-			source_bits |= P1IO_SOURCE_P2_BUTTON6;
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_TEST, P1IO_SOURCE_TEST);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_SERVICE, P1IO_SOURCE_SERVICE);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_START, P1IO_SOURCE_P1_START);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_UP, P1IO_SOURCE_P1_UP);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_DOWN, P1IO_SOURCE_P1_DOWN);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_LEFT, P1IO_SOURCE_P1_LEFT);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_RIGHT, P1IO_SOURCE_P1_RIGHT);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_BUTTON1, P1IO_SOURCE_P1_BUTTON1);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_BUTTON2, P1IO_SOURCE_P1_BUTTON2);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_BUTTON3, P1IO_SOURCE_P1_BUTTON3);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_BUTTON4, P1IO_SOURCE_P1_BUTTON4);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_BUTTON5, P1IO_SOURCE_P1_BUTTON5);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_BUTTON6, P1IO_SOURCE_P1_BUTTON6);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_START, P1IO_SOURCE_P2_START);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_UP, P1IO_SOURCE_P2_UP);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_DOWN, P1IO_SOURCE_P2_DOWN);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_LEFT, P1IO_SOURCE_P2_LEFT);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_RIGHT, P1IO_SOURCE_P2_RIGHT);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_BUTTON1, P1IO_SOURCE_P2_BUTTON1);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_BUTTON2, P1IO_SOURCE_P2_BUTTON2);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_BUTTON3, P1IO_SOURCE_P2_BUTTON3);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_BUTTON4, P1IO_SOURCE_P2_BUTTON4);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_BUTTON5, P1IO_SOURCE_P2_BUTTON5);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_BUTTON6, P1IO_SOURCE_P2_BUTTON6);
 		return source_bits;
+	}
+
+	u32 BuildP1IODDRInputSourceBits(u32 bind_state)
+	{
+		u32 source_bits = 0;
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_TEST, P1IO_SOURCE_TEST);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_SERVICE, P1IO_SOURCE_SERVICE);
+
+		// DSF uses the normal left/right source bits for the foot panel, while
+		// the 1P selector uses the adjacent button-2/button-3 source bits.
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_START, P1IO_SOURCE_P1_START);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_UP, P1IO_SOURCE_P1_UP);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_DOWN, P1IO_SOURCE_P1_DOWN);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_LEFT, P1IO_SOURCE_P1_LEFT);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_RIGHT, P1IO_SOURCE_P1_RIGHT);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_BUTTON1, P1IO_SOURCE_P1_BUTTON2);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_BUTTON2, P1IO_SOURCE_P1_BUTTON3);
+
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_START, P1IO_SOURCE_P2_START);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_UP, P1IO_SOURCE_P2_UP);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_DOWN, P1IO_SOURCE_P2_DOWN);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_LEFT, P1IO_SOURCE_P2_LEFT);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_RIGHT, P1IO_SOURCE_P2_RIGHT);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_BUTTON1, P1IO_SOURCE_P2_BUTTON2);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_BUTTON2, P1IO_SOURCE_P2_BUTTON3);
+		return source_bits;
+	}
+
+	u32 BuildP1IOPopnInputSourceBits(u32 bind_state)
+	{
+		u32 source_bits = 0;
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_TEST, P1IO_SOURCE_TEST);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_SERVICE, P1IO_SOURCE_SERVICE);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_START, P1IO_SOURCE_P1_START);
+
+		// Pop'n 9 reads SW1-SW9 from these JAMMA source bits:
+		// white/yellow/green/blue/red/blue/green/yellow/white, left to right.
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_UP, P1IO_SOURCE_P1_UP);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_DOWN, P1IO_SOURCE_P1_DOWN);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_LEFT, P1IO_SOURCE_P1_LEFT);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_RIGHT, P1IO_SOURCE_P1_RIGHT);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P1_BUTTON1, P1IO_SOURCE_P1_BUTTON1);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_UP, P1IO_SOURCE_P2_UP);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_DOWN, P1IO_SOURCE_P2_DOWN);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_LEFT, P1IO_SOURCE_P2_LEFT);
+		AddP1IOInputSourceBit(source_bits, bind_state, P1IO_BIND_P2_RIGHT, P1IO_SOURCE_P2_RIGHT);
+		return source_bits;
+	}
+
+	u32 BuildP1IOInputSourceBits(u32 bind_state, Python1IOMode io_mode)
+	{
+		if (io_mode == Python1IOMode::POPN)
+			return BuildP1IOPopnInputSourceBits(bind_state);
+		if (io_mode == Python1IOMode::EXTIO)
+			return BuildP1IODDRInputSourceBits(bind_state);
+		return BuildP1IOJVSInputSourceBits(bind_state);
 	}
 
 	std::array<u32, JAMMA_INPUT_REPORT_QUADS> BuildP1IOJammaAttachReport(u32 jamma_status)
@@ -2763,19 +2850,22 @@ namespace
 		}};
 	}
 
-	std::array<u32, JAMMA_INPUT_REPORT_QUADS> BuildP1IOJammaLiveReport(u32 source_bits, u32 jamma_status)
+	std::array<u32, JAMMA_INPUT_REPORT_QUADS> BuildP1IOJammaLiveReport(
+		u32 source_bits, u32 jamma_status, bool include_jvs_present)
 	{
 		return {{
 			ByteSwap32(JAMMA_COIN1_COUNTER_BASE + s_p1io_coin_counters[0]), ByteSwap32(s_p1io_coin_counters[1]),
 			0x00000000, 0x00000000,
-			ByteSwap32(source_bits) | JAMMA_P1_JVS_PRESENT, 0x80000000, 0x00000000, 0x01020101,
+			ByteSwap32(source_bits) | (include_jvs_present ? JAMMA_P1_JVS_PRESENT : 0),
+			0x80000000, 0x00000000, 0x01020101,
 			jamma_status,
 		}};
 	}
 
-	bool WriteP1IOJammaInputReport(u32 dest, u32 source_bits, u32 jamma_status)
+	bool WriteP1IOJammaInputReport(u32 dest, u32 source_bits, u32 jamma_status, bool include_jvs_present)
 	{
-		const std::array<u32, JAMMA_INPUT_REPORT_QUADS> report = BuildP1IOJammaLiveReport(source_bits, jamma_status);
+		const std::array<u32, JAMMA_INPUT_REPORT_QUADS> report =
+			BuildP1IOJammaLiveReport(source_bits, jamma_status, include_jvs_present);
 		const u32 byte_count = static_cast<u32>(report.size() * sizeof(report[0]));
 		const bool dma_written = iopMemSafeWriteBytes(dest, report.data(), byte_count);
 		if (ShouldLogLimited(s_p1io_log_count, 32))
@@ -2793,8 +2883,9 @@ namespace
 		const u32 command_offset = offset_low & 0xfff;
 		if (FW_VERBOSE_LOGS)
 			DevCon.WriteLn("FW HLE: TryHleKonamiCommand offset_low=0x%x command_offset=0x%x payload_quads=0x%x", offset_low, command_offset, payload_quads);
-		FwTrace("cmd offset_low=0x%x command_offset=0x%x quads=0x%x p0=0x%x p1=0x%x p2=0x%x p3=0x%x", offset_low, command_offset, payload_quads,
-			payload_quads > 0 ? payload[0] : 0, payload_quads > 1 ? payload[1] : 0, payload_quads > 2 ? payload[2] : 0, payload_quads > 3 ? payload[3] : 0);
+		FwTrace("cmd offset_low=0x%x command_offset=0x%x quads=0x%x p0=0x%x p1=0x%x p2=0x%x p3=0x%x p4=0x%x p5=0x%x p6=0x%x p7=0x%x", offset_low, command_offset, payload_quads,
+			payload_quads > 0 ? payload[0] : 0, payload_quads > 1 ? payload[1] : 0, payload_quads > 2 ? payload[2] : 0, payload_quads > 3 ? payload[3] : 0,
+			payload_quads > 4 ? payload[4] : 0, payload_quads > 5 ? payload[5] : 0, payload_quads > 6 ? payload[6] : 0, payload_quads > 7 ? payload[7] : 0);
 		if (command_offset != KONAMI_CF_COMMAND_OFFSET && command_offset != KONAMI_ATA_COMMAND_OFFSET && payload_quads >= 1)
 		{
 			if (HleNetCommand(command_offset, payload, payload_quads))
@@ -2845,9 +2936,11 @@ namespace
 
 				const u32 bind_state = GetP1IOBindState();
 				(void)UpdateP1IOCoinCounters(bind_state);
-				const u32 source_bits = BuildP1IOInputSourceBits(bind_state);
+				const Python1IOMode io_mode = GetPython1IOMode();
+				const u32 source_bits = BuildP1IOInputSourceBits(bind_state, io_mode);
 				const u32 jamma_status = GetP1IOJammaStatus();
-				if (WriteP1IOJammaInputReport(s_jamma_input_dest, source_bits, jamma_status))
+				if (WriteP1IOJammaInputReport(
+						s_jamma_input_dest, source_bits, jamma_status, io_mode != Python1IOMode::POPN))
 					s_last_jamma_input_status = jamma_status;
 				return true;
 			}

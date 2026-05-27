@@ -526,6 +526,8 @@ bool GameList::GetPython1ListEntry(const std::string& path, GameList::Entry* ent
 	std::string io_mode = new_interface->GetStringValue("Game", "IOMode", "JVS");
 	if (StringUtil::Strcasecmp(io_mode.c_str(), "EXTIO") == 0)
 		io_mode = "EXTIO";
+	else if (StringUtil::Strcasecmp(io_mode.c_str(), "POPN") == 0)
+		io_mode = "POPN";
 	else
 		io_mode = "JVS";
 
@@ -561,6 +563,15 @@ bool GameList::GetPython1ListEntry(const std::string& path, GameList::Entry* ent
 	sif->SetStringValue("MemoryCards", "Slot1_Filename", memory_card_dongle_path.c_str());
 	sif->SetStringValue("MemoryCards", "Slot1_KeySource", Pcsx2Config::McdOptions::KeySourceNames[static_cast<size_t>(MemoryCardKeySource::Arcade)]);
 	sif->SetStringValue("MemoryCards", "Slot1_Key", Pcsx2Config::McdOptions::KeyNames[static_cast<size_t>(MemoryCardKey::Arcade)]);
+
+	const std::string slot2_filename = sif->GetStringValue("MemoryCards", "Slot2_Filename");
+	if (!memory_card_dongle_path.empty() && slot2_filename == memory_card_dongle_path)
+	{
+		sif->DeleteValue("MemoryCards", "Slot2_Enable");
+		sif->DeleteValue("MemoryCards", "Slot2_Filename");
+		sif->DeleteValue("MemoryCards", "Slot2_KeySource");
+		sif->DeleteValue("MemoryCards", "Slot2_Key");
+	}
 	sif->Save();
 
 	return true;
