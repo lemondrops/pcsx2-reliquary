@@ -3705,6 +3705,10 @@ bool MainWindow::verifyPython1Configuration(const GameList::Entry* entry)
 		valid = false;
 	}
 
+	const std::string ioConfigRomPath = si->GetStringValue("Python1/Game", "IOConfigRomFile", "");
+	if (!ioConfigRomPath.empty() && !FileSystem::FileExists(ioConfigRomPath.c_str()))
+		Console.Error("Could not find Python 1 I/O config ROM file: '%s'", ioConfigRomPath.c_str());
+
 	const std::string memoryCardDonglePath = si->GetStringValue("Python1/Game", "MemoryCardDongleFile", "");
 	if (memoryCardDonglePath.empty() || !FileSystem::FileExists(memoryCardDonglePath.c_str()))
 	{
@@ -3712,6 +3716,10 @@ bool MainWindow::verifyPython1Configuration(const GameList::Entry* entry)
 		Console.Error("Could not find required Python 1 memory card dongle file: '%s'", memoryCardDonglePath.c_str());
 		valid = false;
 	}
+
+	const std::string memoryCardIdPath = si->GetStringValue("Python1/Game", "MemoryCardIdFile", "");
+	if (!memoryCardIdPath.empty() && !FileSystem::FileExists(memoryCardIdPath.c_str()))
+		Console.Error("Could not find Python 1 memory card ID file: '%s'", memoryCardIdPath.c_str());
 
 	const std::string dongleBlackPath = si->GetStringValue("Python1/Game", "DongleBlackFile", "");
 	if (!dongleBlackPath.empty() && !FileSystem::FileExists(dongleBlackPath.c_str()))

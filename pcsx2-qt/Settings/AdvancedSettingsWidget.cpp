@@ -82,6 +82,12 @@ AdvancedSettingsWidget::AdvancedSettingsWidget(SettingsWindow* settings_dialog, 
 	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.mgChallengeIvFile, "Security", "MgChallengeIvFile", "");
 	connect(m_ui.mgChallengeIvFileBrowse, &QPushButton::clicked, this, &AdvancedSettingsWidget::onBrowseClickedChallengeIvFile);
 
+	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.arcadeKelfOverrideKbitFile, "Security", "ArcadeKelfOverrideKbitFile", "");
+	connect(m_ui.arcadeKelfOverrideKbitBrowse, &QPushButton::clicked, this, &AdvancedSettingsWidget::onBrowseClickedArcadeKelfOverrideKbitFile);
+
+	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.arcadeKelfOverrideKcFile, "Security", "ArcadeKelfOverrideKcFile", "");
+	connect(m_ui.arcadeKelfOverrideKcBrowse, &QPushButton::clicked, this, &AdvancedSettingsWidget::onBrowseClickedArcadeKelfOverrideKcFile);
+
 	SettingWidgetBinder::BindWidgetToEnumSetting(sif, m_ui.mgKeyStoreMode, "Security", "MgKeyStoreMode", &Pcsx2Config::ParseSecurityKeyStoreMode, &Pcsx2Config::GetSecurityKeyStoreModeName, SecurityKeyStoreMode::Retail);
 
 	dialog()->registerWidgetHelp(m_ui.eeClampMode, tr("Clamping Mode"), tr("Normal (Default)"),
@@ -254,6 +260,16 @@ void AdvancedSettingsWidget::onBrowseClickedCardKeyStoreFile()
 void AdvancedSettingsWidget::onBrowseClickedKeyStoreKeyFile()
 {
 	onBrowseClicked(m_ui.mgKeyStoreKeyFile);
+}
+
+void AdvancedSettingsWidget::onBrowseClickedArcadeKelfOverrideKbitFile()
+{
+	onBrowseClicked(m_ui.arcadeKelfOverrideKbitFile);
+}
+
+void AdvancedSettingsWidget::onBrowseClickedArcadeKelfOverrideKcFile()
+{
+	onBrowseClicked(m_ui.arcadeKelfOverrideKcFile);
 }
 
 void AdvancedSettingsWidget::onBrowseClicked(QLineEdit* pathElement)

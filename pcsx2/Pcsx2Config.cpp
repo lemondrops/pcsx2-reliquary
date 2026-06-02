@@ -1736,6 +1736,8 @@ Pcsx2Config::SecurityOptions::SecurityOptions()
 	MgCardKeyStoreFile = "";
 	MgEncryptedKeyStoreFile = "";
 	MgKeyStoreKeyFile = "";
+	ArcadeKelfOverrideKbitFile = "";
+	ArcadeKelfOverrideKcFile = "";
 	NvRamFile = "";
 	ILinkIdFile = "";
 	MgKeyStoreMode = SecurityKeyStoreMode::Retail;
@@ -1765,6 +1767,8 @@ void Pcsx2Config::SecurityOptions::LoadSave(SettingsWrapper& wrap)
 	SettingsWrapEntry(MgCardKeyStoreFile);
 	SettingsWrapEntry(MgEncryptedKeyStoreFile);
 	SettingsWrapEntry(MgKeyStoreKeyFile);
+	SettingsWrapEntry(ArcadeKelfOverrideKbitFile);
+	SettingsWrapEntry(ArcadeKelfOverrideKcFile);
 
 	SettingsWrapEntry(NvRamFile);
 	SettingsWrapEntry(ILinkIdFile);
@@ -1779,7 +1783,8 @@ bool Pcsx2Config::SecurityOptions::operator!=(const SecurityOptions& right) cons
 
 bool Pcsx2Config::SecurityOptions::operator==(const SecurityOptions& right) const
 {
-	return OpEqu(MgChallengeIvFile) && OpEqu(MgCardKeyStoreFile) && OpEqu(MgEncryptedKeyStoreFile) && OpEqu(NvRamFile) && OpEqu(ILinkIdFile) && OpEqu(MgKeyStoreMode);
+	return OpEqu(MgChallengeIvFile) && OpEqu(MgCardKeyStoreFile) && OpEqu(MgEncryptedKeyStoreFile) && OpEqu(MgKeyStoreKeyFile) &&
+		OpEqu(ArcadeKelfOverrideKbitFile) && OpEqu(ArcadeKelfOverrideKcFile) && OpEqu(NvRamFile) && OpEqu(ILinkIdFile) && OpEqu(MgKeyStoreMode);
 }
 
 Pcsx2Config::FilenameOptions::FilenameOptions()

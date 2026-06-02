@@ -22,9 +22,11 @@ private Q_SLOTS:
 	void onHddImageBrowseClicked();
 	void onBbsramBrowseClicked();
 	void onIoBootRomBrowseClicked();
+	void onIoConfigRomBrowseClicked();
 	void onDongleBlackBrowseClicked();
 	void onDongleWhiteBrowseClicked();
 	void onMemoryCardDongleBrowseClicked();
+	void onMemoryCardIdBrowseClicked();
 
 public:
 	Python1SettingsWidget(const GameList::Entry* entry, SettingsWindow* window, QWidget* parent);

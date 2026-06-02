@@ -34,6 +34,10 @@ Python1SettingsWidget::Python1SettingsWidget(const GameList::Entry* entry, Setti
 	m_ui.ioBootRomPath->setEnabled(true);
 	connect(m_ui.ioBootRomBrowse, &QPushButton::clicked, this, &Python1SettingsWidget::onIoBootRomBrowseClicked);
 
+	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.ioConfigRomPath, "Python1/Game", "IOConfigRomFile", "");
+	m_ui.ioConfigRomPath->setEnabled(true);
+	connect(m_ui.ioConfigRomBrowse, &QPushButton::clicked, this, &Python1SettingsWidget::onIoConfigRomBrowseClicked);
+
 	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.dongleBlackPath, "Python1/Game", "DongleBlackFile", "");
 	m_ui.dongleBlackPath->setEnabled(true);
 	connect(m_ui.dongleBlackBrowse, &QPushButton::clicked, this, &Python1SettingsWidget::onDongleBlackBrowseClicked);
@@ -45,6 +49,10 @@ Python1SettingsWidget::Python1SettingsWidget(const GameList::Entry* entry, Setti
 	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.memoryCardDonglePath, "Python1/Game", "MemoryCardDongleFile", "");
 	m_ui.memoryCardDonglePath->setEnabled(true);
 	connect(m_ui.memoryCardDongleBrowse, &QPushButton::clicked, this, &Python1SettingsWidget::onMemoryCardDongleBrowseClicked);
+
+	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.memoryCardIdPath, "Python1/Game", "MemoryCardIdFile", "");
+	m_ui.memoryCardIdPath->setEnabled(true);
+	connect(m_ui.memoryCardIdBrowse, &QPushButton::clicked, this, &Python1SettingsWidget::onMemoryCardIdBrowseClicked);
 }
 
 void Python1SettingsWidget::onHddImageBrowseClicked()
@@ -89,6 +97,20 @@ void Python1SettingsWidget::onIoBootRomBrowseClicked()
 	m_ui.ioBootRomPath->editingFinished();
 }
 
+void Python1SettingsWidget::onIoConfigRomBrowseClicked()
+{
+	QString path =
+		QDir::toNativeSeparators(QFileDialog::getOpenFileName(QtUtils::GetRootWidget(this), tr("I/O Config ROM File"),
+			!m_ui.ioConfigRomPath->text().isEmpty() ? m_ui.ioConfigRomPath->text() : QString(), tr("ROM (*.rom);;BIN (*.bin);;All Files (*)"), nullptr,
+			QFileDialog::DontConfirmOverwrite));
+
+	if (path.isEmpty())
+		return;
+
+	m_ui.ioConfigRomPath->setText(path);
+	m_ui.ioConfigRomPath->editingFinished();
+}
+
 void Python1SettingsWidget::onDongleBlackBrowseClicked()
 {
 	QString path =
@@ -129,6 +151,20 @@ void Python1SettingsWidget::onMemoryCardDongleBrowseClicked()
 
 	m_ui.memoryCardDonglePath->setText(path);
 	m_ui.memoryCardDonglePath->editingFinished();
+}
+
+void Python1SettingsWidget::onMemoryCardIdBrowseClicked()
+{
+	QString path =
+		QDir::toNativeSeparators(QFileDialog::getOpenFileName(QtUtils::GetRootWidget(this), tr("Memory Card ID File"),
+			!m_ui.memoryCardIdPath->text().isEmpty() ? m_ui.memoryCardIdPath->text() : QString(), tr("BIN (*.bin);;All Files (*)"), nullptr,
+			QFileDialog::DontConfirmOverwrite));
+
+	if (path.isEmpty())
+		return;
+
+	m_ui.memoryCardIdPath->setText(path);
+	m_ui.memoryCardIdPath->editingFinished();
 }
 
 Python1SettingsWidget::~Python1SettingsWidget() = default;

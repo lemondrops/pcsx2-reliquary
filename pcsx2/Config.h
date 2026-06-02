@@ -1385,6 +1385,8 @@ struct Pcsx2Config
 		std::string MgCardKeyStoreFile;
 		std::string MgEncryptedKeyStoreFile;
 		std::string MgKeyStoreKeyFile;
+		std::string ArcadeKelfOverrideKbitFile;
+		std::string ArcadeKelfOverrideKcFile;
 
 		std::string NvRamFile;
 		std::string ILinkIdFile;

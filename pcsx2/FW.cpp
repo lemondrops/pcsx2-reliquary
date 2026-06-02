@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 #include <string_view>
 #include <utility>
 #include <array>
@@ -472,6 +473,7 @@ namespace
 	std::array<u8, 64> s_net_property_response;
 	std::vector<u8> s_uart_rx_fifo;
 	u8 s_bootrom[BOOTROM_SIZE];
+	std::vector<u32> s_io_config_rom;
 	u8 s_bbsram[BBSRAM_SIZE];
 	std::array<u32, 3> s_dallas_key_response;
 	std::array<std::array<u8, DALLAS_DONGLE_TOTAL_SIZE>, DALLAS_DONGLE_SLOT_COUNT> s_dallas_dongle_slots;
@@ -736,6 +738,7 @@ namespace
 	}
 
 	u32 ByteSwap32(u32 value);
+	u32 ReadBigEndian32(const u8* data);
 
 	u8 CalculateAcioChecksum(const u8* data, u32 byte_count)
 	{
@@ -976,6 +979,11 @@ namespace
 		return GetPython1GamePath("IOBootRomFile", "PCSX2_FW_BOOTROM_FILE");
 	}
 
+	std::string GetConfigRomPath()
+	{
+		return GetPython1GamePath("IOConfigRomFile", "PCSX2_FW_CROM_FILE");
+	}
+
 	std::string GetDallasDonglePath(u32 slot)
 	{
 		return slot == 0 ?
@@ -1012,18 +1020,6 @@ namespace
 	{
 		const std::array<u8, DALLAS_DONGLE_TOTAL_SIZE>& dongle = s_dallas_dongle_slots[slot];
 		return {{0, PackDallasSerialResponseWord(dongle.data()), PackDallasSerialResponseWord(dongle.data() + 4)}};
-	}
-
-	u32 ResolveDallasDongleSlot(u32 key)
-	{
-		if (key < DALLAS_DONGLE_SLOT_COUNT && s_dallas_dongle_loaded[key])
-			return key;
-
-		// DSF's Python 1 security path asks for key index 1, but the physical plug is black.
-		if (key == 1 && !s_dallas_dongle_loaded[1] && s_dallas_dongle_loaded[0])
-			return 0;
-
-		return key;
 	}
 
 	void UpdateDallasKeyResponseFromBootrom()
@@ -1081,9 +1077,14 @@ namespace
 
 	bool NormalizeDallasDongleData(const u8* raw, std::array<u8, DALLAS_DONGLE_TOTAL_SIZE>* output)
 	{
-		const bool mame_format =
-			((~CalculateDallasCrc8(raw, DALLAS_DONGLE_PAYLOAD_SIZE - 1, 0xff)) & 0xff) == raw[DALLAS_DONGLE_PAYLOAD_SIZE - 1] &&
+		const bool mame_payload_valid =
+			((~CalculateDallasCrc8(raw, DALLAS_DONGLE_PAYLOAD_SIZE - 1, 0xff)) & 0xff) == raw[DALLAS_DONGLE_PAYLOAD_SIZE - 1];
+		const bool mame_payload_erased =
+			std::all_of(raw, raw + DALLAS_DONGLE_PAYLOAD_SIZE, [](u8 value) { return value == 0xff; });
+		const bool mame_serial_valid =
 			CalculateDallasCrc8(raw + DALLAS_DONGLE_PAYLOAD_SIZE, DALLAS_DONGLE_SERIAL_SIZE - 1, 0) == raw[DALLAS_DONGLE_TOTAL_SIZE - 1];
+		const bool mame_format =
+			(mame_payload_valid || mame_payload_erased) && mame_serial_valid;
 		if (mame_format)
 		{
 			std::memcpy(output->data(), raw + DALLAS_DONGLE_PAYLOAD_SIZE, DALLAS_DONGLE_SERIAL_SIZE);
@@ -1101,6 +1102,36 @@ namespace
 		}
 
 		return false;
+	}
+
+	void LoadConfigRom()
+	{
+		s_io_config_rom.clear();
+		const std::string path = GetConfigRomPath();
+		if (path.empty())
+		{
+			FwTrace("config rom path=<default>");
+			return;
+		}
+
+		const std::optional<std::vector<u8>> data = FileSystem::ReadBinaryFile(path.c_str());
+		if (!data)
+		{
+			DevCon.WriteLn("FW HLE: failed to open config ROM path=%s", path.c_str());
+			return;
+		}
+
+		if (data->empty() || (data->size() & 3) != 0)
+		{
+			DevCon.WriteLn("FW HLE: invalid config ROM path=%s bytes=0x%zx", path.c_str(), data->size());
+			return;
+		}
+
+		s_io_config_rom.resize(data->size() / sizeof(u32));
+		for (size_t i = 0; i < s_io_config_rom.size(); i++)
+			s_io_config_rom[i] = ReadBigEndian32(data->data() + (i * sizeof(u32)));
+
+		FwTrace("config rom path=%s quadlets=0x%zx", path.c_str(), s_io_config_rom.size());
 	}
 
 	void LoadDallasDongles()
@@ -1756,6 +1787,15 @@ namespace
 			return false;
 
 		const u32 index = relative_offset >> 2;
+		if (!s_io_config_rom.empty())
+		{
+			if (index >= s_io_config_rom.size())
+				return false;
+
+			*value = s_io_config_rom[index];
+			return true;
+		}
+
 		if (index >= sizeof(KONAMI_IO_BOARD_CROM) / sizeof(KONAMI_IO_BOARD_CROM[0]))
 			return false;
 
@@ -2129,18 +2169,18 @@ namespace
 			return false;
 
 		const u32 subop = payload[0];
-		const u32 key = payload_quads > 1 ? payload[1] : 0;
+		const u32 raw_key = payload_quads > 1 ? payload[1] : 0;
+		// Serial probes can carry the selected slot in word 4; 0xffffffff means current key.
+		const u32 key = (subop == 0 && payload_quads > 4 && payload[4] != 0xffffffffu) ? payload[4] : raw_key;
 		const u32 offset = payload_quads > 2 ? payload[2] : 0;
 		const u32 byte_count = payload_quads > 3 ? payload[3] : 0;
 		const u32 dest = payload_quads > 4 ? payload[4] : 0;
 		DevCon.WriteLn("FW HLE: DALLAS command subop=0x%x key=0x%x offset=0x%x bytes=0x%x dest=0x%x", subop, key, offset, byte_count, dest);
 		FwTrace("dallas subop=0x%x key=0x%x offset=0x%x bytes=0x%x dest=0x%x", subop, key, offset, byte_count, dest);
 
-		// Key slot 0 is the installed security key. Slot 1 is the removable/programming slot, which
-		// must report empty for the programmed-backup-key path used by WE2K3 attract/game start.
 		if (subop == 0)
 		{
-			const u32 slot = ResolveDallasDongleSlot(key);
+			const u32 slot = key;
 			if (slot < DALLAS_DONGLE_SLOT_COUNT && s_dallas_dongle_loaded[slot])
 			{
 				const std::array<u32, 3> response = BuildDallasDongleSerialResponse(slot);
@@ -2156,7 +2196,7 @@ namespace
 
 		if (subop == 1)
 		{
-			const u32 slot = ResolveDallasDongleSlot(key);
+			const u32 slot = key;
 			if (slot >= DALLAS_DONGLE_SLOT_COUNT || !s_dallas_dongle_loaded[slot] ||
 				offset > DALLAS_DONGLE_PAYLOAD_SIZE || byte_count > DALLAS_DONGLE_PAYLOAD_SIZE - offset)
 			{
@@ -2172,7 +2212,7 @@ namespace
 
 		if (subop == 2)
 		{
-			const u32 slot = ResolveDallasDongleSlot(key);
+			const u32 slot = key;
 			if (slot >= DALLAS_DONGLE_SLOT_COUNT || !s_dallas_dongle_loaded[slot] ||
 				offset > DALLAS_DONGLE_PAYLOAD_SIZE || byte_count > DALLAS_DONGLE_PAYLOAD_SIZE - offset)
 			{
@@ -3918,6 +3958,7 @@ void logFwAction(u32 addr, u32 value, bool write)
 			s_pht_tx_expected_bytes[channel] = 0;
 			s_pht_write_pending[channel] = false;
 		}
+		LoadConfigRom();
 		s_bus_reset_log_count = 0;
 		s_discovery_log_count = 0;
 		s_crom_log_count = 0;
