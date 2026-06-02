@@ -577,6 +577,13 @@ void spu2Mix()
 		Out = ApplyVolume(clamp_mix(Out), Cores[1].MasterVol);
 	}
 
+	// GuitarFreaks fills core 0 with SPDIF audio for game music
+	// If hack enabled, mix that data back into final output bypassing filtering
+	if (EmuConfig.Gamefixes.MixSpdifAnalogHack && PlayMode == 2)
+	{
+		Out = Out + ApplyVolume(clamp_mix(Cores[0].ReadSpdifBypass()), Cores[0].MasterVol);
+	}
+
 #ifdef PCSX2_DEVBUILD
 	// Log final output to wavefile.
 	WaveDump::WriteCore(1, CoreSrc_External, Out);

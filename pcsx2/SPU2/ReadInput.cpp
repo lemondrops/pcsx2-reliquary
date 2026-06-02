@@ -84,6 +84,20 @@ StereoOut32 V_Core::ReadInput_HiFi()
 	return retval;
 }
 
+StereoOut32 V_Core::ReadSpdifBypass()
+{
+	if (Index != 0 || PlayMode != 2)
+		return StereoOut32::Empty;
+
+	// Guitar Freaks V feeds S/PDIF bypass as packed/interleaved 16-bit stereo in
+	// the core 0 input area, consuming adjacent left/right halfwords.
+	const u16 ReadIndexLeft = (OutPos * 2) & 0x1FF;
+	const u16 ReadIndexRight = (ReadIndexLeft + 1) & 0x1FF;
+	return StereoOut32(
+		(s32)(*GetMemPtr(0x2000 + (Index << 10) + ReadIndexLeft)),
+		(s32)(*GetMemPtr(0x2000 + (Index << 10) + ReadIndexRight)));
+}
+
 StereoOut32 V_Core::ReadInput()
 {
 	StereoOut32 retval;
