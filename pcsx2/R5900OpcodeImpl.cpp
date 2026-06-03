@@ -915,18 +915,6 @@ void SYSCALL()
 		call = cpuRegs.GPR.n.v1.UC[0];
 
 	BIOS_LOG("Bios call: %s (%x)", R5900::bios[call], call);
-	if (std::getenv("PCSX2_WE2K3_NET_TRACE") && call == 0x44)
-	{
-		Console.WriteLn("[WE2K3_NET] EE WaitSema syscall pc=0x%08x ra=0x%08x sp=0x%08x gp=0x%08x a0=0x%08x v0=0x%08x v1=0x%08x cycle=0x%llx",
-			cpuRegs.pc,
-			cpuRegs.GPR.r[31].UL[0],
-			cpuRegs.GPR.r[29].UL[0],
-			cpuRegs.GPR.r[28].UL[0],
-			cpuRegs.GPR.n.a0.UL[0],
-			cpuRegs.GPR.n.v0.UL[0],
-			cpuRegs.GPR.n.v1.UL[0],
-			static_cast<unsigned long long>(cpuRegs.cycle));
-	}
 
 
 	switch (static_cast<Syscall>(call))

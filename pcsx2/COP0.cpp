@@ -648,23 +648,6 @@ cpuRegs.PERF.n.pccr, cpuRegs.PERF.n.pcr0, cpuRegs.PERF.n.pcr1, _Imm_ & 0x3F);*/
 
 #endif
 
-		if (std::getenv("PCSX2_WE2K3_NET_TRACE"))
-		{
-			const u32 target = cpuRegs.CP0.n.Status.b.ERL ? cpuRegs.CP0.n.ErrorEPC : cpuRegs.CP0.n.EPC;
-			if (target == 0)
-			{
-				Console.WriteLn("[WE2K3_NET] EE ERET zero target pc=0x%08x ra=0x%08x sp=0x%08x epc=0x%08x errorepc=0x%08x status=0x%08x cause=0x%08x cycle=0x%llx",
-					cpuRegs.pc,
-					cpuRegs.GPR.r[31].UL[0],
-					cpuRegs.GPR.r[29].UL[0],
-					cpuRegs.CP0.n.EPC,
-					cpuRegs.CP0.n.ErrorEPC,
-					cpuRegs.CP0.n.Status.val,
-					cpuRegs.CP0.n.Cause,
-					static_cast<unsigned long long>(cpuRegs.cycle));
-			}
-		}
-
 		if (cpuRegs.CP0.n.Status.b.ERL)
 		{
 			cpuRegs.pc = cpuRegs.CP0.n.ErrorEPC;

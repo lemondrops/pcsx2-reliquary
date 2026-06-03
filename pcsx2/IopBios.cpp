@@ -110,112 +110,6 @@ namespace R3000A
 #define Ra2 (iopMemReadString(a2))
 #define Ra3 (iopMemReadString(a3))
 
-	static bool iop_fs_trace_enabled()
-	{
-		static const bool enabled = std::getenv("PCSX2_IOP_FS_TRACE") != nullptr;
-		return enabled;
-	}
-
-	static void trace_iop_fs_call(const char* op, const std::string& path, u32 flags = 0, u32 mode = 0)
-	{
-		if (!iop_fs_trace_enabled())
-			return;
-
-		Console.WriteLn("[IOPFS] %s path='%s' flags=0x%08x mode=0x%08x pc=0x%08x ra=0x%08x sp=0x%08x gp=0x%08x a0=0x%08x a1=0x%08x a2=0x%08x a3=0x%08x",
-			op, path.c_str(), flags, mode, pc, ra, sp, psxRegs.GPR.n.gp, a0, a1, a2, a3);
-	}
-
-	static std::string trace_iop_string_arg(u32 addr)
-	{
-		if (addr >= Ps2MemSize::IopRam)
-			return {};
-
-		std::string value = iopMemReadString(addr, 96);
-		for (char ch : value)
-		{
-			if (ch < 0x20 || ch >= 0x7f)
-				return {};
-		}
-
-		return value;
-	}
-
-	static std::string trace_iop_module_for_address(u32 addr, u32 gp_hint = 0)
-	{
-		if (!CurrentBiosInformation.iopModListAddr)
-			return {};
-
-		u32 maddr = iopMemRead32(CurrentBiosInformation.iopModListAddr);
-		for (int i = 0; maddr != 0 && i < 1000; i++)
-		{
-			if (maddr >= Ps2MemSize::ExposedIopRam)
-				break;
-
-			const u32 name_addr = iopMemRead32(maddr + 4);
-			const std::string name = name_addr ? iopMemReadString(name_addr, 64) : "(NULL)";
-			const u32 gp = iopMemRead32(maddr + 0x14);
-			const u32 text_addr = iopMemRead32(maddr + 0x18);
-			const u32 text_size = iopMemRead32(maddr + 0x1c);
-			const u32 data_size = iopMemRead32(maddr + 0x20);
-			const u32 bss_size = iopMemRead32(maddr + 0x24);
-			const u32 module_end = text_addr + text_size + data_size + bss_size;
-			if ((text_size && addr >= text_addr && addr < module_end) || (gp_hint && gp_hint == gp))
-			{
-				return fmt::format("{} text=0x{:08x}+0x{:x} data=0x{:x} bss=0x{:x} gp=0x{:08x}",
-					name, text_addr, text_size, data_size, bss_size, gp);
-			}
-
-			maddr = iopMemRead32(maddr);
-		}
-
-		return {};
-	}
-
-	static void trace_iop_import_call(const std::string& libname, u16 index, const char* funcname)
-	{
-		if (!iop_fs_trace_enabled())
-			return;
-
-		const bool path_or_rpc = libname.starts_with("ioman") || libname.starts_with("iomanx") || libname.starts_with("sifcmd") || libname.starts_with("sifman");
-		const bool ilink_callback = libname == "ilink" && index == 50;
-		const bool event_trace = libname == "thevent" && (index == 6 || index == 10);
-		if (!path_or_rpc && !ilink_callback && !event_trace)
-			return;
-
-		if (libname == "sifcmd" && index != 12 && index != 17 && index != 23)
-			return;
-
-		const std::string s0 = trace_iop_string_arg(a0);
-		const std::string s1 = trace_iop_string_arg(a1);
-		const std::string s2 = trace_iop_string_arg(a2);
-		const std::string s3 = trace_iop_string_arg(a3);
-		Console.WriteLn("[IOPFS] import %s.%03u %s pc=0x%08x ra=0x%08x sp=0x%08x gp=0x%08x a0=0x%08x('%s') a1=0x%08x('%s') a2=0x%08x('%s') a3=0x%08x('%s')",
-			libname.c_str(), index, funcname ? funcname : "unknown", pc, ra, sp, psxRegs.GPR.n.gp,
-			a0, s0.c_str(), a1, s1.c_str(), a2, s2.c_str(), a3, s3.c_str());
-	}
-
-	static std::string trace_iop_stack_modules(u32 stack, int words)
-	{
-		std::string result;
-		for (int i = 0; i < words; i++)
-		{
-			const u32 addr = stack + static_cast<u32>(i * 4);
-			if (addr >= Ps2MemSize::IopRam)
-				break;
-
-			const u32 value = iopMemRead32(addr);
-			const std::string mod = trace_iop_module_for_address(value, 0);
-			if (!mod.empty())
-			{
-				if (!result.empty())
-					result += "; ";
-				result += fmt::format("sp+0x{:02x}=0x{:08x} {}", i * 4, value, mod);
-			}
-		}
-
-		return result;
-	}
-
 	// Stat values differ between iomanX and ioman
 	// These values have been taken from the PS2SDK
 	// Specifically iox_stat.h
@@ -736,7 +630,6 @@ namespace R3000A
 				return 1;
 			}
 
-			trace_iop_fs_call("open.fallthrough", path, flags, mode);
 			return 0;
 		}
 
@@ -793,7 +686,6 @@ namespace R3000A
 				return 1;
 			}
 
-			trace_iop_fs_call("dopen.fallthrough", path);
 			return 0;
 		}
 
@@ -885,7 +777,6 @@ namespace R3000A
 				return 1;
 			}
 
-			trace_iop_fs_call(iomanx ? "getStatx.fallthrough" : "getStat.fallthrough", path);
 			return 0;
 		}
 
@@ -929,10 +820,6 @@ namespace R3000A
 				v0 = succeeded ? 0 : -IOP_EIO;
 				pc = ra;
 			}
-			else
-			{
-				trace_iop_fs_call("remove.fallthrough", full_path);
-			}
 			return 0;
 		}
 
@@ -952,7 +839,6 @@ namespace R3000A
 				return 1;
 			}
 
-			trace_iop_fs_call("mkdir.fallthrough", full_path);
 			return 0;
 		}
 
@@ -1002,7 +888,6 @@ namespace R3000A
 				return 1;
 			}
 
-			trace_iop_fs_call("rmdir.fallthrough", full_path);
 			return 0;
 		}
 
@@ -1173,31 +1058,6 @@ namespace R3000A
 			}
 			pxAssertRel(ptmp >= tmp && ptmp < std::end(tmp), "Overflowed tmp buffer");
 			*ptmp = 0;
-			if (iop_fs_trace_enabled())
-			{
-				const std::string message(tmp);
-				static int cdrom_kprintf_log_count = 0;
-				if (cdrom_kprintf_log_count < 16 && (message.find("Unknown device") != std::string::npos || message.find("Known devices") != std::string::npos || message.find("cdrom") != std::string::npos))
-				{
-					cdrom_kprintf_log_count++;
-					static int cdrom_kprintf_detail_count = 0;
-					const u32 stack1 = iopMemRead32(sp + 4);
-					const u32 stack2 = iopMemRead32(sp + 8);
-					const u32 stack3 = iopMemRead32(sp + 12);
-					const u32 stack4 = iopMemRead32(sp + 16);
-					const std::string arg1 = trace_iop_string_arg(stack1);
-					const std::string arg2 = trace_iop_string_arg(stack2);
-					const std::string arg3 = trace_iop_string_arg(stack3);
-					const std::string arg4 = trace_iop_string_arg(stack4);
-					const std::string pc_mod = trace_iop_module_for_address(pc, psxRegs.GPR.n.gp);
-					const std::string ra_mod = trace_iop_module_for_address(ra, psxRegs.GPR.n.gp);
-					const bool include_stack_modules = message.find("Unknown device") != std::string::npos && cdrom_kprintf_detail_count++ < 8;
-					const std::string stack_modules = include_stack_modules ? trace_iop_stack_modules(sp, 48) : std::string();
-					Console.WriteLn("[IOPFS] Kprintf pc=0x%08x ra=0x%08x sp=0x%08x gp=0x%08x pc_mod='%s' ra_mod='%s' a0=0x%08x a1=0x%08x a2=0x%08x a3=0x%08x stack=[0x%08x('%s'),0x%08x('%s'),0x%08x('%s'),0x%08x('%s')] stack_mods='%s' msg='%s'",
-						pc, ra, sp, psxRegs.GPR.n.gp, pc_mod.c_str(), ra_mod.c_str(), a0, a1, a2, a3,
-						stack1, arg1.c_str(), stack2, arg2.c_str(), stack3, arg3.c_str(), stack4, arg4.c_str(), stack_modules.c_str(), message.c_str());
-				}
-			}
 			iopConLog(ShiftJIS_ConvertString(tmp, 1023));
 
 			return 1;
@@ -1411,7 +1271,6 @@ namespace R3000A
 		void sceSifRegisterRpc_DEBUG()
 		{
 			DevCon.WriteLn(Color_Gray, "sifcmd sceSifRegisterRpc: rpc_id %x", a1);
-			SifTraceRegisterRpc(a1, a0, a2, a3, iopMemRead32(sp + 0x10), iopMemRead32(sp + 0x14), iopMemRead32(sp + 0x18));
 		}
 	} // namespace sifcmd
 
@@ -1553,7 +1412,6 @@ namespace R3000A
 		PSXBIOS_LOG("%8.8s.%03d: %s (%x, %x, %x, %x)",
 			libname.data(), index, funcname ? funcname : "unknown",
 			a0, a1, a2, a3);
-		trace_iop_import_call(libname, index, funcname);
 	}
 
 	void irxImportLog_rec(u32 import_table, u16 index, const char* funcname)

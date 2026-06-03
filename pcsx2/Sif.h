@@ -177,10 +177,6 @@ extern _sif sif0, sif1, sif2;
 
 extern void sifReset();
 
-extern void SifTraceRpcPacket(const char* direction, u32 addr, const u32* words, int count, bool dest_is_iop);
-extern void SifTraceCommandPacket(const char* direction, u32 addr, const u32* words, int count, bool dest_is_iop);
-extern void SifTraceRegisterRpc(u32 sid, u32 sd, u32 func, u32 buf, u32 cfunc, u32 cbuf, u32 qd);
-
 extern void SIF0Dma();
 extern void SIF1Dma();
 extern void SIF2Dma();

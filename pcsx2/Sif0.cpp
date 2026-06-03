@@ -61,9 +61,6 @@ static __fi bool WriteIOPtoFifo()
 {
 	// There's some data ready to transfer into the fifo..
 	const int writeSize = std::min(sif0.iop.counter, sif0.fifo.sif_free());
-	const u32 src = hw_dma9.madr;
-	SifTraceRpcPacket("SIF0 IOP->EE", src, reinterpret_cast<const u32*>(iopPhysMem(src)), writeSize, false);
-	SifTraceCommandPacket("SIF0 IOP->EE", src, reinterpret_cast<const u32*>(iopPhysMem(src)), writeSize, false);
 
 	SIF_LOG("Write IOP to Fifo: +++++++++++ %lX of %lX", writeSize, sif0.iop.counter);
 

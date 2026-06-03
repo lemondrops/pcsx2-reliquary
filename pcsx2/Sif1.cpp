@@ -61,8 +61,6 @@ static __fi bool WriteFifoToIOP()
 	const u32 dest = hw_dma10.madr;
 	u32* dest_ptr = reinterpret_cast<u32*>(iopPhysMem(dest));
 	sif1.fifo.read(dest_ptr, readSize);
-	SifTraceRpcPacket("SIF1 EE->IOP", dest, dest_ptr, readSize, true);
-	SifTraceCommandPacket("SIF1 EE->IOP", dest, dest_ptr, readSize, true);
 	psxCpu->Clear(dest, readSize);
 	hw_dma10.madr += readSize << 2;
 	sif1.iop.cycles += readSize >> 2;		// fixme: should be >> 4

@@ -95,21 +95,6 @@ __ri void cpuException(u32 code, u32 bd)
 {
 	bool errLevel2, checkStatus;
 	u32 offset = 0;
-	if (std::getenv("PCSX2_WE2K3_NET_TRACE") && cpuRegs.cycle > 0x1200000000ull &&
-		(cpuRegs.pc == 0 || cpuRegs.GPR.r[31].UL[0] == 0 || cpuRegs.CP0.n.ErrorEPC == 0x0032fb20))
-	{
-		Console.WriteLn("[WE2K3_NET] EE cpuException code=0x%08x bd=0x%x pc=0x%08x ra=0x%08x sp=0x%08x epc=0x%08x errorepc=0x%08x status=0x%08x cause=0x%08x cycle=0x%llx",
-			code,
-			bd,
-			cpuRegs.pc,
-			cpuRegs.GPR.r[31].UL[0],
-			cpuRegs.GPR.r[29].UL[0],
-			cpuRegs.CP0.n.EPC,
-			cpuRegs.CP0.n.ErrorEPC,
-			cpuRegs.CP0.n.Status.val,
-			cpuRegs.CP0.n.Cause,
-			static_cast<unsigned long long>(cpuRegs.cycle));
-	}
 
     cpuRegs.branch = 0;		// Tells the interpreter that an exception occurred during a branch.
 	cpuRegs.CP0.n.Cause = code & 0xffff;
