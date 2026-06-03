@@ -104,6 +104,9 @@
     <ClCompile Include="Settings\ControllerBindingWidget.cpp">
       <Filter>Settings</Filter>
     </ClCompile>
+    <ClCompile Include="Settings\FireWireDeviceWidget.cpp">
+      <Filter>Settings</Filter>
+    </ClCompile>
     <ClCompile Include="Settings\ControllerGlobalSettingsWidget.cpp">
       <Filter>Settings</Filter>
     </ClCompile>
@@ -373,6 +376,9 @@
     <QtMoc Include="Settings\ControllerBindingWidget.h">
       <Filter>Settings</Filter>
     </QtMoc>
+    <QtMoc Include="Settings\FireWireDeviceWidget.h">
+      <Filter>Settings</Filter>
+    </QtMoc>
     <QtMoc Include="Settings\ControllerGlobalSettingsWidget.h">
       <Filter>Settings</Filter>
     </QtMoc>
@@ -609,6 +615,9 @@
       <Filter>Settings</Filter>
     </QtUi>
     <QtUi Include="Settings\ControllerBindingWidget.ui">
+      <Filter>Settings</Filter>
+    </QtUi>
+    <QtUi Include="Settings\FireWireDeviceWidget.ui">
       <Filter>Settings</Filter>
     </QtUi>
     <QtUi Include="Settings\ControllerBindingWidget_DualShock2.ui">

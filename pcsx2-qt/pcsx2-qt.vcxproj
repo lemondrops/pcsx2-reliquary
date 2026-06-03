@@ -150,6 +150,7 @@
     <ClCompile Include="Debugger\Memory\SavedAddressesView.cpp" />
     <ClCompile Include="Settings\BIOSSettingsWidget.cpp" />
     <ClCompile Include="Settings\ControllerBindingWidget.cpp" />
+    <ClCompile Include="Settings\FireWireDeviceWidget.cpp" />
     <ClCompile Include="Settings\ControllerGlobalSettingsWidget.cpp" />
     <ClCompile Include="Settings\MemoryCardCreateDialog.cpp" />
     <ClCompile Include="Settings\EmulationSettingsWidget.cpp" />
@@ -274,6 +275,7 @@
     <QtMoc Include="Debugger\Memory\SavedAddressesModel.h" />
     <QtMoc Include="Debugger\Memory\SavedAddressesView.h" />
     <QtMoc Include="Settings\ControllerBindingWidget.h" />
+    <QtMoc Include="Settings\FireWireDeviceWidget.h" />
     <QtMoc Include="Settings\ControllerGlobalSettingsWidget.h" />
     <ClInclude Include="Settings\MemoryCardConvertWorker.h" />
     <QtMoc Include="Settings\Python1SettingsWidget.h" />
@@ -331,6 +333,7 @@
     <QtUi Include="Settings\AudioStretchSettingsDialog.ui" />
     <QtUi Include="Settings\BIOSSettingsWidget.ui" />
     <QtUi Include="Settings\ControllerBindingWidget.ui" />
+    <QtUi Include="Settings\FireWireDeviceWidget.ui" />
     <QtUi Include="Settings\ControllerBindingWidget_DualShock2.ui" />
     <QtUi Include="Settings\ControllerBindingWidget_Guitar.ui" />
     <QtUi Include="Settings\ControllerBindingWidget_Jogcon.ui" />

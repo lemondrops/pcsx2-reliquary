@@ -73,6 +73,9 @@ target_sources(pcsx2-qt PRIVATE
 	Settings/ControllerBindingWidget.cpp
 	Settings/ControllerBindingWidget.h
 	Settings/ControllerBindingWidget.ui
+	Settings/FireWireDeviceWidget.cpp
+	Settings/FireWireDeviceWidget.h
+	Settings/FireWireDeviceWidget.ui
 	Settings/ControllerLEDSettingsDialog.ui
 	Settings/ControllerGlobalSettingsWidget.cpp
 	Settings/ControllerGlobalSettingsWidget.h
