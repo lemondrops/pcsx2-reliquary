@@ -2862,26 +2862,28 @@ void MainWindow::doGameSettings(const char* category)
 	if (!s_vm_valid)
 		return;
 
-	// prefer to use a game list entry, if we have one, that way the summary is populated
-	if (!s_current_disc_path.isEmpty() || !s_current_elf_override.isEmpty())
+	// Prefer to use a game list entry, if we have one, that way the summary is populated.
+	// Python 2 titles don't have a disc path, so fall back to the current serial/CRC.
+	std::optional<GameList::Entry> entry;
 	{
-		const QString& path = (s_current_elf_override.isEmpty() ? s_current_disc_path : s_current_elf_override);
-
-		std::optional<GameList::Entry> entry;
-
+		auto lock = GameList::GetLock();
+		const GameList::Entry* entry_ptr = nullptr;
+		if (!s_current_disc_path.isEmpty() || !s_current_elf_override.isEmpty())
 		{
-			auto lock = GameList::GetLock();
-			const GameList::Entry* entry_ptr = GameList::GetEntryForPath(path.toUtf8().constData());
-			if (entry_ptr)
-				entry = *entry_ptr;
+			const QString& path = (s_current_elf_override.isEmpty() ? s_current_disc_path : s_current_elf_override);
+			entry_ptr = GameList::GetEntryForPath(path.toUtf8().constData());
 		}
+		if (!entry_ptr && !s_current_disc_serial.isEmpty() && s_current_disc_crc != 0)
+			entry_ptr = GameList::GetEntryBySerialAndCRC(s_current_disc_serial.toStdString(), s_current_disc_crc);
+		if (entry_ptr)
+			entry = *entry_ptr;
+	}
 
-		if (entry.has_value())
-		{
-			SettingsWindow::openGamePropertiesDialog(
-				&*entry, entry->title, entry->serial, entry->crc, !s_current_elf_override.isEmpty(), category);
-			return;
-		}
+	if (entry.has_value())
+	{
+		SettingsWindow::openGamePropertiesDialog(
+			&*entry, entry->title, entry->serial, entry->crc, entry->type == GameList::EntryType::ELF, category);
+		return;
 	}
 
 	// open properties for the current running file (isn't in the game list)

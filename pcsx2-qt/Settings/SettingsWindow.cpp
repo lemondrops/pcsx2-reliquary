@@ -93,7 +93,7 @@ void SettingsWindow::setupUi(const GameList::Entry* game)
 			addWidget(placeholder_label, tr("Summary"), QStringLiteral("file-list-line"), std::move(summary));
 		}
 
-		if (isPerGameSettings() && game->type == GameList::EntryType::Python2)
+		if (game && game->type == GameList::EntryType::Python2)
 		{
 			addWidget(m_python2_settings = new Python2SettingsWidget(game, this, m_ui.settingsContainer), tr("Python 2"), QStringLiteral("keyboard-line"),
 				tr("<strong>Python 2 Settings</strong><hr>These options control the settings specific to Python 2 games."));
