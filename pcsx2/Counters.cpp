@@ -22,7 +22,6 @@
 #include "VMManager.h"
 #include "VUmicro.h"
 
-#include <cstdlib>
 #include <cstring>
 
 static const uint EECNT_FUTURE_TARGET = 0x10000000;

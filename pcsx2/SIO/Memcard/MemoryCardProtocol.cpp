@@ -16,9 +16,7 @@
 #include "common/Path.h"
 
 #include <array>
-#include <cstdlib>
 #include <cstring>
-#include <string>
 
 #define MC_LOG_ENABLE 0
 #define MC_LOG if (MC_LOG_ENABLE) DevCon

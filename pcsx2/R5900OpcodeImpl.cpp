@@ -3,7 +3,6 @@
 
 #include "Common.h"
 
-#include <cstdlib>
 #include <float.h>
 
 #include "R5900.h"

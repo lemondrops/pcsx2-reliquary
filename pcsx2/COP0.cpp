@@ -4,8 +4,6 @@
 #include "Common.h"
 #include "COP0.h"
 
-#include <cstdlib>
-
 // Updates the CPU's mode of operation (either, Kernel, Supervisor, or User modes).
 // Currently the different modes are not implemented.
 // Given this function is called so much, it's commented out for now. (rama)

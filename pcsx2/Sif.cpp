@@ -11,9 +11,7 @@
 #include <fmt/format.h>
 
 #include <array>
-#include <cstdlib>
 #include <cstring>
-#include <string>
 
 void sifReset()
 {

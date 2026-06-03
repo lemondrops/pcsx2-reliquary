@@ -11,7 +11,6 @@
 #include <QtWidgets/QWidget>
 
 #include <span>
-#include <string>
 
 class ControllerSettingsWindow;
 

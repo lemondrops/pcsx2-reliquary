@@ -18,11 +18,9 @@
 #include "common/SettingsInterface.h"
 #include "common/StringUtil.h"
 
-#include <algorithm>
 #include <atomic>
 #include <cstdarg>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <optional>
 #include <string_view>

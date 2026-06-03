@@ -25,8 +25,6 @@
 // Only for MOVQ workaround.
 #include "common/emitter/internal.h"
 
-#include <cstdlib>
-
 //#define DUMP_BLOCKS 1
 //#define TRACE_BLOCKS 1
 

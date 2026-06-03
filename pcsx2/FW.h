@@ -7,7 +7,6 @@
 #include "common/Pcsx2Defs.h"
 
 #include <span>
-#include <string>
 #include <string_view>
 #include <vector>
 

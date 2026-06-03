@@ -23,7 +23,6 @@
 #include <fmt/format.h>
 #include <sys/stat.h>
 #include <algorithm>
-#include <cstdlib>
 
 #include <fcntl.h>
 

@@ -27,16 +27,13 @@
 #include "common/StringUtil.h"
 #include "common/Threading.h"
 
-#include <algorithm>
 #include <cctype>
-#include <cstdlib>
 #include <ctime>
 #include <type_traits>
 #ifndef _WIN32
 #include <time.h>
 #endif
 #include <memory>
-#include <string>
 
 cdvdStruct cdvd;
 
