@@ -6,64 +6,40 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>833</width>
-    <height>617</height>
+    <width>1000</width>
+    <height>900</height>
    </rect>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout" stretch="0,1">
-   <property name="leftMargin">
-    <number>0</number>
-   </property>
-   <property name="topMargin">
-    <number>0</number>
-   </property>
-   <property name="rightMargin">
-    <number>0</number>
-   </property>
-   <property name="bottomMargin">
-    <number>0</number>
-   </property>
+   <property name="leftMargin"><number>0</number></property>
+   <property name="topMargin"><number>0</number></property>
+   <property name="rightMargin"><number>0</number></property>
+   <property name="bottomMargin"><number>0</number></property>
    <item>
     <widget class="QGroupBox" name="groupBox">
-     <property name="title">
-      <string>FireWire</string>
-     </property>
+     <property name="title"><string>FireWire</string></property>
      <layout class="QHBoxLayout" name="headerLayout">
       <item>
        <layout class="QHBoxLayout" name="deviceLayout">
         <item>
          <widget class="QLabel" name="deviceLabel">
-          <property name="text">
-           <string>P1IO (Python 1 IO)</string>
-          </property>
+          <property name="text"><string>P1IO (Python 1 IO)</string></property>
          </widget>
         </item>
         <item>
          <widget class="QToolButton" name="bindings">
-          <property name="text">
-           <string>Bindings</string>
-          </property>
-          <property name="icon">
-           <iconset theme="controller-line"/>
-          </property>
-          <property name="checkable">
-           <bool>true</bool>
-          </property>
-          <property name="toolButtonStyle">
-           <enum>Qt::ToolButtonStyle::ToolButtonTextBesideIcon</enum>
-          </property>
-          <property name="autoRaise">
-           <bool>true</bool>
-          </property>
+          <property name="text"><string>Bindings</string></property>
+          <property name="icon"><iconset theme="controller-line"/></property>
+          <property name="checkable"><bool>true</bool></property>
+          <property name="toolButtonStyle"><enum>Qt::ToolButtonStyle::ToolButtonTextBesideIcon</enum></property>
+          <property name="autoRaise"><bool>true</bool></property>
          </widget>
         </item>
        </layout>
       </item>
       <item>
        <spacer name="horizontalSpacer">
-        <property name="orientation">
-         <enum>Qt::Orientation::Horizontal</enum>
-        </property>
+        <property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property>
         <property name="sizeHint" stdset="0">
          <size>
           <width>460</width>
@@ -76,28 +52,16 @@
        <layout class="QHBoxLayout" name="mappingLayout">
         <item>
          <widget class="QToolButton" name="automaticBinding">
-          <property name="text">
-           <string>Automatic Mapping</string>
-          </property>
-          <property name="icon">
-           <iconset theme="controller-line"/>
-          </property>
-          <property name="toolButtonStyle">
-           <enum>Qt::ToolButtonStyle::ToolButtonTextBesideIcon</enum>
-          </property>
+          <property name="text"><string>Automatic Mapping</string></property>
+          <property name="icon"><iconset theme="controller-line"/></property>
+          <property name="toolButtonStyle"><enum>Qt::ToolButtonStyle::ToolButtonTextBesideIcon</enum></property>
          </widget>
         </item>
         <item>
          <widget class="QToolButton" name="clearBindings">
-          <property name="text">
-           <string>Clear Mapping</string>
-          </property>
-          <property name="icon">
-           <iconset theme="trash-fill"/>
-          </property>
-          <property name="toolButtonStyle">
-           <enum>Qt::ToolButtonStyle::ToolButtonTextBesideIcon</enum>
-          </property>
+          <property name="text"><string>Clear Mapping</string></property>
+          <property name="icon"><iconset theme="trash-fill"/></property>
+          <property name="toolButtonStyle"><enum>Qt::ToolButtonStyle::ToolButtonTextBesideIcon</enum></property>
          </widget>
         </item>
        </layout>
@@ -106,10 +70,264 @@
     </widget>
    </item>
    <item>
-    <widget class="QStackedWidget" name="stackedWidget"/>
+    <widget class="QStackedWidget" name="stackedWidget">
+     <property name="currentIndex"><number>0</number></property>
+     <widget class="QWidget" name="bindingsPage">
+      <layout class="QVBoxLayout" name="bindingsPageLayout">
+       <property name="leftMargin"><number>0</number></property>
+       <property name="topMargin"><number>0</number></property>
+       <property name="rightMargin"><number>0</number></property>
+       <property name="bottomMargin"><number>0</number></property>
+       <item>
+        <widget class="QScrollArea" name="bindingsScrollArea">
+         <property name="frameShape"><enum>QFrame::Shape::NoFrame</enum></property>
+         <property name="frameShadow"><enum>QFrame::Shadow::Plain</enum></property>
+         <property name="widgetResizable"><bool>true</bool></property>
+         <widget class="QWidget" name="bindingsScrollAreaContents">
+          <property name="geometry">
+           <rect>
+            <x>0</x>
+            <y>0</y>
+            <width>980</width>
+            <height>1080</height>
+           </rect>
+          </property>
+          <layout class="QGridLayout" name="bindingsGridLayout">
+           <property name="leftMargin"><number>0</number></property>
+           <property name="topMargin"><number>0</number></property>
+           <property name="rightMargin"><number>0</number></property>
+           <property name="bottomMargin"><number>0</number></property>
+           <property name="horizontalSpacing"><number>12</number></property>
+           <property name="verticalSpacing"><number>12</number></property>
+           <item row="0" column="0" colspan="2">
+            <layout class="QHBoxLayout" name="cabinetRowLayout">
+             <item>
+              <spacer name="cabinetLeftSpacer">
+               <property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property>
+               <property name="sizeHint" stdset="0"><size><width>1</width><height>1</height></size></property>
+              </spacer>
+             </item>
+             <item>
+              <widget class="QGroupBox" name="cabinetControlsGroupBox">
+               <property name="title"><string>Cabinet Controls</string></property>
+               <layout class="QGridLayout" name="cabinetControlsGridLayout">
+                <property name="horizontalSpacing"><number>8</number></property>
+                <property name="verticalSpacing"><number>6</number></property>
+                <item row="0" column="0"><widget class="QLabel" name="cabinetTestLabel"><property name="text"><string>Test Button</string></property></widget></item>
+                <item row="0" column="1"><widget class="QLabel" name="cabinetServiceLabel"><property name="text"><string>Service Button</string></property></widget></item>
+                <item row="1" column="0">
+                 <widget class="InputBindingWidget" name="cabinetTestBinding">
+                  <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+                  <property name="minimumSize"><size><width>220</width><height>0</height></size></property>
+                  <property name="bindingName" stdset="0"><string notr="true">Test</string></property>
+                  <property name="text"><string notr="true">PushButton</string></property>
+                 </widget>
+                </item>
+                <item row="1" column="1">
+                 <widget class="InputBindingWidget" name="cabinetServiceBinding">
+                  <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+                  <property name="minimumSize"><size><width>220</width><height>0</height></size></property>
+                  <property name="bindingName" stdset="0"><string notr="true">Service</string></property>
+                  <property name="text"><string notr="true">PushButton</string></property>
+                 </widget>
+                </item>
+                <item row="2" column="0"><widget class="QLabel" name="cabinetCoin1Label"><property name="text"><string>Coin Player 1</string></property></widget></item>
+                <item row="2" column="1"><widget class="QLabel" name="cabinetCoin2Label"><property name="text"><string>Coin Player 2</string></property></widget></item>
+                <item row="3" column="0">
+                 <widget class="InputBindingWidget" name="cabinetCoin1Binding">
+                  <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+                  <property name="minimumSize"><size><width>220</width><height>0</height></size></property>
+                  <property name="bindingName" stdset="0"><string notr="true">Coin1</string></property>
+                  <property name="text"><string notr="true">PushButton</string></property>
+                 </widget>
+                </item>
+                <item row="3" column="1">
+                 <widget class="InputBindingWidget" name="cabinetCoin2Binding">
+                  <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+                  <property name="minimumSize"><size><width>220</width><height>0</height></size></property>
+                  <property name="bindingName" stdset="0"><string notr="true">Coin2</string></property>
+                  <property name="text"><string notr="true">PushButton</string></property>
+                 </widget>
+                </item>
+               </layout>
+              </widget>
+             </item>
+             <item>
+              <spacer name="cabinetRightSpacer">
+               <property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property>
+               <property name="sizeHint" stdset="0"><size><width>1</width><height>1</height></size></property>
+              </spacer>
+             </item>
+            </layout>
+           </item>
+           <item row="1" column="0">
+            <widget class="QGroupBox" name="jvsPlayer1GroupBox">
+             <property name="title"><string>JVS Controls Player 1</string></property>
+             <layout class="QGridLayout" name="jvsPlayer1GridLayout">
+              <property name="horizontalSpacing"><number>8</number></property>
+              <property name="verticalSpacing"><number>6</number></property>
+              <item row="0" column="1"><widget class="QLabel" name="jvsP1UpLabel"><property name="text"><string>Up</string></property></widget></item>
+              <item row="1" column="1"><widget class="InputBindingWidget" name="jvsP1UpBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Up</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="2" column="0"><widget class="QLabel" name="jvsP1LeftLabel"><property name="text"><string>Left</string></property></widget></item>
+              <item row="2" column="1"><widget class="QLabel" name="jvsP1StartLabel"><property name="text"><string>Start</string></property></widget></item>
+              <item row="2" column="2"><widget class="QLabel" name="jvsP1RightLabel"><property name="text"><string>Right</string></property></widget></item>
+              <item row="3" column="0"><widget class="InputBindingWidget" name="jvsP1LeftBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Left</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="3" column="1"><widget class="InputBindingWidget" name="jvsP1StartBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Start</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="3" column="2"><widget class="InputBindingWidget" name="jvsP1RightBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Right</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="4" column="1"><widget class="QLabel" name="jvsP1DownLabel"><property name="text"><string>Down</string></property></widget></item>
+              <item row="5" column="1"><widget class="InputBindingWidget" name="jvsP1DownBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Down</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="6" column="0"><widget class="QLabel" name="jvsP1Button1Label"><property name="text"><string>Button 1</string></property></widget></item>
+              <item row="6" column="1"><widget class="QLabel" name="jvsP1Button2Label"><property name="text"><string>Button 2</string></property></widget></item>
+              <item row="6" column="2"><widget class="QLabel" name="jvsP1Button3Label"><property name="text"><string>Button 3</string></property></widget></item>
+              <item row="7" column="0"><widget class="InputBindingWidget" name="jvsP1Button1Binding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Button1</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="7" column="1"><widget class="InputBindingWidget" name="jvsP1Button2Binding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Button2</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="7" column="2"><widget class="InputBindingWidget" name="jvsP1Button3Binding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Button3</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="8" column="0"><widget class="QLabel" name="jvsP1Button4Label"><property name="text"><string>Button 4</string></property></widget></item>
+              <item row="8" column="1"><widget class="QLabel" name="jvsP1Button5Label"><property name="text"><string>Button 5</string></property></widget></item>
+              <item row="8" column="2"><widget class="QLabel" name="jvsP1Button6Label"><property name="text"><string>Button 6</string></property></widget></item>
+              <item row="9" column="0"><widget class="InputBindingWidget" name="jvsP1Button4Binding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Button4</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="9" column="1"><widget class="InputBindingWidget" name="jvsP1Button5Binding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Button5</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="9" column="2"><widget class="InputBindingWidget" name="jvsP1Button6Binding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Button6</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+             </layout>
+            </widget>
+           </item>
+           <item row="1" column="1">
+            <widget class="QGroupBox" name="jvsPlayer2GroupBox">
+             <property name="title"><string>JVS Controls Player 2</string></property>
+             <layout class="QGridLayout" name="jvsPlayer2GridLayout">
+              <property name="horizontalSpacing"><number>8</number></property>
+              <property name="verticalSpacing"><number>6</number></property>
+              <item row="0" column="1"><widget class="QLabel" name="jvsP2UpLabel"><property name="text"><string>Up</string></property></widget></item>
+              <item row="1" column="1"><widget class="InputBindingWidget" name="jvsP2UpBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Up</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="2" column="0"><widget class="QLabel" name="jvsP2LeftLabel"><property name="text"><string>Left</string></property></widget></item>
+              <item row="2" column="1"><widget class="QLabel" name="jvsP2StartLabel"><property name="text"><string>Start</string></property></widget></item>
+              <item row="2" column="2"><widget class="QLabel" name="jvsP2RightLabel"><property name="text"><string>Right</string></property></widget></item>
+              <item row="3" column="0"><widget class="InputBindingWidget" name="jvsP2LeftBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Left</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="3" column="1"><widget class="InputBindingWidget" name="jvsP2StartBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Start</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="3" column="2"><widget class="InputBindingWidget" name="jvsP2RightBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Right</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="4" column="1"><widget class="QLabel" name="jvsP2DownLabel"><property name="text"><string>Down</string></property></widget></item>
+              <item row="5" column="1"><widget class="InputBindingWidget" name="jvsP2DownBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Down</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="6" column="0"><widget class="QLabel" name="jvsP2Button1Label"><property name="text"><string>Button 1</string></property></widget></item>
+              <item row="6" column="1"><widget class="QLabel" name="jvsP2Button2Label"><property name="text"><string>Button 2</string></property></widget></item>
+              <item row="6" column="2"><widget class="QLabel" name="jvsP2Button3Label"><property name="text"><string>Button 3</string></property></widget></item>
+              <item row="7" column="0"><widget class="InputBindingWidget" name="jvsP2Button1Binding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Button1</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="7" column="1"><widget class="InputBindingWidget" name="jvsP2Button2Binding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Button2</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="7" column="2"><widget class="InputBindingWidget" name="jvsP2Button3Binding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Button3</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="8" column="0"><widget class="QLabel" name="jvsP2Button4Label"><property name="text"><string>Button 4</string></property></widget></item>
+              <item row="8" column="1"><widget class="QLabel" name="jvsP2Button5Label"><property name="text"><string>Button 5</string></property></widget></item>
+              <item row="8" column="2"><widget class="QLabel" name="jvsP2Button6Label"><property name="text"><string>Button 6</string></property></widget></item>
+              <item row="9" column="0"><widget class="InputBindingWidget" name="jvsP2Button4Binding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Button4</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="9" column="1"><widget class="InputBindingWidget" name="jvsP2Button5Binding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Button5</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="9" column="2"><widget class="InputBindingWidget" name="jvsP2Button6Binding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Button6</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+             </layout>
+            </widget>
+           </item>
+           <item row="2" column="0" colspan="2">
+            <layout class="QHBoxLayout" name="popnRowLayout">
+             <item><spacer name="popnLeftSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>1</width><height>1</height></size></property></spacer></item>
+             <item>
+              <widget class="QGroupBox" name="popnControlsGroupBox">
+               <property name="title"><string>Pop'n Controls</string></property>
+               <layout class="QGridLayout" name="popnControlsGridLayout">
+                <property name="horizontalSpacing"><number>8</number></property>
+                <property name="verticalSpacing"><number>6</number></property>
+                <item row="0" column="0"><widget class="QLabel" name="popnStartLabel"><property name="text"><string>Start</string></property></widget></item>
+                <item row="0" column="1"><widget class="QLabel" name="popnYellowLeftLabel"><property name="text"><string>Yellow Left</string></property></widget></item>
+                <item row="0" column="2"><widget class="QLabel" name="popnBlueLeftLabel"><property name="text"><string>Blue Left</string></property></widget></item>
+                <item row="0" column="3"><widget class="QLabel" name="popnBlueRightLabel"><property name="text"><string>Blue Right</string></property></widget></item>
+                <item row="0" column="4"><widget class="QLabel" name="popnYellowRightLabel"><property name="text"><string>Yellow Right</string></property></widget></item>
+                <item row="1" column="0"><widget class="InputBindingWidget" name="popnStartBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>130</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Start</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+                <item row="1" column="1"><widget class="InputBindingWidget" name="popnYellowLeftBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>130</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Down</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+                <item row="1" column="2"><widget class="InputBindingWidget" name="popnBlueLeftBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>130</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Right</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+                <item row="1" column="3"><widget class="InputBindingWidget" name="popnBlueRightBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>130</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Up</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+                <item row="1" column="4"><widget class="InputBindingWidget" name="popnYellowRightBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>130</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Left</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+                <item row="2" column="0"><widget class="QLabel" name="popnWhiteLeftLabel"><property name="text"><string>White Left</string></property></widget></item>
+                <item row="2" column="1"><widget class="QLabel" name="popnGreenLeftLabel"><property name="text"><string>Green Left</string></property></widget></item>
+                <item row="2" column="2"><widget class="QLabel" name="popnRedLabel"><property name="text"><string>Red</string></property></widget></item>
+                <item row="2" column="3"><widget class="QLabel" name="popnGreenRightLabel"><property name="text"><string>Green Right</string></property></widget></item>
+                <item row="2" column="4"><widget class="QLabel" name="popnWhiteRightLabel"><property name="text"><string>White Right</string></property></widget></item>
+                <item row="3" column="0"><widget class="InputBindingWidget" name="popnWhiteLeftBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>130</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Up</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+                <item row="3" column="1"><widget class="InputBindingWidget" name="popnGreenLeftBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>130</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Left</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+                <item row="3" column="2"><widget class="InputBindingWidget" name="popnRedBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>130</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Button1</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+                <item row="3" column="3"><widget class="InputBindingWidget" name="popnGreenRightBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>130</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Down</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+                <item row="3" column="4"><widget class="InputBindingWidget" name="popnWhiteRightBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>130</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Right</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+               </layout>
+              </widget>
+             </item>
+             <item><spacer name="popnRightSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>1</width><height>1</height></size></property></spacer></item>
+            </layout>
+           </item>
+           <item row="3" column="0">
+            <widget class="QGroupBox" name="ddrPlayer1GroupBox">
+             <property name="title"><string>DDR Controls Player 1</string></property>
+             <layout class="QGridLayout" name="ddrPlayer1GridLayout">
+              <property name="horizontalSpacing"><number>8</number></property>
+              <property name="verticalSpacing"><number>6</number></property>
+              <item row="0" column="1"><widget class="QLabel" name="ddrP1UpLabel"><property name="text"><string>Up</string></property></widget></item>
+              <item row="1" column="1"><widget class="InputBindingWidget" name="ddrP1UpBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Up</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="2" column="0"><widget class="QLabel" name="ddrP1LeftLabel"><property name="text"><string>Left</string></property></widget></item>
+              <item row="2" column="1"><widget class="QLabel" name="ddrP1PadLabel"><property name="minimumSize"><size><width>120</width><height>88</height></size></property><property name="frameShape"><enum>QFrame::Shape::StyledPanel</enum></property><property name="frameShadow"><enum>QFrame::Shadow::Sunken</enum></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property><property name="text"><string>Pad</string></property></widget></item>
+              <item row="2" column="2"><widget class="QLabel" name="ddrP1RightLabel"><property name="text"><string>Right</string></property></widget></item>
+              <item row="3" column="0"><widget class="InputBindingWidget" name="ddrP1LeftBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Left</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="3" column="2"><widget class="InputBindingWidget" name="ddrP1RightBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Right</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="4" column="1"><widget class="QLabel" name="ddrP1DownLabel"><property name="text"><string>Down</string></property></widget></item>
+              <item row="5" column="1"><widget class="InputBindingWidget" name="ddrP1DownBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Down</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="6" column="0"><widget class="QLabel" name="ddrP1SelectLeftLabel"><property name="text"><string>Select Left</string></property></widget></item>
+              <item row="6" column="1"><widget class="QLabel" name="ddrP1StartLabel"><property name="text"><string>Start</string></property></widget></item>
+              <item row="6" column="2"><widget class="QLabel" name="ddrP1SelectRightLabel"><property name="text"><string>Select Right</string></property></widget></item>
+              <item row="7" column="0"><widget class="InputBindingWidget" name="ddrP1SelectLeftBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Button1</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="7" column="1"><widget class="InputBindingWidget" name="ddrP1StartBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Start</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="7" column="2"><widget class="InputBindingWidget" name="ddrP1SelectRightBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P1Button2</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+             </layout>
+            </widget>
+           </item>
+           <item row="3" column="1">
+            <widget class="QGroupBox" name="ddrPlayer2GroupBox">
+             <property name="title"><string>DDR Controls Player 2</string></property>
+             <layout class="QGridLayout" name="ddrPlayer2GridLayout">
+              <property name="horizontalSpacing"><number>8</number></property>
+              <property name="verticalSpacing"><number>6</number></property>
+              <item row="0" column="1"><widget class="QLabel" name="ddrP2UpLabel"><property name="text"><string>Up</string></property></widget></item>
+              <item row="1" column="1"><widget class="InputBindingWidget" name="ddrP2UpBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Up</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="2" column="0"><widget class="QLabel" name="ddrP2LeftLabel"><property name="text"><string>Left</string></property></widget></item>
+              <item row="2" column="1"><widget class="QLabel" name="ddrP2PadLabel"><property name="minimumSize"><size><width>120</width><height>88</height></size></property><property name="frameShape"><enum>QFrame::Shape::StyledPanel</enum></property><property name="frameShadow"><enum>QFrame::Shadow::Sunken</enum></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property><property name="text"><string>Pad</string></property></widget></item>
+              <item row="2" column="2"><widget class="QLabel" name="ddrP2RightLabel"><property name="text"><string>Right</string></property></widget></item>
+              <item row="3" column="0"><widget class="InputBindingWidget" name="ddrP2LeftBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Left</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="3" column="2"><widget class="InputBindingWidget" name="ddrP2RightBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Right</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="4" column="1"><widget class="QLabel" name="ddrP2DownLabel"><property name="text"><string>Down</string></property></widget></item>
+              <item row="5" column="1"><widget class="InputBindingWidget" name="ddrP2DownBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Down</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="6" column="0"><widget class="QLabel" name="ddrP2SelectLeftLabel"><property name="text"><string>Select Left</string></property></widget></item>
+              <item row="6" column="1"><widget class="QLabel" name="ddrP2StartLabel"><property name="text"><string>Start</string></property></widget></item>
+              <item row="6" column="2"><widget class="QLabel" name="ddrP2SelectRightLabel"><property name="text"><string>Select Right</string></property></widget></item>
+              <item row="7" column="0"><widget class="InputBindingWidget" name="ddrP2SelectLeftBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Button1</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="7" column="1"><widget class="InputBindingWidget" name="ddrP2StartBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Start</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+              <item row="7" column="2"><widget class="InputBindingWidget" name="ddrP2SelectRightBinding"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>150</width><height>0</height></size></property><property name="bindingName" stdset="0"><string notr="true">P2Button2</string></property><property name="text"><string notr="true">PushButton</string></property></widget></item>
+             </layout>
+            </widget>
+           </item>
+           <item row="4" column="0" colspan="2">
+            <spacer name="verticalSpacer">
+             <property name="orientation"><enum>Qt::Orientation::Vertical</enum></property>
+             <property name="sizeHint" stdset="0"><size><width>20</width><height>1</height></size></property>
+            </spacer>
+           </item>
+          </layout>
+         </widget>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </widget>
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>InputBindingWidget</class>
+   <extends>QPushButton</extends>
+   <header>Settings/InputBindingWidget.h</header>
+  </customwidget>
+ </customwidgets>
  <tabstops>
   <tabstop>bindings</tabstop>
   <tabstop>automaticBinding</tabstop>

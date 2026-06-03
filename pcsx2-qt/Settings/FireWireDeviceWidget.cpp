@@ -14,19 +14,11 @@
 #include "Settings/ControllerSettingsWindow.h"
 #include "Settings/InputBindingWidget.h"
 
-#include <QtWidgets/QApplication>
-#include <QtWidgets/QFrame>
-#include <QtWidgets/QGridLayout>
-#include <QtWidgets/QGroupBox>
-#include <QtWidgets/QHBoxLayout>
-#include <QtWidgets/QLabel>
+#include <QtCore/QSignalBlocker>
+#include <QtCore/QVariant>
+#include <QtGui/QCursor>
 #include <QtWidgets/QMenu>
 #include <QtWidgets/QMessageBox>
-#include <QtWidgets/QScrollArea>
-#include <QtWidgets/QSpacerItem>
-#include <QtWidgets/QVBoxLayout>
-
-#include "fmt/format.h"
 
 FireWireDeviceWidget::FireWireDeviceWidget(QWidget* parent, ControllerSettingsWindow* dialog)
 	: QWidget(parent)
@@ -35,9 +27,9 @@ FireWireDeviceWidget::FireWireDeviceWidget(QWidget* parent, ControllerSettingsWi
 {
 	m_ui.setupUi(this);
 
-	m_bindings_widget = new FireWireBindingWidget(this);
-	m_ui.stackedWidget->addWidget(m_bindings_widget);
+	m_bindings_widget = m_ui.bindingsPage;
 	m_ui.stackedWidget->setCurrentWidget(m_bindings_widget);
+	initializeBindingWidgets();
 
 	connect(m_ui.bindings, &QPushButton::clicked, this, &FireWireDeviceWidget::onBindingsClicked);
 	connect(m_ui.automaticBinding, &QPushButton::clicked, this, &FireWireDeviceWidget::onAutomaticBindingClicked);
@@ -117,12 +109,30 @@ void FireWireDeviceWidget::onClearBindingsClicked()
 	}
 
 	g_emu_thread->applySettings();
-	m_ui.stackedWidget->removeWidget(m_bindings_widget);
-	m_bindings_widget->deleteLater();
-	m_bindings_widget = new FireWireBindingWidget(this);
-	m_ui.stackedWidget->addWidget(m_bindings_widget);
 	m_ui.stackedWidget->setCurrentWidget(m_bindings_widget);
+	reloadBindingWidgets();
 	updateHeaderToolButtons();
+}
+
+void FireWireDeviceWidget::initializeBindingWidgets()
+{
+	SettingsInterface* sif = m_dialog->getProfileSettingsInterface();
+
+	for (InputBindingWidget* widget : m_bindings_widget->findChildren<InputBindingWidget*>())
+	{
+		QString binding_name = widget->property("bindingName").toString();
+		if (binding_name.isEmpty())
+			binding_name = widget->objectName();
+
+		widget->initialize(sif, InputBindingInfo::Type::Button, getConfigSection(),
+			FireWire::GetConfigSubKey(binding_name.toStdString()));
+	}
+}
+
+void FireWireDeviceWidget::reloadBindingWidgets()
+{
+	for (InputBindingWidget* widget : m_bindings_widget->findChildren<InputBindingWidget*>())
+		widget->reloadBinding();
 }
 
 void FireWireDeviceWidget::doDeviceAutomaticBinding(const QString& device)
@@ -158,157 +168,10 @@ void FireWireDeviceWidget::doDeviceAutomaticBinding(const QString& device)
 	if (result)
 	{
 		g_emu_thread->applySettings();
-		m_ui.stackedWidget->removeWidget(m_bindings_widget);
-		m_bindings_widget->deleteLater();
-		m_bindings_widget = new FireWireBindingWidget(this);
-		m_ui.stackedWidget->addWidget(m_bindings_widget);
 		m_ui.stackedWidget->setCurrentWidget(m_bindings_widget);
+		reloadBindingWidgets();
 		updateHeaderToolButtons();
 	}
-}
-
-FireWireBindingWidget::FireWireBindingWidget(FireWireDeviceWidget* parent)
-	: QWidget(parent)
-{
-	createWidgets(FireWire::GetP1IOBindings());
-}
-
-FireWireBindingWidget::~FireWireBindingWidget() = default;
-
-std::string FireWireBindingWidget::getBindingKey(const char* binding_name) const
-{
-	return FireWire::GetConfigSubKey(binding_name);
-}
-
-void FireWireBindingWidget::createWidgets(std::span<const InputBindingInfo>)
-{
-	SettingsInterface* sif = getDialog()->getProfileSettingsInterface();
-
-	QScrollArea* scrollarea = new QScrollArea(this);
-	QWidget* scrollarea_widget = new QWidget(scrollarea);
-	scrollarea->setWidget(scrollarea_widget);
-	scrollarea->setWidgetResizable(true);
-	scrollarea->setFrameShape(QFrame::NoFrame);
-	scrollarea->setFrameShadow(QFrame::Plain);
-
-	auto add_binding = [this, sif](QGridLayout* layout, int row, int column, const char* title, const char* binding_name,
-		int minimum_width = 150, int column_span = 1) {
-		QGroupBox* gbox = new QGroupBox(qApp->translate("FireWire", title));
-		QVBoxLayout* box_layout = new QVBoxLayout(gbox);
-		box_layout->setContentsMargins(6, 6, 6, 6);
-		InputBindingWidget* widget = new InputBindingWidget(
-			gbox, sif, InputBindingInfo::Type::Button, getConfigSection(), getBindingKey(binding_name));
-		widget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-		widget->setMinimumWidth(minimum_width);
-		box_layout->addWidget(widget);
-		layout->addWidget(gbox, row, column, 1, column_span);
-	};
-
-	auto create_player_controls = [add_binding](QWidget* parent, const QString& title, const char* prefix) {
-		QGroupBox* group = new QGroupBox(title, parent);
-		QGridLayout* layout = new QGridLayout(group);
-		layout->setHorizontalSpacing(8);
-		layout->setVerticalSpacing(6);
-
-		const std::string start = fmt::format("{}Start", prefix);
-		const std::string up = fmt::format("{}Up", prefix);
-		const std::string down = fmt::format("{}Down", prefix);
-		const std::string left = fmt::format("{}Left", prefix);
-		const std::string right = fmt::format("{}Right", prefix);
-		add_binding(layout, 0, 1, "Up", up.c_str());
-		add_binding(layout, 1, 0, "Left", left.c_str());
-		add_binding(layout, 1, 1, "Start", start.c_str());
-		add_binding(layout, 1, 2, "Right", right.c_str());
-		add_binding(layout, 2, 1, "Down", down.c_str());
-
-		for (int i = 0; i < 6; i++)
-		{
-			const std::string button = fmt::format("{}Button{}", prefix, i + 1);
-			const std::string label = fmt::format("Button {}", i + 1);
-			add_binding(layout, 3 + (i / 3), i % 3, label.c_str(), button.c_str());
-		}
-
-		return group;
-	};
-
-	auto create_ddr_controls = [add_binding](QWidget* parent, const QString& title, const char* prefix) {
-		QGroupBox* group = new QGroupBox(title, parent);
-		QGridLayout* layout = new QGridLayout(group);
-		layout->setHorizontalSpacing(8);
-		layout->setVerticalSpacing(6);
-
-		const std::string start = fmt::format("{}Start", prefix);
-		const std::string up = fmt::format("{}Up", prefix);
-		const std::string down = fmt::format("{}Down", prefix);
-		const std::string left = fmt::format("{}Left", prefix);
-		const std::string right = fmt::format("{}Right", prefix);
-		const std::string select_left = fmt::format("{}Button1", prefix);
-		const std::string select_right = fmt::format("{}Button2", prefix);
-
-		add_binding(layout, 0, 1, "Up", up.c_str());
-		add_binding(layout, 1, 0, "Left", left.c_str());
-		QLabel* pad_label = new QLabel(tr("Pad"), group);
-		pad_label->setMinimumSize(120, 88);
-		pad_label->setFrameShape(QFrame::StyledPanel);
-		pad_label->setFrameShadow(QFrame::Sunken);
-		pad_label->setAlignment(Qt::AlignCenter);
-		layout->addWidget(pad_label, 1, 1);
-		add_binding(layout, 1, 2, "Right", right.c_str());
-		add_binding(layout, 2, 1, "Down", down.c_str());
-		add_binding(layout, 3, 0, "Select Left", select_left.c_str());
-		add_binding(layout, 3, 1, "Start", start.c_str());
-		add_binding(layout, 3, 2, "Select Right", select_right.c_str());
-
-		return group;
-	};
-
-	QGridLayout* layout = new QGridLayout(scrollarea_widget);
-	layout->setContentsMargins(0, 0, 0, 0);
-	layout->setHorizontalSpacing(12);
-	layout->setVerticalSpacing(12);
-
-	QHBoxLayout* cabinet_row = new QHBoxLayout();
-	cabinet_row->addItem(new QSpacerItem(1, 1, QSizePolicy::Expanding, QSizePolicy::Minimum));
-	QGroupBox* cabinet = new QGroupBox(tr("Cabinet Controls"), scrollarea_widget);
-	QGridLayout* cabinet_layout = new QGridLayout(cabinet);
-	add_binding(cabinet_layout, 0, 0, "Test Button", "Test", 220);
-	add_binding(cabinet_layout, 0, 1, "Service Button", "Service", 220);
-	add_binding(cabinet_layout, 1, 0, "Coin Player 1", "Coin1", 220);
-	add_binding(cabinet_layout, 1, 1, "Coin Player 2", "Coin2", 220);
-	cabinet_row->addWidget(cabinet);
-	cabinet_row->addItem(new QSpacerItem(1, 1, QSizePolicy::Expanding, QSizePolicy::Minimum));
-	layout->addLayout(cabinet_row, 0, 0, 1, 2);
-
-	layout->addWidget(create_player_controls(scrollarea_widget, tr("JVS Controls Player 1"), "P1"), 1, 0);
-	layout->addWidget(create_player_controls(scrollarea_widget, tr("JVS Controls Player 2"), "P2"), 1, 1);
-
-	QGroupBox* popn = new QGroupBox(tr("Pop'n Controls"), scrollarea_widget);
-	QGridLayout* popn_layout = new QGridLayout(popn);
-	popn_layout->setHorizontalSpacing(8);
-	popn_layout->setVerticalSpacing(6);
-	add_binding(popn_layout, 0, 0, "Start", "P1Start", 130);
-	add_binding(popn_layout, 0, 1, "Yellow Left", "P1Down", 130);
-	add_binding(popn_layout, 0, 2, "Blue Left", "P1Right", 130);
-	add_binding(popn_layout, 0, 3, "Blue Right", "P2Up", 130);
-	add_binding(popn_layout, 0, 4, "Yellow Right", "P2Left", 130);
-	add_binding(popn_layout, 1, 0, "White Left", "P1Up", 130);
-	add_binding(popn_layout, 1, 1, "Green Left", "P1Left", 130);
-	add_binding(popn_layout, 1, 2, "Red", "P1Button1", 130);
-	add_binding(popn_layout, 1, 3, "Green Right", "P2Down", 130);
-	add_binding(popn_layout, 1, 4, "White Right", "P2Right", 130);
-	QHBoxLayout* popn_row = new QHBoxLayout();
-	popn_row->addItem(new QSpacerItem(1, 1, QSizePolicy::Expanding, QSizePolicy::Minimum));
-	popn_row->addWidget(popn);
-	popn_row->addItem(new QSpacerItem(1, 1, QSizePolicy::Expanding, QSizePolicy::Minimum));
-	layout->addLayout(popn_row, 2, 0, 1, 2);
-
-	layout->addWidget(create_ddr_controls(scrollarea_widget, tr("DDR Controls Player 1"), "P1"), 3, 0);
-	layout->addWidget(create_ddr_controls(scrollarea_widget, tr("DDR Controls Player 2"), "P2"), 3, 1);
-	layout->addItem(new QSpacerItem(1, 1, QSizePolicy::Minimum, QSizePolicy::Expanding), 4, 0);
-
-	QHBoxLayout* main_layout = new QHBoxLayout(this);
-	main_layout->setContentsMargins(0, 0, 0, 0);
-	main_layout->addWidget(scrollarea);
 }
 
 #include "moc_FireWireDeviceWidget.cpp"

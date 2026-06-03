@@ -10,11 +10,7 @@
 #include <QtGui/QIcon>
 #include <QtWidgets/QWidget>
 
-#include <span>
-
 class ControllerSettingsWindow;
-
-class FireWireBindingWidget;
 
 class FireWireDeviceWidget final : public QWidget
 {
@@ -36,27 +32,13 @@ private Q_SLOTS:
 
 private:
 	void updateHeaderToolButtons();
+	void initializeBindingWidgets();
+	void reloadBindingWidgets();
 	void doDeviceAutomaticBinding(const QString& device);
 
 	Ui::FireWireDeviceWidget m_ui;
 
 	ControllerSettingsWindow* m_dialog;
 	std::string m_config_section;
-	FireWireBindingWidget* m_bindings_widget = nullptr;
-};
-
-class FireWireBindingWidget final : public QWidget
-{
-	Q_OBJECT
-
-public:
-	FireWireBindingWidget(FireWireDeviceWidget* parent);
-	~FireWireBindingWidget() override;
-
-	__fi ControllerSettingsWindow* getDialog() const { return static_cast<FireWireDeviceWidget*>(parent())->getDialog(); }
-	__fi const std::string& getConfigSection() const { return static_cast<FireWireDeviceWidget*>(parent())->getConfigSection(); }
-
-private:
-	std::string getBindingKey(const char* binding_name) const;
-	void createWidgets(std::span<const InputBindingInfo> bindings);
+	QWidget* m_bindings_widget = nullptr;
 };
