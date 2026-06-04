@@ -2986,7 +2986,9 @@ static MECHA_RESULT DecryptKelfHeader()
 		doubleDesDecrypt(KEK, &cdvd.Kc[8]);
 	}
 
-	if (header->ApplicationType == ARCADE_KELF_OVERRIDE_APPLICATION_TYPE && !LoadArcadeKelfOverrideKeys(Kbit, cdvd.Kc))
+	if (header->ApplicationType == ARCADE_KELF_OVERRIDE_APPLICATION_TYPE &&
+		EmuConfig.Security.MgKeyStoreMode == SecurityKeyStoreMode::Arcade &&
+		!LoadArcadeKelfOverrideKeys(Kbit, cdvd.Kc))
 	{
 		cdvd.mecha_errorcode = 0x81;
 		return MECHA_RESULT_FAILED;
