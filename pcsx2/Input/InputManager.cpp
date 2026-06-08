@@ -1462,11 +1462,11 @@ void InputManager::PauseVibration()
 
 void InputManager::AddFireWireBindings(SettingsInterface& si, bool is_profile)
 {
-	FireWire::ResetP1IOBindState();
+	FireWire::ResetDeviceBindState();
 
-	for (const InputBindingInfo& bi : FireWire::GetP1IOBindings())
+	for (const InputBindingInfo& bi : FireWire::GetSelectedDeviceBindings(si))
 	{
-		const std::string bind_name(FireWire::GetConfigSubKey(bi.name));
+		const std::string bind_name(FireWire::GetConfigSubKey(si, bi.name));
 		switch (bi.bind_type)
 		{
 			case InputBindingInfo::Type::Button:
@@ -1480,7 +1480,7 @@ void InputManager::AddFireWireBindings(SettingsInterface& si, bool is_profile)
 					const float deadzone = si.GetFloatValue(FireWire::GetConfigSection(), fmt::format("{}Deadzone", bi.name).c_str(), 0.0f);
 					AddBindings(
 						bindings, InputAxisEventHandler{[bind_index = bi.bind_index, sensitivity, deadzone](InputBindingKey key, float value) {
-							FireWire::SetP1IOBindValue(bind_index, ApplySingleBindingScale(sensitivity, deadzone, value));
+							FireWire::SetDeviceBindValue(bind_index, ApplySingleBindingScale(sensitivity, deadzone, value));
 						}},
 						bi.bind_type, si, FireWire::GetConfigSection(), bind_name.c_str(), is_profile);
 				}

@@ -32,7 +32,18 @@ void FWmixSubboardAudio(s32* left, s32* right);
 namespace FireWire
 {
 	const char* GetConfigSection();
+	std::string GetConfigDevice(const SettingsInterface& si);
+	void SetConfigDevice(SettingsInterface& si, const char* devname);
 	std::string GetConfigSubKey(std::string_view bind_name);
+	std::string GetConfigSubKey(const SettingsInterface& si, std::string_view bind_name);
+	std::vector<std::pair<const char*, const char*>> GetDeviceTypes();
+	const char* GetDeviceName(std::string_view device);
+	const char* GetDeviceIconName(std::string_view device);
+	std::span<const InputBindingInfo> GetDeviceBindings(std::string_view device);
+	std::span<const InputBindingInfo> GetSelectedDeviceBindings(const SettingsInterface& si);
+	float GetDeviceBindValue(u32 bind_index);
+	void SetDeviceBindValue(u32 bind_index, float value);
+	void ResetDeviceBindState();
 	std::span<const InputBindingInfo> GetP1IOBindings();
 	float GetP1IOBindValue(u32 bind_index);
 	void SetP1IOBindValue(u32 bind_index, float value);

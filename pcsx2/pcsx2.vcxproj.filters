@@ -803,6 +803,12 @@
     <ClCompile Include="FW.cpp">
       <Filter>System\Ps2\Iop\FW</Filter>
     </ClCompile>
+    <ClCompile Include="FireWire\deviceproxy.cpp">
+      <Filter>System\Ps2\Iop\FW</Filter>
+    </ClCompile>
+    <ClCompile Include="FireWire\Devices\KonamiPython1.cpp">
+      <Filter>System\Ps2\Iop\FW</Filter>
+    </ClCompile>
     <ClCompile Include="SPU2\spu2.cpp">
       <Filter>System\Ps2\SPU2</Filter>
     </ClCompile>
@@ -1740,6 +1746,15 @@
       <Filter>System\Include</Filter>
     </ClInclude>
     <ClInclude Include="FW.h">
+      <Filter>System\Ps2\Iop\FW</Filter>
+    </ClInclude>
+    <ClInclude Include="FireWire\FireWireDevice.h">
+      <Filter>System\Ps2\Iop\FW</Filter>
+    </ClInclude>
+    <ClInclude Include="FireWire\deviceproxy.h">
+      <Filter>System\Ps2\Iop\FW</Filter>
+    </ClInclude>
+    <ClInclude Include="FireWire\Devices\KonamiPython1.h">
       <Filter>System\Ps2\Iop\FW</Filter>
     </ClInclude>
     <ClInclude Include="SPU2\spu2.h">
