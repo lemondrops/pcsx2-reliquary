@@ -91,10 +91,12 @@ namespace
 	constexpr u32 KONAMI_DBUF_WRITEB_MAX_PAYLOAD = 0x200;
 	constexpr u32 BOOTROM_SIZE = 0x10000;
 	constexpr u32 BBSRAM_SIZE = 0x2000;
+	constexpr u32 KONAMI_BBSRAM_VOLATILE_TEST_BYTES = 0x1d00;
 	constexpr u32 DALLAS_DONGLE_SLOT_COUNT = 2;
 	constexpr u32 DALLAS_DONGLE_SERIAL_SIZE = 8;
 	constexpr u32 DALLAS_DONGLE_PAYLOAD_SIZE = 0x20;
 	constexpr u32 DALLAS_DONGLE_TOTAL_SIZE = DALLAS_DONGLE_SERIAL_SIZE + DALLAS_DONGLE_PAYLOAD_SIZE;
+	constexpr u32 KONAMI_BOOTROM_MAC_BACKUP_OFFSET = 0xf000;
 	constexpr const char* PYTHON1_GAME_CONFIG_SECTION = "Python1/Game";
 	constexpr const char* PYTHON1_IO_MODE_JVS = "JVS";
 	constexpr const char* PYTHON1_IO_MODE_EXTIO = "EXTIO";
@@ -238,15 +240,10 @@ namespace
 	constexpr u32 KONAMI_DALLAS_NO_KEY_RESPONSE[] = {
 		0x01000000, 0x00000000, 0x00000000,
 	};
-	constexpr u8 KONAMI_FSCI_MAC_STREAM[] =
-		"@0DM00045F000001AF"
-		"@0DM00045F000001AF"
-		"@0DM00045F000001AF";
-	constexpr u32 KONAMI_FSCI_LEGACY_MAC_READS = 3;
-	constexpr u8 KONAMI_FSCI_CONFIG_STREAM[] =
-		"@09T00000000D5" // Time/status tick.
-		"@03D00A4"       // Distribution/status OK.
-		"@0DM00045F000001AF";
+	constexpr u32 KONAMI_FSCI_MAC_FRAME_SIZE = 18;
+	constexpr u32 KONAMI_FSCI_INITIAL_MAC_FRAMES = 9;
+	constexpr u32 KONAMI_FSCI_INITIAL_MAC_STREAM_SIZE = KONAMI_FSCI_INITIAL_MAC_FRAMES * KONAMI_FSCI_MAC_FRAME_SIZE;
+	constexpr u32 KONAMI_FSCI_MAX_READ_BYTES = KONAMI_DBUF_WRITEB_MAX_PAYLOAD;
 	constexpr u8 KONAMI_EXTERNAL_IO_SYNC_RESPONSE[] = {
 		0xaa, 0xaa, 0xaa, 0x55,
 	};
@@ -254,22 +251,10 @@ namespace
 		0xaa, 0xaa, 0x00, 0x00,
 	};
 	constexpr u8 KONAMI_EXTERNAL_IO_COUNT_RESPONSE[] = {
-		0xaa, 0xaa, 0x00, 0x01, 0x01, 0x01, 0xad,
-	};
-	constexpr u8 KONAMI_EXTERNAL_IO_PRODUCT_RESPONSE[] = {
-		0xaa, 0xaa, 0x01, 0x02, 0x00, 0x00,
-		0xaa, 0x01, 0x00, 0x02, 0x00,
-		0x03, 0x00, 0x00, 0x00,
-		0x00,
-		0x01, 0x01, 0x00,
-		'I', 'C', 'C', 'A', 0x00, 0x00, 0x00, 0x00, 0x18,
-	};
-	constexpr u8 KONAMI_EXTERNAL_IO_STARTUP_RESPONSE[] = {
-		0xaa, 0xaa, 0x01, 0x03, 0x00, 0x00,
-		0xaa, 0x01, 0x00, 0x03, 0x00, 0x00, 0x04,
+		0xaa, 0xaa, 0x00, 0x01, 0x01, 0x02, 0xae,
 	};
 	constexpr u8 KONAMI_ICCA_PRODUCT_RESPONSE[] = {
-		0xaa, 0x81, 0x00, 0x02, 0x00, 0x2d,
+		0xaa, 0x81, 0x00, 0x02, 0x00, 0x2c,
 		0x03, 0x00, 0x00, 0x00, // Device ID
 		0x00, // Flag
 		0x01, 0x01, 0x00, // Version
@@ -367,6 +352,8 @@ namespace
 	std::vector<PendingSectorStatusWrite> s_pending_sector_status_writes;
 	std::FILE* s_hdd_image_file = nullptr;
 	std::string s_hdd_image_open_path;
+	bool s_hdd_image_writable = false;
+	bool s_pythonfs_formatted = false;
 	std::vector<PendingNetPacket> s_net_rx_packets[KONAMI_NET_CHANNEL_COUNT];
 	std::array<u8, 64> s_net_property_response;
 	std::vector<u8> s_uart_rx_fifo;
@@ -376,7 +363,9 @@ namespace
 	std::array<u32, 3> s_dallas_key_response;
 	std::array<std::array<u8, DALLAS_DONGLE_TOTAL_SIZE>, DALLAS_DONGLE_SLOT_COUNT> s_dallas_dongle_slots;
 	std::array<bool, DALLAS_DONGLE_SLOT_COUNT> s_dallas_dongle_loaded;
-	u32 s_fsci_read_count;
+	std::array<u8, sizeof(KONAMI_FACTORY_MAC)> s_factory_mac;
+	std::array<u8, KONAMI_FSCI_INITIAL_MAC_STREAM_SIZE> s_fsci_mac_stream;
+	u32 s_fsci_stream_offset;
 	bool s_bbsram_dirty;
 	u32 s_jamma_input_dest = INVALID_JAMMA_INPUT_DEST;
 	u32 s_last_jamma_input_status = JAMMA_STATUS_NEUTRAL;
@@ -398,6 +387,7 @@ namespace
 	void SaveBbsramIfDirty();
 	void CloseHddImageFile();
 	void ResetSubboardAdpcmPlayback();
+	void WarnIfConfigRomOuiMismatchesFactoryMac();
 
 	bool ReadIopMemory(u32 address, void* data, u32 size)
 	{
@@ -452,6 +442,28 @@ namespace
 		return checksum;
 	}
 
+	std::array<u8, 28> BuildExternalIoProductResponse(u8 device_id)
+	{
+		// Dogstation's EE parser treats bytes 15..26 as a flags byte plus the B22C.zin version stamp.
+		std::array<u8, 28> response = {
+			0xaa, 0xaa, device_id, 0x02, 0x00, 0x00,
+			0xaa, 0xa5, device_id, 0x02, 0x05,
+			'C', 'R', '-', '2', 0x36, 0x01, 0x00, 0x07, 'B', '2', '2', 'C', 0x00, 0x00, 0x02, 0x01,
+			0x00,
+		};
+		response[5] = CalculateAcioChecksum(response.data(), 5);
+		response[27] = CalculateAcioChecksum(response.data() + 6, 21);
+		return response;
+	}
+
+	std::array<u8, 13> BuildExternalIoCommandAck(u8 device_id, u8 command)
+	{
+		return {
+			0xaa, 0xaa, device_id, command, 0x00, static_cast<u8>(0xaa + device_id + command),
+			0xaa, 0xa5, device_id, command, 0x01, 0x00, static_cast<u8>(0xa6 + device_id + command),
+		};
+	}
+
 	std::vector<u8> EscapeAcioPacket(const u8* data, u32 byte_count)
 	{
 		std::vector<u8> escaped;
@@ -500,8 +512,8 @@ namespace
 	{
 		std::vector<u8> packet(request);
 		packet.push_back(0xaa);
+		packet.push_back(0x01);
 		packet.push_back(request[2]);
-		packet.push_back(0x00);
 		packet.push_back(request[3]);
 		packet.insert(packet.end(), response, response + response_bytes);
 		packet.push_back(CalculateAcioChecksum(packet.data() + request.size(), response_bytes + 4));
@@ -569,13 +581,20 @@ namespace
 		{
 			QueueUartBytes(KONAMI_EXTERNAL_IO_COUNT_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_COUNT_RESPONSE));
 		}
-		else if (bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] == 0x01 && bytes[3] == 0x02)
+		else if (bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] >= 0x01 && bytes[2] <= 0x02 && bytes[3] == 0x02)
 		{
-			QueueUartBytes(KONAMI_EXTERNAL_IO_PRODUCT_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_PRODUCT_RESPONSE));
+			const auto response = BuildExternalIoProductResponse(bytes[2]);
+			QueueUartBytes(response.data(), static_cast<u32>(response.size()));
 		}
-		else if (bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] == 0x01 && bytes[3] == 0x03)
+		else if (bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] >= 0x01 && bytes[2] <= 0x02 && bytes[3] == 0x03)
 		{
-			QueueUartBytes(KONAMI_EXTERNAL_IO_STARTUP_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_STARTUP_RESPONSE));
+			const auto response = BuildExternalIoCommandAck(bytes[2], bytes[3]);
+			QueueUartBytes(response.data(), static_cast<u32>(response.size()));
+		}
+		else if (bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] >= 0x01 && bytes[2] <= 0x02 && bytes[3] == 0x04)
+		{
+			const auto response = BuildExternalIoCommandAck(bytes[2], bytes[3]);
+			QueueUartBytes(response.data(), static_cast<u32>(response.size()));
 		}
 		else if (extio_mode && bytes.size() >= 5 && bytes[0] == 0xaa && bytes[1] == 0x01 && bytes[2] == 0x00 && bytes[3] == 0x02)
 		{
@@ -603,8 +622,9 @@ namespace
 				return;
 
 			std::vector<u8> request(bytes.begin(), bytes.begin() + packet_size);
-			const u8 ok_response[] = {0x00, 0x00};
-			switch (request[3])
+			const u8 command = request[3] & ~0x40;
+			const u8 ok_response[] = {0x01, static_cast<u8>(request[2] == 0x01 ? 0x00 : 0x01)};
+			switch (command)
 			{
 				case 0x00:
 				case 0x01:
@@ -622,6 +642,13 @@ namespace
 				{
 					const std::array<u8, 0x82> empty_card_data = {};
 					QueueExternalIoWrappedResponse(request, empty_card_data.data(), static_cast<u32>(empty_card_data.size()));
+					break;
+				}
+				case 0x26:
+				case 0x36:
+				{
+					const std::array<u8, 9> empty_cardunit_status = {0x04};
+					QueueExternalIoWrappedResponse(request, empty_cardunit_status.data(), static_cast<u32>(empty_cardunit_status.size()));
 					break;
 				}
 				default:
@@ -703,6 +730,115 @@ namespace
 			0x01u | (static_cast<u32>(id[0]) << 8) | (static_cast<u32>(id[1]) << 16) | (static_cast<u32>(id[2]) << 24),
 			static_cast<u32>(id[3]) | (static_cast<u32>(id[4]) << 8) | (static_cast<u32>(id[5]) << 16),
 		};
+	}
+
+	u32 ReadMacOui(const u8* mac)
+	{
+		return (static_cast<u32>(mac[0]) << 16) | (static_cast<u32>(mac[1]) << 8) | mac[2];
+	}
+
+	bool IsValidUnicastMac(const u8* mac)
+	{
+		bool all_zero = true;
+		bool all_ff = true;
+		for (u32 i = 0; i < 6; i++)
+		{
+			all_zero &= mac[i] == 0;
+			all_ff &= mac[i] == 0xff;
+		}
+
+		return !all_zero && !all_ff && (mac[0] & 1) == 0;
+	}
+
+	bool IsBootromMacBackupRecordValid()
+	{
+		const u8* record = s_bootrom + KONAMI_BOOTROM_MAC_BACKUP_OFFSET;
+		if (!IsValidUnicastMac(record))
+			return false;
+
+		for (u32 i = 0; i < 6; i++)
+		{
+			if ((record[i] ^ record[i + 6]) != 0xff)
+				return false;
+		}
+
+		return true;
+	}
+
+	u8 ToFsciHexDigit(u8 value)
+	{
+		return value < 10 ? static_cast<u8>('0' + value) : static_cast<u8>('A' + value - 10);
+	}
+
+	void WriteFsciHexByte(u8* dest, u8 value)
+	{
+		dest[0] = ToFsciHexDigit(value >> 4);
+		dest[1] = ToFsciHexDigit(value & 0x0f);
+	}
+
+	u8 CalculateFsciChecksum(const u8* data, u32 size)
+	{
+		u32 checksum = 0;
+		for (u32 i = 0; i < size; i++)
+			checksum += data[i];
+		while (checksum > 0xff)
+			checksum = (checksum & 0xff) + (checksum >> 8);
+		return static_cast<u8>(checksum);
+	}
+
+	void BuildFsciMacFrame(u8* dest)
+	{
+		dest[0] = '@';
+		WriteFsciHexByte(dest + 1, 0x0d);
+		dest[3] = 'M';
+		for (u32 i = 0; i < s_factory_mac.size(); i++)
+			WriteFsciHexByte(dest + 4 + i * 2, s_factory_mac[i]);
+		WriteFsciHexByte(dest + 16, CalculateFsciChecksum(dest + 3, 0x0d));
+	}
+
+	void UpdateFsciMacResponses()
+	{
+		for (u32 i = 0; i < KONAMI_FSCI_INITIAL_MAC_FRAMES; i++)
+			BuildFsciMacFrame(s_fsci_mac_stream.data() + i * KONAMI_FSCI_MAC_FRAME_SIZE);
+	}
+
+	void ResetFsciStream()
+	{
+		s_fsci_stream_offset = 0;
+		UpdateFsciMacResponses();
+	}
+
+	u32 BuildFsciReadResponse(u8* dest, u32 byte_count)
+	{
+		const u32 mac_stream_size = static_cast<u32>(s_fsci_mac_stream.size());
+		const u32 available = s_fsci_stream_offset < mac_stream_size ? mac_stream_size - s_fsci_stream_offset : 0;
+		const u32 response_bytes = std::min<u32>({byte_count, KONAMI_FSCI_MAX_READ_BYTES, available});
+
+		if (response_bytes != 0)
+		{
+			std::memcpy(dest, s_fsci_mac_stream.data() + s_fsci_stream_offset, response_bytes);
+			s_fsci_stream_offset += response_bytes;
+		}
+
+		return response_bytes;
+	}
+
+	void UpdateFactoryMacFromBootrom()
+	{
+		std::memcpy(s_factory_mac.data(), KONAMI_FACTORY_MAC, s_factory_mac.size());
+		if (!IsBootromMacBackupRecordValid())
+		{
+			DevCon.WriteLn("FW HLE: warning: invalid BootROM MAC backup at 0x%x, using default %02x:%02x:%02x:%02x:%02x:%02x",
+				KONAMI_BOOTROM_MAC_BACKUP_OFFSET,
+				s_factory_mac[0], s_factory_mac[1], s_factory_mac[2], s_factory_mac[3], s_factory_mac[4], s_factory_mac[5]);
+			UpdateFsciMacResponses();
+			return;
+		}
+
+		std::memcpy(s_factory_mac.data(), s_bootrom + KONAMI_BOOTROM_MAC_BACKUP_OFFSET, s_factory_mac.size());
+		UpdateFsciMacResponses();
+		DevCon.WriteLn("FW HLE: BootROM MAC %02x:%02x:%02x:%02x:%02x:%02x",
+			s_factory_mac[0], s_factory_mac[1], s_factory_mac[2], s_factory_mac[3], s_factory_mac[4], s_factory_mac[5]);
 	}
 
 	u32 PackDallasSerialResponseWord(const u8* data)
@@ -823,6 +959,33 @@ namespace
 			s_io_config_rom[i] = ReadBigEndian32(data->data() + (i * sizeof(u32)));
 	}
 
+	void WarnIfConfigRomOuiMismatchesFactoryMac()
+	{
+		const u32* words = s_io_config_rom.empty() ? KONAMI_IO_BOARD_CROM : s_io_config_rom.data();
+		const size_t word_count = s_io_config_rom.empty() ?
+			(sizeof(KONAMI_IO_BOARD_CROM) / sizeof(KONAMI_IO_BOARD_CROM[0])) :
+			s_io_config_rom.size();
+		const u32 bootrom_oui = ReadMacOui(s_factory_mac.data());
+
+		for (size_t i = 0; i < word_count; i++)
+		{
+			const u32 word = words[i];
+			const u32 key = word >> 24;
+			if (key != 0x03 && key != 0x12)
+				continue;
+
+			const u32 crom_oui = word & 0x00ffffffu;
+			if (crom_oui != bootrom_oui)
+			{
+				DevCon.WriteLn("FW HLE: warning: config ROM OUI key=0x%02x index=0x%zx (%02x:%02x:%02x) differs from BootROM MAC OUI (%02x:%02x:%02x)",
+					key, i,
+					(crom_oui >> 16) & 0xff, (crom_oui >> 8) & 0xff, crom_oui & 0xff,
+					s_factory_mac[0], s_factory_mac[1], s_factory_mac[2]);
+				return;
+			}
+		}
+	}
+
 	void LoadDallasDongles()
 	{
 		for (u32 slot = 0; slot < DALLAS_DONGLE_SLOT_COUNT; slot++)
@@ -858,7 +1021,7 @@ namespace
 	{
 		std::memset(s_bootrom, 0xff, sizeof(s_bootrom));
 		std::memcpy(s_bootrom, KONAMI_FACTORY_MAC, sizeof(KONAMI_FACTORY_MAC));
-		std::memcpy(s_bootrom + 0xf000, KONAMI_MAC_BACKUP, sizeof(KONAMI_MAC_BACKUP));
+		std::memcpy(s_bootrom + KONAMI_BOOTROM_MAC_BACKUP_OFFSET, KONAMI_MAC_BACKUP, sizeof(KONAMI_MAC_BACKUP));
 		std::memcpy(s_bootrom + 0xf030, KONAMI_WE2K3_DALLAS_BOOTROM_RECORD, sizeof(KONAMI_WE2K3_DALLAS_BOOTROM_RECORD));
 	}
 
@@ -869,6 +1032,7 @@ namespace
 		const std::string path = GetBootromPath();
 		if (path.empty())
 		{
+			UpdateFactoryMacFromBootrom();
 			UpdateDallasKeyResponseFromBootrom();
 			return;
 		}
@@ -876,6 +1040,7 @@ namespace
 		std::FILE* file = std::fopen(path.c_str(), "rb");
 		if (!file)
 		{
+			UpdateFactoryMacFromBootrom();
 			UpdateDallasKeyResponseFromBootrom();
 			(void)WriteBinaryFile(path, s_bootrom, sizeof(s_bootrom));
 			return;
@@ -883,6 +1048,7 @@ namespace
 
 		(void)std::fread(s_bootrom, 1, sizeof(s_bootrom), file);
 		std::fclose(file);
+		UpdateFactoryMacFromBootrom();
 		UpdateDallasKeyResponseFromBootrom();
 	}
 
@@ -933,17 +1099,21 @@ namespace
 		std::fclose(s_hdd_image_file);
 		s_hdd_image_file = nullptr;
 		s_hdd_image_open_path.clear();
+		s_hdd_image_writable = false;
 	}
 
-	std::FILE* GetHddImageFile(const std::string& path)
+	std::FILE* GetHddImageFile(const std::string& path, bool writable = false)
 	{
-		if (s_hdd_image_file && s_hdd_image_open_path == path)
+		if (s_hdd_image_file && s_hdd_image_open_path == path && (!writable || s_hdd_image_writable))
 			return s_hdd_image_file;
 
 		CloseHddImageFile();
-		s_hdd_image_file = std::fopen(path.c_str(), "rb");
+		s_hdd_image_file = std::fopen(path.c_str(), writable ? "rb+" : "rb");
 		if (s_hdd_image_file)
+		{
 			s_hdd_image_open_path = path;
+			s_hdd_image_writable = writable;
+		}
 		return s_hdd_image_file;
 	}
 
@@ -1435,6 +1605,61 @@ namespace
 		return QueuePendingSectorAndStatusPackets(dest, data, status_offset, ShouldDeferSectorReadStatus(status_offset));
 	}
 
+	bool HleWriteSectors(u32 sector, u32 count, u32 source, u32 status_offset)
+	{
+		if (count == 0)
+		{
+			QueuePendingDbufQuadWrite(0xfffe, status_offset, 0);
+			return true;
+		}
+
+		const u64 offset = static_cast<u64>(sector) * SECTOR_SIZE;
+		const u64 bytes64 = static_cast<u64>(count) * SECTOR_SIZE;
+		if (bytes64 > 16 * 1024 * 1024)
+		{
+			DevCon.WriteLn("FW HLE: refusing oversized sector write sector=0x%x count=0x%x source=0x%x", sector, count, source);
+			return false;
+		}
+
+		const std::string path = GetHddImagePath();
+		if (path.empty())
+		{
+			DevCon.WriteLn("FW HLE: no Python 1 HDD image configured");
+			return false;
+		}
+
+		std::vector<u8> data(static_cast<size_t>(bytes64));
+		if (!ReadIopMemory(source, data.data(), static_cast<u32>(data.size())))
+		{
+			DevCon.WriteLn("FW HLE: failed sector write DMA read src=0x%x bytes=0x%zx", source, data.size());
+			return false;
+		}
+
+		std::FILE* file = GetHddImageFile(path, true);
+		if (!file)
+		{
+			DevCon.WriteLn("FW HLE: failed to open %s writable", path.c_str());
+			return false;
+		}
+
+		if (std::fseek(file, static_cast<long>(offset), SEEK_SET) != 0)
+		{
+			DevCon.WriteLn("FW HLE: failed to seek %s to 0x%llx for write", path.c_str(), static_cast<unsigned long long>(offset));
+			return false;
+		}
+
+		const size_t bytes = static_cast<size_t>(bytes64);
+		const size_t written = std::fwrite(data.data(), 1, bytes, file);
+		if (written != bytes || std::fflush(file) != 0)
+		{
+			DevCon.WriteLn("FW HLE: short write %s offset=0x%llx requested=0x%zx wrote=0x%zx", path.c_str(), static_cast<unsigned long long>(offset), bytes, written);
+			return false;
+		}
+
+		QueuePendingDbufQuadWrite(0xfffe, status_offset, 0);
+		return true;
+	}
+
 	bool HleBbsramCommand(const u32* payload, u32 payload_quads)
 	{
 		if (payload_quads < 4)
@@ -1454,7 +1679,13 @@ namespace
 		if (subop == 0)
 		{
 			if (byte_count != 0 && dest != 0)
-				QueuePendingDbufByteWrite(0x1000, dest, s_bbsram + offset, byte_count);
+			{
+				for (u32 transfer_offset = 0; transfer_offset < byte_count; transfer_offset += KONAMI_DBUF_WRITEB_MAX_PAYLOAD)
+				{
+					const u32 chunk = std::min<u32>(KONAMI_DBUF_WRITEB_MAX_PAYLOAD, byte_count - transfer_offset);
+					QueuePendingDbufByteWrite(0x1000, dest + transfer_offset, s_bbsram + offset + transfer_offset, chunk);
+				}
+			}
 			QueuePendingDbufQuadWrite(0xfffe, KONAMI_BBSRAM_STATUS_OFFSET, 0);
 			return true;
 		}
@@ -1485,8 +1716,16 @@ namespace
 					}
 				}
 
-				s_bbsram_dirty = true;
-				SaveBbsramIfDirty();
+				const bool volatile_test_write = (offset == 0 && byte_count == KONAMI_BBSRAM_VOLATILE_TEST_BYTES);
+				if (volatile_test_write)
+				{
+					DevCon.WriteLn("FW HLE: BBSRAM full-area write kept volatile");
+				}
+				else
+				{
+					s_bbsram_dirty = true;
+					SaveBbsramIfDirty();
+				}
 			}
 			QueuePendingDbufQuadWrite(0xfffe, KONAMI_BBSRAM_STATUS_OFFSET, 0);
 			return true;
@@ -1576,7 +1815,7 @@ namespace
 
 		if (subop == 0)
 		{
-			s_fsci_read_count = 0;
+			ResetFsciStream();
 			QueuePendingDbufQuadWrite(0xfffe, KONAMI_FSCI_STATUS_OFFSET, 0);
 			return true;
 		}
@@ -1587,34 +1826,18 @@ namespace
 			// backup-RAM initialization path that loads bbsram0:/settings.
 			if (GetPython1IOMode() == Python1IOMode::POPN)
 			{
-				s_fsci_read_count++;
 				QueuePendingDbufQuadWrite(0xfffe, KONAMI_FSCI_STATUS_OFFSET, 0);
 				return true;
 			}
 
-			// WE2K3 consumes only the first nine valid frames and treats T/D as a programmed
-			// board response.
-			const bool legacy_mac_phase = s_fsci_read_count < KONAMI_FSCI_LEGACY_MAC_READS;
-			const bool config_phase = s_fsci_read_count == KONAMI_FSCI_LEGACY_MAC_READS;
-			if (!legacy_mac_phase && !config_phase)
-			{
-				s_fsci_read_count++;
-				QueuePendingDbufQuadWrite(0xfffe, KONAMI_FSCI_STATUS_OFFSET, 0);
-				return true;
-			}
-
-			const u8* response = legacy_mac_phase ? KONAMI_FSCI_MAC_STREAM : KONAMI_FSCI_CONFIG_STREAM;
-			const u32 response_size = legacy_mac_phase ?
-				(sizeof(KONAMI_FSCI_MAC_STREAM) - 1) :
-				(sizeof(KONAMI_FSCI_CONFIG_STREAM) - 1);
-			const u32 response_bytes = std::min<u32>(byte_count, response_size);
-			if (!WriteIopMemory(dest, response, response_bytes))
+			std::array<u8, KONAMI_FSCI_MAX_READ_BYTES> response;
+			const u32 response_bytes = BuildFsciReadResponse(response.data(), byte_count);
+			if (!WriteIopMemory(dest, response.data(), response_bytes))
 			{
 				DevCon.WriteLn("FW HLE: failed FSCI DMA write dest=0x%x bytes=0x%x", dest, response_bytes);
 				QueuePendingDbufQuadWrite(0xfffe, KONAMI_FSCI_STATUS_OFFSET, 0);
 				return true;
 			}
-			s_fsci_read_count++;
 			QueuePendingDbufQuadWrite(0xfffe, KONAMI_FSCI_STATUS_OFFSET, ByteSwap32(response_bytes));
 			return true;
 		}
@@ -1793,8 +2016,8 @@ namespace
 				data_bytes = sizeof(KONAMI_NET_MACHINE_ID);
 				break;
 			case 0x2a:
-				data = KONAMI_FACTORY_MAC;
-				data_bytes = sizeof(KONAMI_FACTORY_MAC);
+				data = s_factory_mac.data();
+				data_bytes = static_cast<u32>(s_factory_mac.size());
 				break;
 			case 0x36:
 				data = KONAMI_NET_SECONDARY_DNS;
@@ -2320,16 +2543,38 @@ namespace
 				DevCon.WriteLn("FW HLE: P1IO CF read sector=0x%x count=0x%x bytes=0x%x dest=0x%x", sector, count, count * SECTOR_SIZE, dest);
 			return true;
 		}
-		if (command_offset == KONAMI_ATA_COMMAND_OFFSET && subop == 0 && HleReadSectors(sector, count, dest, KONAMI_ATA_STATUS_OFFSET))
+		if (command_offset == KONAMI_CF_COMMAND_OFFSET && subop == 4)
+		{
+			QueuePendingDbufQuadWrite(0xfffe, KONAMI_CF_STATUS_OFFSET, 0);
+			return true;
+		}
+		if (command_offset == KONAMI_ATA_COMMAND_OFFSET && (subop == 0 || subop == 2) && HleReadSectors(sector, count, dest, KONAMI_ATA_STATUS_OFFSET))
 		{
 			if (ShouldLogLimited(s_sector_read_log_count, FW_SECTOR_LOG_LIMIT))
-				DevCon.WriteLn("FW HLE: P1IO ATA read device=0x%x sector=0x%x count=0x%x bytes=0x%x dest=0x%x", ata_device, sector, count, count * SECTOR_SIZE, dest);
+				DevCon.WriteLn("FW HLE: P1IO ATA read subop=0x%x device=0x%x sector=0x%x count=0x%x bytes=0x%x dest=0x%x",
+					subop, ata_device, sector, count, count * SECTOR_SIZE, dest);
+			return true;
+		}
+		if (command_offset == KONAMI_ATA_COMMAND_OFFSET && (subop == 1 || subop == 3) && HleWriteSectors(sector, count, dest, KONAMI_ATA_STATUS_OFFSET))
+		{
+			if (ShouldLogLimited(s_sector_read_log_count, FW_SECTOR_LOG_LIMIT))
+				DevCon.WriteLn("FW HLE: P1IO ATA write subop=0x%x device=0x%x sector=0x%x count=0x%x bytes=0x%x src=0x%x",
+					subop, ata_device, sector, count, count * SECTOR_SIZE, dest);
+			return true;
+		}
+		if (command_offset == KONAMI_ATA_COMMAND_OFFSET && subop == 7)
+		{
+			if (ata_device == 0x14)
+				s_pythonfs_formatted = true;
+
+			const u32 status = (ata_device == 0x0a && !s_pythonfs_formatted) ? 0xffffffd1u : 0;
+			QueuePendingDbufQuadWrite(0xfffe, KONAMI_ATA_STATUS_OFFSET, ByteSwap32(status));
 			return true;
 		}
 		else if (ShouldLogLimited(s_crom_log_count, FW_CROM_LOG_LIMIT))
 		{
-			DevCon.WriteLn("FW HLE: unhandled Konami command off=0x%x subop=0x%x sector=0x%x count=0x%x dest=0x%x p4=0x%x p5=0x%x p6=0x%x p7=0x%x",
-				command_offset, subop, sector, count, dest, p4, p5, p6, p7);
+			DevCon.WriteLn("FW HLE: unhandled Konami command off=0x%x subop=0x%x w1=0x%x sector=0x%x count=0x%x dest=0x%x p4=0x%x p5=0x%x p6=0x%x p7=0x%x",
+				command_offset, subop, ata_device, sector, count, dest, p4, p5, p6, p7);
 		}
 
 		return false;
@@ -2346,7 +2591,7 @@ namespace
 		LoadBootrom();
 		LoadBbsram();
 		LoadDallasDongles();
-		s_fsci_read_count = 0;
+		ResetFsciStream();
 		for (auto& packets : s_net_rx_packets)
 			packets.clear();
 		ResetSubboardAdpcmPlayback();
@@ -2356,7 +2601,9 @@ namespace
 		s_last_p1io_bind_state = 0;
 		s_p1io_coin_counters[0] = 0;
 		s_p1io_coin_counters[1] = 0;
+		s_pythonfs_formatted = false;
 		LoadConfigRom();
+		WarnIfConfigRomOuiMismatchesFactoryMac();
 		s_crom_log_count = 0;
 		s_sector_read_log_count = 0;
 		s_runtime_log_count = 0;
