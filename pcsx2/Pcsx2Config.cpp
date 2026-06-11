@@ -1469,7 +1469,8 @@ bool Pcsx2Config::DEV9Options::operator==(const DEV9Options& right) const
 		   OpEqu(EthHosts) &&
 
 		   OpEqu(HddEnable) &&
-		   OpEqu(HddFile);
+		   OpEqu(HddFile) &&
+		   OpEqu(HddIdFile);
 }
 
 void Pcsx2Config::DEV9Options::LoadIPHelper(u8* field, const std::string& setting)
@@ -1791,7 +1792,7 @@ bool Pcsx2Config::SecurityOptions::operator!=(const SecurityOptions& right) cons
 
 bool Pcsx2Config::SecurityOptions::operator==(const SecurityOptions& right) const
 {
-	return OpEqu(MgChallengeIvFile) && OpEqu(MgCardKeyStoreFile) && OpEqu(MgEncryptedKeyStoreFile) && OpEqu(NvRamFile) && OpEqu(ILinkIdFile) && OpEqu(MgKeyStoreMode);
+	return OpEqu(MgChallengeIvFile) && OpEqu(MgCardKeyStoreFile) && OpEqu(MgEncryptedKeyStoreFile) && OpEqu(MgKeyStoreKeyFile) && OpEqu(NvRamFile) && OpEqu(ILinkIdFile) && OpEqu(MgKeyStoreMode);
 }
 
 Pcsx2Config::FilenameOptions::FilenameOptions()

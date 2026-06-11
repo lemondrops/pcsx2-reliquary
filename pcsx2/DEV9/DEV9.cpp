@@ -1146,7 +1146,7 @@ void DEV9CheckChanges(const Pcsx2Config& old_config)
 		{
 			//ATA::Open/Close dosn't set any regs
 			//So we can close/open to apply settings
-			if (EmuConfig.DEV9.HddFile != old_config.DEV9.HddFile)
+			if (EmuConfig.DEV9.HddFile != old_config.DEV9.HddFile || EmuConfig.DEV9.HddIdFile != old_config.DEV9.HddIdFile)
 			{
 				dev9.ata->Close();
 				if (dev9.ata->Open(hddPath) != 0)
