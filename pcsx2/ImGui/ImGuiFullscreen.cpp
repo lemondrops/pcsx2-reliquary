@@ -1,6 +1,11 @@
 // SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
+#ifdef HAVE_PARALLEL_GS
+#include "GS/Renderers/parallel-gs/GSRendererPGS.h"
+extern std::unique_ptr<GSDevicePGS> g_pgs_device;
+#endif
+
 #include "fmt/format.h"
 #include "Host.h"
 #include "GS/Renderers/Common/GSDevice.h"
@@ -317,14 +322,28 @@ std::optional<RGBA8Image> ImGuiFullscreen::LoadTextureImage(const char* path)
 
 std::shared_ptr<GSTexture> ImGuiFullscreen::UploadTexture(const char* path, const RGBA8Image& image)
 {
-	GSTexture* texture = g_gs_device->CreateTexture(image.GetWidth(), image.GetHeight(), 1, GSTexture::Format::Color);
+	GSTexture *texture;
+
+#ifdef HAVE_PARALLEL_GS
+	if (g_pgs_device)
+	{
+		texture = g_pgs_device->CreateTexture(image.GetWidth(), image.GetHeight(), image.GetPixels(), image.GetPitch());
+		return std::shared_ptr<GSTexture>(texture);
+	}
+#endif
+
+	if (!g_gs_device)
+		return {};
+
+	texture = g_gs_device->CreateTexture(image.GetWidth(), image.GetHeight(), 1, GSTexture::Format::Color);
+
 	if (!texture)
 	{
 		Console.Error("failed to create %ux%u texture for resource", image.GetWidth(), image.GetHeight());
 		return {};
 	}
 
-	if (!texture->Update(GSVector4i(0, 0, image.GetWidth(), image.GetHeight()), image.GetPixels(), image.GetPitch()))
+	if (g_gs_device && !texture->Update(GSVector4i(0, 0, image.GetWidth(), image.GetHeight()), image.GetPixels(), image.GetPitch()))
 	{
 		Console.Error("Failed to upload %ux%u texture for resource", image.GetWidth(), image.GetHeight());
 		g_gs_device->Recycle(texture);

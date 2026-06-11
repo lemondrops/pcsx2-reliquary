@@ -56,6 +56,7 @@
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)3rdparty\lzma\include</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)3rdparty\freesurround\include</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)pcsx2\GS\parallel-gs\gs</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)pcsx2\GS\parallel-gs\analog</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)pcsx2\GS\parallel-gs\Granite\vulkan</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)pcsx2\GS\parallel-gs\Granite\util</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)pcsx2\GS\parallel-gs\Granite\math</AdditionalIncludeDirectories>
@@ -278,8 +279,10 @@
     <ClCompile Include="GS\parallel-gs\gs\gs_interface.cpp" />
     <ClCompile Include="GS\parallel-gs\gs\gs_renderer.cpp" />
     <ClCompile Include="GS\parallel-gs\gs\gs_util.cpp" />
+    <ClCompile Include="GS\parallel-gs\analog\analog_video.cpp" />
     <ClCompile Include="GS\parallel-gs\gs\page_tracker.cpp" />
     <ClCompile Include="GS\parallel-gs\Granite\vulkan\buffer.cpp" />
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\breadcrumbs.cpp" />
     <ClCompile Include="GS\parallel-gs\Granite\vulkan\buffer_pool.cpp" />
     <ClCompile Include="GS\parallel-gs\Granite\vulkan\command_buffer.cpp" />
     <ClCompile Include="GS\parallel-gs\Granite\vulkan\command_pool.cpp" />
@@ -317,6 +320,8 @@
     <ClCompile Include="GS\parallel-gs\Granite\util\thread_name.cpp" />
     <ClCompile Include="GS\parallel-gs\Granite\util\thread_priority.cpp" />
     <ClCompile Include="GS\parallel-gs\Granite\util\slab_allocator.cpp" />
+    <ClCompile Include="GS\parallel-gs\Granite\math\transforms.cpp" />
+    <ClCompile Include="GS\parallel-gs\Granite\math\muglm\muglm.cpp" />
     <ClCompile Include="GS\Renderers\DX11\D3D.cpp" />
     <ClCompile Include="GS\Renderers\DX12\GSDevice12.cpp" />
     <ClCompile Include="GS\Renderers\DX12\GSTexture12.cpp" />

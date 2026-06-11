@@ -676,7 +676,7 @@ endif()
 
 if (TARGET parallel-gs)
 	message("Adding support for paraLLEl-GS")
-	target_link_libraries(PCSX2_FLAGS INTERFACE parallel-gs)
+	target_link_libraries(PCSX2_FLAGS INTERFACE parallel-gs analog-video)
 	target_compile_definitions(PCSX2_FLAGS INTERFACE HAVE_PARALLEL_GS)
 	list(APPEND pcsx2GSSources GS/Renderers/parallel-gs/GSRendererPGS.cpp)
 	list(APPEND pcsx2GSHeaders GS/Renderers/parallel-gs/GSRendererPGS.h)
