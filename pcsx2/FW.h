@@ -23,6 +23,9 @@ void PHYWrite();
 void PHYRead();
 u32 FWread32(u32 addr);
 void FWwrite32(u32 addr, u32 value);
+
+void FWwriteDMA(u32* pMem, int size);
+
 void FWsectorReadStatusInterrupt();
 void FWmixSubboardAudio(s32* left, s32* right);
 

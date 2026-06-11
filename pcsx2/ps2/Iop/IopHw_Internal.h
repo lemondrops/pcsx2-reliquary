@@ -124,6 +124,10 @@ static __ri const char* _ioplog_GetHwName( u32 addr, T val )
 		case 0x1f801574: return "DMA ICR2";
 		case 0x1f801576: return "DMA ICR2_hi";
 
+		case 0x1f8015f0: return "DMA PCR3";
+		case 0x1f80157c: return "DMA ICR3";
+		case 0x1f80157e: return "DMA ICR3_hi";
+
 		case HW_CDR_DATA0:	return "CDROM DATA0 (Index/Status Reg)";
 		case HW_CDR_DATA1:	return "CDROM DATA1";
 		case HW_CDR_DATA2:	return "CDROM DATA2";

@@ -842,3 +842,21 @@ void FWwrite32(u32 addr, u32 value)
 			break;
 	}
 }
+
+void FWwriteDMA(u32* pMem, int size)
+{
+	Console.Warning("FW DMA: FWwriteDMA: size %x", size);
+
+	const u32 base = FW_PHT_CTRL0;
+	const u32 hdr0 = fwRu32(base + 0x08);
+	const u32 hdr1 = fwRu32(base + 0x0c);
+	const u64 offset = ((hdr0 & 0xffffull) << 32) | hdr1;
+	const u32 payload_quads = (size + 3) >> 2;
+	std::vector<u32> payload(payload_quads);
+	for (u32 i = 0; i < payload_quads; i++)
+		payload[i] = pMem[i];
+
+	const bool handled = s_active_device && s_active_device->Write(offset, payload.data(), payload_quads);
+
+	RaiseIntr0(FW_INTR0_PBCntR);
+}
