@@ -355,11 +355,15 @@ void GSState::ResetDrawBufferIdx()
 	m_vertex = &m_vertex_buffers[m_current_buffer_idx];
 
 	if (m_index->tail == 0)
+	{
 		m_backed_up_ctx = -1;
-
-	m_dirty_gs_regs = 0;
-
-	//DevCon.Warning("New round of draws buffer %d vertex tail %d index tail %d TME %d TBP0 0x%x draw %d", m_current_buffer_idx, m_vertex->tail, m_index->tail, m_env.PRIM.TME, m_env.CTXT[m_env.PRIM.CTXT].TEX0.TBP0, s_n);
+		m_dirty_gs_regs = 0;
+	}
+	else
+	{
+		m_dirty_gs_regs = m_env_buffers[m_current_buffer_idx].m_dirty_regs;
+		temp_draw_rect = m_env_buffers[m_current_buffer_idx].draw_rect;
+	}
 }
 
 
@@ -385,7 +389,7 @@ void GSState::ResetDrawBuffers()
 // exclude_current is used if there is a flush for a reason other than the normal context change.
 void GSState::FlushBuffers(bool flush_base_only, bool use_flush_reason, GSFlushReason flush_reason)
 {
-	const u32 current_idx = m_current_buffer_idx;
+	const int current_idx = m_current_buffer_idx;
 	bool restore_env = false;
 
 	if (m_used_buffers_idx > 0)
@@ -398,8 +402,7 @@ void GSState::FlushBuffers(bool flush_base_only, bool use_flush_reason, GSFlushR
 		else if (m_index_buffers[0].tail == 0)
 			return;
 
-		int max_flushes = flush_base_only ? 1 : m_used_buffers_idx;
-		//DevCon.Warning("Flushing %d draw buffers from draw %d", m_used_buffers_idx, s_n);
+		const int max_flushes = flush_base_only ? 1 : m_used_buffers_idx;
 		for (int i = 0; i < max_flushes; i++)
 		{
 			m_current_buffer_idx = i;
@@ -431,7 +434,7 @@ void GSState::FlushBuffers(bool flush_base_only, bool use_flush_reason, GSFlushR
 			}
 			else if (restore_env)
 				memcpy(&m_env, &m_temp_env, sizeof(m_env));
-			//DevCon.Warning("Flushing position %d ABE is %d TME %d TEX0 TBP %x", i, m_prev_env.PRIM.ABE, m_prev_env.PRIM.TME, m_prev_env.CTXT[m_prev_env.PRIM.CTXT].TEX0.TBP0);
+
 			if (use_flush_reason && (i == current_idx || flush_reason == VSYNC))
 				FlushDraw(flush_reason);
 			else
@@ -443,7 +446,6 @@ void GSState::FlushBuffers(bool flush_base_only, bool use_flush_reason, GSFlushR
 	m_current_buffer_idx = current_idx;
 	m_index = &m_index_buffers[m_current_buffer_idx];
 	m_vertex = &m_vertex_buffers[m_current_buffer_idx];
-	m_dirty_gs_regs = 0;
 
 	const int ctx = m_env_buffers[m_current_buffer_idx].m_backed_up_ctx;
 	std::memcpy(&m_prev_env, &m_env_buffers[m_current_buffer_idx].m_env, 88);
@@ -451,8 +453,6 @@ void GSState::FlushBuffers(bool flush_base_only, bool use_flush_reason, GSFlushR
 	std::memcpy(&m_prev_env.CTXT[1], &m_env_buffers[m_current_buffer_idx].m_env.CTXT[1], 96);
 	std::memcpy(&m_prev_env.CTXT[ctx].offset, &m_env_buffers[m_current_buffer_idx].m_env.CTXT[ctx].offset, sizeof(m_env_buffers[m_current_buffer_idx].m_env.CTXT[ctx].offset));
 	std::memcpy(&m_prev_env.CTXT[ctx].scissor, &m_env_buffers[m_current_buffer_idx].m_env.CTXT[ctx].scissor, sizeof(m_env_buffers[m_current_buffer_idx].m_env.CTXT[ctx].scissor));
-	//DevCon.Warning("Flush complete, draw now %d", s_n);
-	//UpdateContext();
 }
 
 void GSState::PushBuffer()
@@ -460,7 +460,6 @@ void GSState::PushBuffer()
 	// Just in case it tries to overflow.
 	if (m_used_buffers_idx >= MAX_DRAW_BUFFERS)
 	{
-		//DevCon.Warning("Attempted to add a draw to buffer when full. Flushing");
 		FlushBuffers(false, false);
 		ResetDrawBufferIdx();
 		return;
@@ -487,15 +486,11 @@ void GSState::PushBuffer()
 		{
 			for (u32 i = 0; i < copy_amt; i++)
 			{
-				GSVector4i* RESTRICT vert_ptr = (GSVector4i*)&m_vertex->buff[m_vertex->head + i];
-				GSVector4i v = vert_ptr[1];
-				v = v.xxxx().u16to32().sub32(m_xyof);
-				v = v.blend32<12>(v.sra32<4>());
-				m_vertex->xy[i & 3] = v;
-				m_vertex->xy_tail = std::min(copy_amt, 2U);
+				m_vertex->xy[i & 3] = m_vertex_buffers[m_current_buffer_idx].xy[((m_vertex_buffers[m_current_buffer_idx].xy_tail - copy_amt) + i) & 3];
+				m_vertex->xy_tail++;
 
 				if (i == 0)
-					m_vertex->xyhead = v;
+					m_vertex->xyhead = m_vertex_buffers[m_current_buffer_idx].xyhead;
 			}
 		}
 		else
@@ -506,7 +501,6 @@ void GSState::PushBuffer()
 		m_dirty_gs_regs = 0;
 		m_used_buffers_idx++;
 		m_recent_buffer_switch = true;
-		//DevCon.Warning("Pushing new buffer %d vertex tail %d index tail %d TME %d TBP0 0x%x draw %d", m_current_buffer_idx, m_vertex->tail, m_index->tail, m_env.PRIM.TME, m_env.CTXT[m_env.PRIM.CTXT].TEX0.TBP0, s_n);
 	}
 }
 
@@ -520,10 +514,11 @@ bool GSState::CanBufferNewDraw()
 
 	// If the base draw isn't writing to the Z buffer, but following draws do, we can't use it.
 	// Also the base draw needs to be solid, not an alpha blend.
-	if (base_context.ZBUF.ZMSK || cur_context.FRAME.FBP != base_context.FRAME.FBP || cur_context.ZBUF.ZBP != base_context.ZBUF.ZBP || (m_env_buffers[0].m_env.PRIM.TME && base_context.TEX0.TFX > TFX_DECAL) || 
+	if (base_context.ZBUF.ZMSK || cur_context.FRAME.FBP != base_context.FRAME.FBP || cur_context.ZBUF.ZBP != base_context.ZBUF.ZBP || (m_env_buffers[0].m_env.PRIM.TME && 
+		(base_context.TEX0.TFX > TFX_DECAL || (m_env_buffers[0].m_env.PRIM.ABE && !base_context.TEX0.TCC && m_v.RGBAQ.A != 128))) || 
 		((base_context.TEST.ATE && base_context.TEST.ATST > ATST_ALWAYS && base_context.TEST.AREF != 0) && (base_context.TEST.AFAIL & AFAIL_FB_ONLY) == AFAIL_KEEP))
 	{
-		//DevCon.Warning("Flushing, cannot buffer draw due to incompatible base");
+		// Incompatible base.
 		return false;
 	}
 
@@ -542,6 +537,8 @@ bool GSState::CanBufferNewDraw()
 		if (!std::memcmp(&m_env_buffers[i].m_env, &m_env, 88))
 		{
 			GSDrawingEnvironment& buffered_ctx = m_env_buffers[i].m_env;
+			if (m_index_buffers[i].tail > m_index_buffers[0].tail)
+				return false;
 
 			if (buffered_ctx.CTXT[ctx].SCISSOR.U64 ^ cur_context.SCISSOR.U64)
 				continue;
@@ -565,6 +562,9 @@ bool GSState::CanBufferNewDraw()
 					continue;
 				if (buffered_ctx.CTXT[ctx].TEX1.U32[0] ^ cur_context.TEX1.U32[0])
 					continue;
+				if (buffered_ctx.CTXT[ctx].TEX1.MXL != cur_context.TEX1.MXL)
+					continue;
+
 				if (cur_context.TEX1.MXL)
 				{
 					if (buffered_ctx.CTXT[ctx].TEX1.U32[1] ^ cur_context.TEX1.U32[1])
@@ -600,27 +600,32 @@ bool GSState::CanBufferNewDraw()
 					if (i == 1 && !m_env_buffers[i].draw_rect.eq(m_env_buffers[0].draw_rect))
 					{
 						FlushWrite();
-
-						FlushBuffers(true, false);
+						const bool base_only = m_env_buffers[i].draw_rect.rintersect(m_env_buffers[0].draw_rect).rempty();
+						FlushBuffers(base_only, false);
 						ResetDrawBufferIdx();
-						i = -1;
-						continue;
+						if (!base_only)
+							break;
+						else
+						{
+							i = -1;
+							continue;
+						}
 					}
 					else
 						return false;
 				}
 
-				/*if (i != (m_current_buffer_idx + 1) && i != 0)
-					return false;*/
 				// We found a matching draw
-				//DevCon.Warning("Matching buffered draw detected in index %d, using", i);
 				m_index = &m_index_buffers[i];
 				m_vertex = &m_vertex_buffers[i];
 
 				const u32 copy_amt = m_vertex_buffers[m_current_buffer_idx].tail - m_vertex_buffers[m_current_buffer_idx].head;
 
 				m_recent_buffer_switch = m_vertex->tail == m_vertex->head;
-				m_vertex->tail = m_index->buff[m_index->tail - 1] + 1;
+				if (m_index->tail)
+					m_vertex->tail = m_index->buff[m_index->tail - 1] + 1;
+				else
+					m_vertex->tail = 0;
 
 				if (copy_amt)
 					memcpy(&m_vertex->buff[m_vertex->tail], &m_vertex_buffers[m_current_buffer_idx].buff[m_vertex_buffers[m_current_buffer_idx].head], sizeof(GSVertex) * copy_amt);
@@ -641,18 +646,13 @@ bool GSState::CanBufferNewDraw()
 
 				if (copy_amt)
 				{
-					for (u32 j = 0; j < copy_amt; j++)
+					for (u32 i = 0; i < copy_amt; i++)
 					{
-						GSVector4i* RESTRICT vert_ptr = (GSVector4i*)&m_vertex->buff[m_vertex->head + j];
-						GSVector4i v = vert_ptr[1];
-						v = v.xxxx().u16to32().sub32(m_xyof);
-						v = v.blend32<12>(v.sra32<4>());
-						m_vertex->xy[j & 3] = v;
+						m_vertex->xy[m_vertex->xy_tail & 3] = m_vertex_buffers[m_current_buffer_idx].xy[((m_vertex_buffers[m_current_buffer_idx].xy_tail - copy_amt) + i) & 3];
+						m_vertex->xy_tail++;
 
-						if (j == 0)
-							m_vertex->xyhead = v;
-
-						m_vertex->xy_tail = copy_amt;
+						if (i == 0)
+							m_vertex->xyhead = m_vertex_buffers[m_current_buffer_idx].xyhead;
 					}
 				}
 				else
@@ -663,7 +663,7 @@ bool GSState::CanBufferNewDraw()
 			}
 
 			m_dirty_gs_regs = 0;
-			//DevCon.Warning("Picking buffer %d vertex tail %d index tail %d TME %d TBP0 0x%x dirty %x draw %d", m_current_buffer_idx, m_vertex->tail, m_index->tail, m_env.PRIM.TME, m_env.CTXT[m_env.PRIM.CTXT].TEX0.TBP0, m_dirty_gs_regs, s_n);
+			
 			return true;
 		}
 	}
@@ -688,7 +688,6 @@ bool GSState::CanBufferNewDraw()
 		return false;
 
 	PushBuffer();
-	//DevCon.Warning("Buffering new draw! now buffering %d", m_used_buffers_idx);
 
 	return true;
 }
@@ -1279,12 +1278,12 @@ void GSState::DumpTransferList(const std::string& filename)
 			(*file) << std::endl;
 
 		// clear, EE->GS, or GS->GS
-		(*file) << LIST_ITEM << "type: " << (transfer.zero_clear ? "clear" : ((transfer.transfer_type == EEGS_TransferType::EE_to_GS) ? "EE_to_GS" : "GS_to_GS")) << std::endl;
+		(*file) << LIST_ITEM << "type: " << ((transfer.transfer_type == EEGS_TransferType::Clear) ? "clear" : ((transfer.transfer_type == EEGS_TransferType::EE_to_GS) ? "EE_to_GS" : "GS_to_GS")) << std::endl;
 
 		// Dump BITBLTBUF
 		(*file) << INDENT << "BITBLTBUF: " << OPEN_MAP;
 
-		const bool gs_to_gs = (transfer.transfer_type == EEGS_TransferType::GS_to_GS) && !transfer.zero_clear;
+		const bool gs_to_gs = (transfer.transfer_type == EEGS_TransferType::GS_to_GS) && transfer.transfer_type != EEGS_TransferType::Clear;
 
 		if (gs_to_gs)
 		{
@@ -1330,11 +1329,11 @@ void GSState::DumpTransferImages()
 		const GSUploadQueue& transfer = m_draw_transfers[i];
 
 		std::string filename;
-		if ((transfer.transfer_type == EEGS_TransferType::EE_to_GS) || transfer.zero_clear)
+		if ((transfer.transfer_type == EEGS_TransferType::EE_to_GS) || transfer.transfer_type == EEGS_TransferType::Clear)
 		{
 			// clear or EE->GS: only the destination info is relevant.
 			filename = GetDrawDumpPath("%05lld_transfer%02d_%s_%04x_%d_%s_%d_%d_%d_%d.png",
-				s_n, transfer_n++, (transfer.zero_clear ? "clear" : "EE_to_GS"), transfer.blit.DBP, transfer.blit.DBW,
+				s_n, transfer_n++, ((transfer.transfer_type == EEGS_TransferType::Clear) ? "clear" : "EE_to_GS"), transfer.blit.DBP, transfer.blit.DBW,
 				GSUtil::GetPSMName(transfer.blit.DPSM), transfer.rect.x, transfer.rect.y, transfer.rect.z, transfer.rect.w);
 		}
 		else
@@ -2403,7 +2402,7 @@ void GSState::FlushWrite()
 
 			if (m_draw_transfers.size() > 0 && m_tr.m_blit.DBP == m_draw_transfers.back().blit.DBP)
 			{
-				m_draw_transfers.back().rect = r;
+				m_draw_transfers.back().rect = m_draw_transfers.back().rect.runion(r);
 			}
 		}
 	}
@@ -2616,6 +2615,7 @@ void GSState::FlushPrim()
 		m_quad_check_valid_shuffle = false;
 		m_drawlist.clear();
 		m_drawlist_bbox.clear();
+		m_drawlist_bbox_tex.clear();
 
 		if (GSConfig.ShouldDump(s_n, g_perfmon.GetFrame()))
 		{
@@ -2666,7 +2666,6 @@ void GSState::FlushPrim()
 					GSVector4i* RESTRICT vert_ptr = (GSVector4i*)&m_vertex->buff[i];
 					GSVector4i v = vert_ptr[1];
 					v = v.xxxx().u16to32().sub32(m_xyof);
-					v = v.blend32<12>(v.sra32<4>());
 					m_vertex->xy[i & 3] = v;
 					m_vertex->xy_tail = unused;
 				}
@@ -2912,12 +2911,11 @@ void GSState::Write(const u8* mem, int len)
 			m_draw_transfers.pop_back();
 			transfer.rect = transfer.rect.runion(r);
 			transfer.draw = s_n;
-			transfer.zero_clear = false;
 			m_draw_transfers.push_back(transfer);
 		}
 		else
 		{
-			const GSUploadQueue new_transfer = {blit, r, s_n, false, EEGS_TransferType::EE_to_GS};
+			const GSUploadQueue new_transfer = {blit, s_n, r, EEGS_TransferType::EE_to_GS};
 			m_draw_transfers.push_back(new_transfer);
 		}
 
@@ -3112,12 +3110,11 @@ void GSState::Move()
 		m_draw_transfers.pop_back();
 		transfer.rect = transfer.rect.runion(r);
 		transfer.draw = s_n;
-		transfer.zero_clear = false;
 		m_draw_transfers.push_back(transfer);
 	}
 	else
 	{
-		const GSUploadQueue new_transfer = {m_env.BITBLTBUF, r, s_n, false, EEGS_TransferType::GS_to_GS};
+		const GSUploadQueue new_transfer = {m_env.BITBLTBUF, s_n, r, EEGS_TransferType::GS_to_GS};
 		m_draw_transfers.push_back(new_transfer);
 	}
 
@@ -3790,10 +3787,8 @@ void GSState::UpdateContext()
 
 void GSState::UpdateScissor()
 {
-	m_scissor_cull_min = m_context->scissor.cull.xyxy();
-	m_scissor_cull_max = m_context->scissor.cull.zwzw();
 	m_xyof = m_context->scissor.xyof;
-	m_scissor_invalid = !m_context->scissor.in.gt32(m_context->scissor.in.zwzw()).allfalse();
+	m_scissor_invalid = m_context->scissor.in.rempty();
 }
 
 void GSState::UpdateVertexKick()
@@ -4239,7 +4234,7 @@ bool GSState::TrianglesAreQuads(bool shuffle_check)
 }
 
 template<u32 primclass>
-GSState::PRIM_OVERLAP GSState::GetPrimitiveOverlapDrawlistImpl(bool save_drawlist, bool save_bbox, float bbox_scale)
+GSState::PRIM_OVERLAP GSState::GetPrimitiveOverlapDrawlistImpl(bool save_drawlist, bool save_bbox, float bbox_scale, u32* max_size)
 {
 	const GSVector4i xyof = m_context->scissor.xyof.xyxy();
 
@@ -4287,7 +4282,14 @@ GSState::PRIM_OVERLAP GSState::GetPrimitiveOverlapDrawlistImpl(bool save_drawlis
 	if (primclass == GS_TRIANGLE_CLASS && m_quad_check_valid && m_are_quads && !using_aa1)
 	{
 		// The triangles-are-quads check already ensures that there is no overlap.
-		m_drawlist.push_back(m_index->tail / n);
+		if (save_drawlist)
+		{
+			m_drawlist.push_back(m_index->tail / n);
+		}
+		else if (max_size)
+		{
+			*max_size = 1;
+		}
 		if (save_bbox)
 		{
 			const GSVector4i draw_area = GSVector4i(m_vt.m_min.p.upld(m_vt.m_max.p) * GSVector4(16.0f)) + xyof;
@@ -4299,6 +4301,7 @@ GSState::PRIM_OVERLAP GSState::GetPrimitiveOverlapDrawlistImpl(bool save_drawlis
 	PRIM_OVERLAP overlap = PRIM_OVERLAP_NO;
 	bool check_quads = (primclass == GS_TRIANGLE_CLASS) && !using_aa1;
 
+	u32 drawlist_size = 0;
 	u32 i = 0;
 	u32 skip = 0; // Number of indices to skip if we have the bbox from the previous iteration.
 	
@@ -4647,13 +4650,13 @@ GSState::PRIM_OVERLAP GSState::GetPrimitiveOverlapDrawlistImpl(bool save_drawlis
 			};
 
 			// First check: see if the triangles are part of a triangle strip.
-			if (!got_bbox && !using_aa1)
+			if (!got_bbox && !using_aa1 && !GSConfig.UseDebugBlend)
 			{
 				got_bbox = CheckTriangleStrips(j, skip, bbox, saved_tristrip);
 			}
 
 			// Second check: see if the triangles are part of triangle fan.
-			if (!got_bbox && !using_aa1)
+			if (!got_bbox && !using_aa1 && !GSConfig.UseDebugBlend)
 			{
 				got_bbox = CheckTriangleQuads.template operator()<1>(j, skip, bbox);
 			}
@@ -4696,6 +4699,17 @@ GSState::PRIM_OVERLAP GSState::GetPrimitiveOverlapDrawlistImpl(bool save_drawlis
 		{
 			m_drawlist.push_back((j - i) / n); // Prim count
 		}
+		else if (max_size)
+		{
+			// If the max size pointer is passed it means we just want to peek at
+			// the drawlist size up to the given limit to avoid unecessary work.
+			drawlist_size++;
+			if (drawlist_size >= *max_size)
+			{
+				*max_size = drawlist_size;
+				return drawlist_size > 0 ? PRIM_OVERLAP_YES : PRIM_OVERLAP_UNKNOW;
+			}
+		}
 		else if (j < count)
 		{
 			return PRIM_OVERLAP_YES; // Early exit if not saving drawlist.
@@ -4709,24 +4723,95 @@ GSState::PRIM_OVERLAP GSState::GetPrimitiveOverlapDrawlistImpl(bool save_drawlis
 		all = bbox;
 		i = j;
 	}
+
+	if (max_size)
+	{
+		*max_size = drawlist_size;
+	}
+
 	return overlap;
 }
 
-GSState::PRIM_OVERLAP GSState::GetPrimitiveOverlapDrawlist(bool save_drawlist, bool save_bbox, float bbox_scale)
+GSState::PRIM_OVERLAP GSState::GetPrimitiveOverlapDrawlist(bool save_drawlist, bool save_bbox, float bbox_scale, u32* max_size)
 {
 	switch (m_vt.m_primclass)
 	{
 		case GS_POINT_CLASS:
-			return GetPrimitiveOverlapDrawlistImpl<GS_POINT_CLASS>(save_drawlist, save_bbox, bbox_scale);
+			return GetPrimitiveOverlapDrawlistImpl<GS_POINT_CLASS>(save_drawlist, save_bbox, bbox_scale, max_size);
 		case GS_LINE_CLASS:
-			return GetPrimitiveOverlapDrawlistImpl<GS_LINE_CLASS>(save_drawlist, save_bbox, bbox_scale);
+			return GetPrimitiveOverlapDrawlistImpl<GS_LINE_CLASS>(save_drawlist, save_bbox, bbox_scale, max_size);
 		case GS_TRIANGLE_CLASS:
-			return GetPrimitiveOverlapDrawlistImpl<GS_TRIANGLE_CLASS>(save_drawlist, save_bbox, bbox_scale);
+			return GetPrimitiveOverlapDrawlistImpl<GS_TRIANGLE_CLASS>(save_drawlist, save_bbox, bbox_scale, max_size);
 		case GS_SPRITE_CLASS:
-			return GetPrimitiveOverlapDrawlistImpl<GS_SPRITE_CLASS>(save_drawlist, save_bbox, bbox_scale);
+			return GetPrimitiveOverlapDrawlistImpl<GS_SPRITE_CLASS>(save_drawlist, save_bbox, bbox_scale, max_size);
 		default:
 			pxFail("Invalid primclass."); // Impossible.
 			return PRIM_OVERLAP_UNKNOW;
+	}
+}
+
+template <u32 primclass, bool fst>
+void GSState::GetPrimitiveOverlapDrawlistTextureBBoxImpl(float bbox_scale)
+{
+	pxAssert(m_drawlist_bbox_tex.empty()); // Should only call this once per draw.
+
+	constexpr int n = GSUtil::GetClassVertexCount(primclass);
+	const GSVertex* RESTRICT v = m_vertex->buff;
+	const u16* RESTRICT index = m_index->buff;
+	const u32 count = m_index->tail;
+
+	for (u32 i = 0; i < count; i += n)
+	{
+		const float q = primclass == GS_SPRITE_CLASS ? v[index[i + 1]].RGBAQ.Q : v[index[i]].RGBAQ.Q;
+		GSVector4 bbox = GetTexCoordsImpl<fst>(v[index[i]], q);
+
+		for (u32 j = 1; j < n; j++)
+		{
+			const GSVector4 tex = GetTexCoordsImpl<fst>(v[index[i + j]]);
+			bbox = bbox.min(tex).xyzw(bbox.max(tex));
+		}
+
+		bbox = bbox * bbox_scale; // Account for upscaling.
+		bbox = bbox.floor().xyzw(bbox.ceil()); // Round.
+		bbox += GSVector4(-1.0f, -1.0f, 1.0f, 1.0f); // +1 on all sides for bilinear.
+
+		m_drawlist_bbox_tex.push_back(GSVector4i(bbox));
+	}
+}
+
+void GSState::GetPrimitiveOverlapDrawlistTextureBBox(float bbox_scale)
+{
+	pxAssert(PRIM->TME);
+
+	switch (m_vt.m_primclass)
+	{
+		case GS_POINT_CLASS:
+			if (PRIM->FST)
+				GetPrimitiveOverlapDrawlistTextureBBoxImpl<GS_POINT_CLASS, true>(bbox_scale);
+			else
+				GetPrimitiveOverlapDrawlistTextureBBoxImpl<GS_POINT_CLASS, false>(bbox_scale);
+			break;
+		case GS_LINE_CLASS:
+			if (PRIM->FST)
+				GetPrimitiveOverlapDrawlistTextureBBoxImpl<GS_LINE_CLASS, true>(bbox_scale);
+			else
+				GetPrimitiveOverlapDrawlistTextureBBoxImpl<GS_LINE_CLASS, false>(bbox_scale);
+			break;
+		case GS_TRIANGLE_CLASS:
+			if (PRIM->FST)
+				GetPrimitiveOverlapDrawlistTextureBBoxImpl<GS_TRIANGLE_CLASS, true>(bbox_scale);
+			else
+				GetPrimitiveOverlapDrawlistTextureBBoxImpl<GS_TRIANGLE_CLASS, false>(bbox_scale);
+			break;
+		case GS_SPRITE_CLASS:
+			if (PRIM->FST)
+				GetPrimitiveOverlapDrawlistTextureBBoxImpl<GS_SPRITE_CLASS, true>(bbox_scale);
+			else
+				GetPrimitiveOverlapDrawlistTextureBBoxImpl<GS_SPRITE_CLASS, false>(bbox_scale);
+			break;
+		default:
+			pxAssert(false);
+			return;
 	}
 }
 
@@ -5758,10 +5843,10 @@ bool GSState::CheckOverlapVerts(u32 n)
 
 			if (m_index->tail > 0)
 			{
-				int matching_verts = 0;
+				u32 matching_verts = 0;
 				for (u32 i = 0; i < n; i++)
 				{
-					const int pos = m_index->buff[(m_index->tail - n) + i];
+					const u32 pos = m_index->buff[(m_index->tail - n) + i];
 					const GSVector2i prev_vert = GSVector2i(v[pos].XYZ.X - m_context->XYOFFSET.OFX, v[pos].XYZ.Y - m_context->XYOFFSET.OFY);
 
 					for (u32 j = 0; j < n; j++)
@@ -5841,6 +5926,7 @@ template <u32 prim, bool auto_flush>
 __forceinline void GSState::VertexKick(u32 skip)
 {
 	constexpr u32 n = NumIndicesForPrim(prim);
+	constexpr int primclass = GSUtil::GetPrimClass(prim);
 	static_assert(n > 0);
 
 	pxAssert(m_vertex->tail < m_vertex->maxcount + 3);
@@ -5884,11 +5970,7 @@ __forceinline void GSState::VertexKick(u32 skip)
 
 	// We maintain the X/Y coordinates for the last 4 vertices, as well as the head for triangle fans, so we can compute
 	// the min/max, and cull degenerate triangles, which saves draws in some cases. Why 4? Mod 4 is cheaper than Mod 3.
-	// These vertices are a full vector containing <X_Fixed_Point, Y_Fixed_Point, X_Integer, Y_Integer>. We use the
-	// integer coordinates for culling at native resolution, and the fixed point for all others. The XY offset has to be
-	// applied, then we split it into the fixed/integer portions.
-	const GSVector4i xy_ofs = new_v1.xxxx().u16to32().sub32(m_xyof);
-	const GSVector4i xy = xy_ofs.blend32<12>(xy_ofs.sra32<4>());
+	const GSVector4i xy = new_v1.xxxx().u16to32().sub32(m_xyof);
 	m_vertex->xy[xy_tail & 3] = xy;
 
 	// Backup head for triangle fans so we can read it later, otherwise it'll get lost after the 4th vertex.
@@ -5918,73 +6000,66 @@ __forceinline void GSState::VertexKick(u32 skip)
 	// Skip draws when scissor is out of range (i.e. bottom-right is less than top-left), since everything will get clipped.
 	skip |= static_cast<u32>(m_scissor_invalid);
 
-	GSVector4i pmin, pmax;
+	GSVector4i bbox;
 	if (skip == 0)
 	{
 		const GSVector4i v0 = m_vertex->xy[(xy_tail - 1) & 3];
 		const GSVector4i v1 = m_vertex->xy[(xy_tail - 2) & 3];
 		const GSVector4i v2 = (prim == GS_TRIANGLEFAN) ? m_vertex->xyhead : m_vertex->xy[(xy_tail - 3) & 3];
 
-		switch (prim)
+		if constexpr (n == 1)
 		{
-			case GS_POINTLIST:
-				pmin = v0;
-				pmax = v0;
-				break;
-			case GS_LINELIST:
-			case GS_LINESTRIP:
-			case GS_SPRITE:
-				pmin = v0.min_i32(v1);
-				pmax = v0.max_i32(v1);
-				break;
-			case GS_TRIANGLELIST:
-			case GS_TRIANGLESTRIP:
-			case GS_TRIANGLEFAN:
-				pmin = v0.min_i32(v1.min_i32(v2));
-				pmax = v0.max_i32(v1.max_i32(v2));
-				break;
-			default:
-				break;
+			bbox = v0;
+		}
+		else if constexpr (n == 2)
+		{
+			bbox = v0.runion(v1);
+		}
+		else if constexpr (n == 3)
+		{
+			bbox = v0.runion(v1).runion(v2);
 		}
 
-		GSVector4i test = pmax.lt32(m_scissor_cull_min) | pmin.gt32(m_scissor_cull_max);
-
-		switch (prim)
+		if constexpr (primclass == GS_TRIANGLE_CLASS || primclass == GS_SPRITE_CLASS)
 		{
-			case GS_TRIANGLELIST:
-			case GS_TRIANGLESTRIP:
-			case GS_TRIANGLEFAN:
-			case GS_SPRITE:
+			if (m_nativeres)
 			{
-				// Discard degenerate triangles which don't cover at least one pixel. Since the vertices are in native
-				// resolution space, we can use the integer locations. When upscaling, we can't, because a primitive which
-				// does not span a single pixel at 1x may span multiple pixels at higher resolutions.
-				const GSVector4i degen_test = pmin.eq32(pmax);
-				test |= m_nativeres ? degen_test.zwzw() : degen_test;
+				// For triangles and sprites at native res take the interior pixel centers.
+				const GSVector4i interior = (bbox + GSVector4i(0xF, 0xF, -1, -1)) & GSVector4i(~0xF);
+				bbox = interior + GSVector4i(0, 0, 1, 1); // +1 to bottom/right so empty test works correctly.
 			}
-			break;
-			default:
-				break;
+			else
+			{
+				// For upscaling, remove bottom/right subtexels.
+				bbox -= ((bbox & GSVector4i(0xF)) == GSVector4i(0)) & GSVector4i(0, 0, 1, 1);
+			}
+
+			// For AA1 triangles and lines, expand the bounds by 1 pixel on all sides.
+			// Note: redundant check for the AA1 flag to avoid calling a function if not needed.
+			if (PRIM->AA1 && IsCoverageAlphaSupported())
+			{
+				bbox += GSVector4i(-0x10, -0x10, 0x10, 0x10);
+			}
 		}
 
-		switch (prim)
+		// Do scissor test.
+		const GSVector4i bbox_ex = bbox + GSVector4i(0, 0, 1, 1); // Exclusive coords for the scissor test.
+		const GSVector4i& scissor = m_context->scissor.cull;
+		u32 test = static_cast<u32>(!bbox_ex.rintersects(scissor));
+
+		// Test for empty bbox.
+		if constexpr (primclass == GS_TRIANGLE_CLASS || primclass == GS_SPRITE_CLASS)
 		{
-			case GS_TRIANGLELIST:
-			case GS_TRIANGLESTRIP:
-			case GS_TRIANGLEFAN:
-				test = (test | v0.eq64(v1)) | (v1.eq64(v2) | v0.eq64(v2));
-				break;
-			default:
-				break;
+			test |= static_cast<u32>(bbox.rempty());
 		}
 
-#ifndef ARCH_ARM64
-		// We only care about the xy passing the skip test. zw is the offset coordinates for native culling.
-		skip |= test.mask() & 0xff;
-#else
-		// mask() is slow on ARM, so just pull the bits out instead, thankfully we only care about the first 4 bytes.
-		skip |= (static_cast<u64>(test.extract64<0>()) & UINT64_C(0x8080808080808080)) != 0;
-#endif
+		// Test for degenerate triangle.
+		if constexpr (primclass == GS_TRIANGLE_CLASS)
+		{
+			test |= static_cast<u32>(v0.eq(v1)) | static_cast<u32>(v1.eq(v2)) | static_cast<u32>(v0.eq(v2));
+		}
+
+		skip |= test;
 	}
 
 	if (skip != 0)
@@ -6094,13 +6169,12 @@ __forceinline void GSState::VertexKick(u32 skip)
 			ASSUME(0);
 	}
 
-	// Update rectangle for the current draw. We can use the re-integer coordinates from min/max here.
-	const GSVector4i draw_min = pmin.zwzw();
-	const GSVector4i draw_max = pmax;
+	// Update rectangle for the current draw. Needs exclusive endpoints.
+	const GSVector4i draw_rect = bbox.sra32<4>() + GSVector4i(0, 0, 1, 1);
 	if (m_index->tail != n)
-		temp_draw_rect = temp_draw_rect.min_i32(draw_min).blend32<12>(temp_draw_rect.max_i32(draw_max));
+		temp_draw_rect = temp_draw_rect.runion(draw_rect);
 	else
-		temp_draw_rect = draw_min.blend32<12>(draw_max);
+		temp_draw_rect = draw_rect;
 	temp_draw_rect = temp_draw_rect.rintersect(m_context->scissor.in);
 
 	constexpr u32 max_vertices = MaxVerticesForPrim(prim);
