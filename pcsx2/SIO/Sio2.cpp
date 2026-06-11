@@ -3,7 +3,6 @@
 
 #include "Common.h"
 #include "FireWire/Devices/KonamiPython1.h"
-#include "Host.h"
 #include "IopDma.h"
 #include "Recording/InputRecording.h"
 #include "SIO/Memcard/MemoryCardProtocol.h"
@@ -28,9 +27,9 @@ namespace
 	static constexpr u32 PYTHON1_SIO2_LOG_LIMIT = 8192;
 	u32 s_python1_sio2_log_count = 0;
 
-	bool IsPython1HleEnabled()
+	bool IsPython1DogstationMode()
 	{
-		return !Host::GetStringSettingValue("Python1/Game", "HddImageFile", "").empty();
+		return FireWire::Devices::IsKonamiPython1DogstationMode();
 	}
 
 	bool ShouldLogPython1Sio2Port2()
@@ -38,7 +37,7 @@ namespace
 		if (s_python1_sio2_log_count >= PYTHON1_SIO2_LOG_LIMIT)
 			return false;
 
-		if (!IsPython1HleEnabled())
+		if (!IsPython1DogstationMode())
 			return false;
 
 		s_python1_sio2_log_count++;
@@ -279,7 +278,7 @@ void Sio2::Memcard()
 	MultitapProtocol& mtap = g_MultitapArr.at(this->port);
 	const u8 commandByte = g_Sio2FifoIn.empty() ? 0xff : g_Sio2FifoIn.front();
 	const u32 python1_p1io_latch = this->port == 1 ? FireWire::Devices::GetKonamiPython1P1IOLatchByte() : 0;
-	const bool python1_memcard = this->port == 1 && IsPython1HleEnabled();
+	const bool python1_memcard = this->port == 1 && IsPython1DogstationMode();
 	const u8 memcard_slot = python1_memcard ? static_cast<u8>(FireWire::Devices::GetKonamiPython1P1IOMemcardSlot()) : mtap.GetMemcardSlot();
 	const bool python1_unimplemented_reader = python1_memcard && memcard_slot != 0;
 	if (this->port == 1 && ShouldLogPython1Sio2Port2())
@@ -508,10 +507,10 @@ void Sio2::Write(u8 data)
 					const u8 b5 = g_Sio2FifoIn.size() > 5 ? g_Sio2FifoIn[5] : 0xff;
 					const u8 b6 = g_Sio2FifoIn.size() > 6 ? g_Sio2FifoIn[6] : 0xff;
 					const u8 b7 = g_Sio2FifoIn.size() > 7 ? g_Sio2FifoIn[7] : 0xff;
-					DevCon.WriteLn("Python1 SIO2: port2 memcard packet qpos=%u len=%u dma=%u cmd=0x%02x p1io_latch=0x%02x selector_bit=%u bytes=%02x %02x %02x %02x %02x %02x %02x %02x",
+					DevCon.WriteLn("Python1 SIO2: port2 memcard packet qpos=%u len=%u dma=%u cmd=0x%02x p1io_latch=0x%02x memcard_slot=%u bytes=%02x %02x %02x %02x %02x %02x %02x %02x",
 						g_Sio2.queuePosition - 1, g_Sio2.commandLength, g_Sio2.dmaBlockSize,
 						commandByte, FireWire::Devices::GetKonamiPython1P1IOLatchByte(),
-						FireWire::Devices::GetKonamiPython1P1IOLatchByte() & 1, b0, b1, b2, b3, b4, b5, b6, b7);
+						FireWire::Devices::GetKonamiPython1P1IOMemcardSlot(), b0, b1, b2, b3, b4, b5, b6, b7);
 				}
 				this->Memcard();
 				break;

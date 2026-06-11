@@ -20,6 +20,7 @@ Python1SettingsWidget::Python1SettingsWidget(const GameList::Entry* entry, Setti
 	m_ui.ioMode->addItem(tr("JVS"), QStringLiteral("JVS"));
 	m_ui.ioMode->addItem(tr("EXTIO"), QStringLiteral("EXTIO"));
 	m_ui.ioMode->addItem(tr("Pop'n"), QStringLiteral("POPN"));
+	m_ui.ioMode->addItem(tr("Dogstation"), QStringLiteral("DOGSTATION"));
 	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.ioMode, "Python1/Game", "IOMode", "JVS");
 
 	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.hddImagePath, "Python1/Game", "HddImageFile", "");

@@ -530,6 +530,8 @@ bool GameList::GetPython1ListEntry(const std::string& path, GameList::Entry* ent
 		io_mode = "EXTIO";
 	else if (StringUtil::Strcasecmp(io_mode.c_str(), "POPN") == 0)
 		io_mode = "POPN";
+	else if (StringUtil::Strcasecmp(io_mode.c_str(), "DOGSTATION") == 0)
+		io_mode = "DOGSTATION";
 	else
 		io_mode = "JVS";
 

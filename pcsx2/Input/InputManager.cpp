@@ -890,8 +890,8 @@ void InputManager::AddPadBindings(SettingsInterface& si, u32 pad_index, bool is_
 
 	for (const InputBindingInfo& bi : cinfo->bindings)
 	{
-			switch (bi.bind_type)
-			{
+		switch (bi.bind_type)
+		{
 			case InputBindingInfo::Type::Button:
 			case InputBindingInfo::Type::Axis:
 			case InputBindingInfo::Type::HalfAxis:

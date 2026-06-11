@@ -33,6 +33,8 @@ namespace
 	constexpr u32 FW_SECTOR_LOG_LIMIT = 64;
 	constexpr u32 FW_RUNTIME_LOG_LIMIT = 256;
 	constexpr u32 FW_P1IO_OUTPUT_LOG_LIMIT = 8192;
+	constexpr u32 FW_NET_LOG_LIMIT = 512;
+	constexpr u32 FW_NET_PACKET_LOG_LIMIT = 16;
 	constexpr u32 UART_RX_QUEUE_LIMIT = 0x400;
 	constexpr u32 UART_CALLBACK_BYTE_LIMIT = 38;
 	constexpr u64 KONAMI_STORAGE_READ_BYTES_PER_SECOND = 24ull * 1024 * 1024;
@@ -105,6 +107,7 @@ namespace
 	constexpr const char* PYTHON1_IO_MODE_JVS = "JVS";
 	constexpr const char* PYTHON1_IO_MODE_EXTIO = "EXTIO";
 	constexpr const char* PYTHON1_IO_MODE_POPN = "POPN";
+	constexpr const char* PYTHON1_IO_MODE_DOGSTATION = "DOGSTATION";
 	constexpr const char* P1IO_CONFIG_PREFIX = "P1IO_";
 	constexpr u32 P1IO_KEYBOARD_BIND_BASE = 0x1000;
 	// EE byte-swaps the JAMMA word, then maps source bit 8 to P1 bit 0x200.
@@ -150,6 +153,7 @@ namespace
 		JVS,
 		EXTIO,
 		POPN,
+		DOGSTATION,
 	};
 
 	struct P1IOJammaMapping
@@ -257,7 +261,22 @@ namespace
 		0xaa, 0xaa, 0x00, 0x00,
 	};
 	constexpr u8 KONAMI_EXTERNAL_IO_COUNT_RESPONSE[] = {
+		0xaa, 0xaa, 0x00, 0x01, 0x01, 0x01, 0xad,
+	};
+	constexpr u8 KONAMI_DOGSTATION_EXTERNAL_IO_COUNT_RESPONSE[] = {
 		0xaa, 0xaa, 0x00, 0x01, 0x01, 0x02, 0xae,
+	};
+	constexpr u8 KONAMI_EXTERNAL_IO_PRODUCT_RESPONSE[] = {
+		0xaa, 0xaa, 0x01, 0x02, 0x00, 0x00,
+		0xaa, 0x01, 0x00, 0x02, 0x00,
+		0x03, 0x00, 0x00, 0x00,
+		0x00,
+		0x01, 0x01, 0x00,
+		'I', 'C', 'C', 'A', 0x00, 0x00, 0x00, 0x00, 0x18,
+	};
+	constexpr u8 KONAMI_EXTERNAL_IO_STARTUP_RESPONSE[] = {
+		0xaa, 0xaa, 0x01, 0x03, 0x00, 0x00,
+		0xaa, 0x01, 0x00, 0x03, 0x00, 0x00, 0x04,
 	};
 	constexpr u8 KONAMI_ICCA_PRODUCT_RESPONSE[] = {
 		0xaa, 0x81, 0x00, 0x02, 0x00, 0x2c,
@@ -424,6 +443,8 @@ namespace
 	u32 s_runtime_log_count;
 	u32 s_p1io_log_count;
 	u32 s_p1io_output_log_count;
+	u32 s_net_log_count;
+	u32 s_net_packet_log_count;
 	u64 s_next_sector_read_ready_cycle;
 	SubboardAdpcmPlayback s_subboard_adpcm;
 
@@ -437,6 +458,7 @@ namespace
 	void CloseHddImageFile();
 	void ResetSubboardAdpcmPlayback();
 	void WarnIfConfigRomOuiMismatchesFactoryMac();
+	bool IsPython1DogstationMode();
 
 	bool ReadIopMemory(u32 address, void* data, u32 size)
 	{
@@ -482,6 +504,7 @@ namespace
 		counter++;
 		return counter <= limit;
 	}
+
 
 	u8 CalculateAcioChecksum(const u8* data, u32 byte_count)
 	{
@@ -561,7 +584,7 @@ namespace
 	{
 		std::vector<u8> packet(request);
 		packet.push_back(0xaa);
-		packet.push_back(0x01);
+		packet.push_back(IsPython1DogstationMode() ? 0x01 : 0x00);
 		packet.push_back(request[2]);
 		packet.push_back(request[3]);
 		packet.insert(packet.end(), response, response + response_bytes);
@@ -599,7 +622,7 @@ namespace
 	std::array<u8, 9> BuildExternalIoStatusPayload(u8 device_id, u8 command)
 	{
 		std::array<u8, 9> status = {0x04};
-		if (device_id == 0x01 && command == 0x26 && s_device)
+		if (IsPython1DogstationMode() && device_id == 0x01 && command == 0x26 && s_device)
 			(void)s_device->PopKeyboard1Events(status.data() + 1, 8);
 		return status;
 	}
@@ -611,7 +634,14 @@ namespace
 			return Python1IOMode::EXTIO;
 		if (StringUtil::Strcasecmp(mode.c_str(), PYTHON1_IO_MODE_POPN) == 0)
 			return Python1IOMode::POPN;
+		if (StringUtil::Strcasecmp(mode.c_str(), PYTHON1_IO_MODE_DOGSTATION) == 0)
+			return Python1IOMode::DOGSTATION;
 		return Python1IOMode::JVS;
+	}
+
+	bool IsPython1DogstationMode()
+	{
+		return GetPython1IOMode() == Python1IOMode::DOGSTATION;
 	}
 
 	bool IsPython1ExtioMode()
@@ -663,22 +693,33 @@ namespace
 		}
 		else if (bytes.size() >= 4 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] == 0x00 && bytes[3] == 0x01)
 		{
-			QueueUartBytes(KONAMI_EXTERNAL_IO_COUNT_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_COUNT_RESPONSE));
+			if (IsPython1DogstationMode())
+				QueueUartBytes(KONAMI_DOGSTATION_EXTERNAL_IO_COUNT_RESPONSE, sizeof(KONAMI_DOGSTATION_EXTERNAL_IO_COUNT_RESPONSE));
+			else
+				QueueUartBytes(KONAMI_EXTERNAL_IO_COUNT_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_COUNT_RESPONSE));
 		}
-		else if (bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] >= 0x01 && bytes[2] <= 0x02 && bytes[3] == 0x02)
+		else if (IsPython1DogstationMode() && bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] >= 0x01 && bytes[2] <= 0x02 && bytes[3] == 0x02)
 		{
 			const auto response = BuildExternalIoProductResponse(bytes[2]);
 			QueueUartBytes(response.data(), static_cast<u32>(response.size()));
 		}
-		else if (bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] >= 0x01 && bytes[2] <= 0x02 && bytes[3] == 0x03)
+		else if (IsPython1DogstationMode() && bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] >= 0x01 && bytes[2] <= 0x02 && bytes[3] == 0x03)
 		{
 			const auto response = BuildExternalIoCommandAck(bytes[2], bytes[3]);
 			QueueUartBytes(response.data(), static_cast<u32>(response.size()));
 		}
-		else if (bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] >= 0x01 && bytes[2] <= 0x02 && bytes[3] == 0x04)
+		else if (IsPython1DogstationMode() && bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] >= 0x01 && bytes[2] <= 0x02 && bytes[3] == 0x04)
 		{
 			const auto response = BuildExternalIoCommandAck(bytes[2], bytes[3]);
 			QueueUartBytes(response.data(), static_cast<u32>(response.size()));
+		}
+		else if (!IsPython1DogstationMode() && bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] == 0x01 && bytes[3] == 0x02)
+		{
+			QueueUartBytes(KONAMI_EXTERNAL_IO_PRODUCT_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_PRODUCT_RESPONSE));
+		}
+		else if (!IsPython1DogstationMode() && bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] == 0x01 && bytes[3] == 0x03)
+		{
+			QueueUartBytes(KONAMI_EXTERNAL_IO_STARTUP_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_STARTUP_RESPONSE));
 		}
 		else if (extio_mode && bytes.size() >= 5 && bytes[0] == 0xaa && bytes[1] == 0x01 && bytes[2] == 0x00 && bytes[3] == 0x02)
 		{
@@ -706,8 +747,12 @@ namespace
 				return;
 
 			std::vector<u8> request(bytes.begin(), bytes.begin() + packet_size);
-			const u8 command = request[3] & ~0x40;
-			const u8 ok_response[] = {0x01, static_cast<u8>(request[2] == 0x01 ? 0x00 : 0x01)};
+			const bool dogstation_mode = IsPython1DogstationMode();
+			const u8 command = dogstation_mode ? (request[3] & ~0x40) : request[3];
+			const u8 ok_response[] = {
+				static_cast<u8>(dogstation_mode ? 0x01 : 0x00),
+				static_cast<u8>(dogstation_mode && request[2] != 0x01 ? 0x01 : 0x00),
+			};
 			switch (command)
 			{
 				case 0x00:
@@ -731,6 +776,8 @@ namespace
 				case 0x26:
 				case 0x36:
 				{
+					if (!dogstation_mode)
+						break;
 					const std::array<u8, 9> status = BuildExternalIoStatusPayload(request[2], command);
 					QueueExternalIoWrappedResponse(request, status.data(), static_cast<u32>(status.size()));
 					break;
@@ -938,6 +985,35 @@ namespace
 		return {{0, PackDallasSerialResponseWord(dongle.data()), PackDallasSerialResponseWord(dongle.data() + 4)}};
 	}
 
+	const u8* GetSelectedDallasBootromRecord()
+	{
+		const u8* record = s_bootrom + 0xf010;
+		for (u32 i = 0; i < 0x20; i++)
+		{
+			if (record[i] != 0xff)
+				return record;
+		}
+
+		return s_bootrom + 0xf030;
+	}
+
+	bool IsDallasDongleBoardKey(u32 slot)
+	{
+		if (slot >= DALLAS_DONGLE_SLOT_COUNT || !s_dallas_dongle_loaded[slot])
+			return false;
+
+		const u8* record = GetSelectedDallasBootromRecord();
+		return std::memcmp(s_dallas_dongle_slots[slot].data() + 1, record, 6) == 0;
+	}
+
+	std::optional<u32> GetDallasDongleSlotForKey(u32 key)
+	{
+		if (key == 0 || key > DALLAS_DONGLE_SLOT_COUNT)
+			return std::nullopt;
+
+		return key - 1;
+	}
+
 	void UpdateDallasKeyResponseFromBootrom()
 	{
 		SetDefaultDallasKeyResponse();
@@ -1045,6 +1121,9 @@ namespace
 
 	void WarnIfConfigRomOuiMismatchesFactoryMac()
 	{
+		if (!IsPython1DogstationMode())
+			return;
+
 		const u32* words = s_io_config_rom.empty() ? KONAMI_IO_BOARD_CROM : s_io_config_rom.data();
 		const size_t word_count = s_io_config_rom.empty() ?
 			(sizeof(KONAMI_IO_BOARD_CROM) / sizeof(KONAMI_IO_BOARD_CROM[0])) :
@@ -1835,24 +1914,28 @@ namespace
 
 		if (subop == 0)
 		{
-			const u32 slot = key;
-			if (slot < DALLAS_DONGLE_SLOT_COUNT && s_dallas_dongle_loaded[slot])
+			const std::optional<u32> slot = (key == 0 || (key == 1 && offset == 0 && byte_count == 0)) ?
+				std::optional<u32>(0) : std::nullopt;
+			if (slot.has_value() && s_dallas_dongle_loaded[*slot])
 			{
-				const std::array<u32, 3> response = BuildDallasDongleSerialResponse(slot);
+				std::array<u32, 3> response = BuildDallasDongleSerialResponse(*slot);
+				if (key != 0 && IsDallasDongleBoardKey(*slot))
+					response[0] = KONAMI_DALLAS_NO_KEY_RESPONSE[0];
 				QueuePendingDbufBlockWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, response.data(), static_cast<u32>(response.size()));
 				return true;
 			}
 
 			const bool probe_current_key = key == 0;
 			const u32* response = probe_current_key ? s_dallas_key_response.data() : KONAMI_DALLAS_NO_KEY_RESPONSE;
-			QueuePendingDbufBlockWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, response, static_cast<u32>(s_dallas_key_response.size()));
+			QueuePendingDbufBlockWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET,
+				response, static_cast<u32>(s_dallas_key_response.size()));
 			return true;
 		}
 
 		if (subop == 1)
 		{
-			const u32 slot = key;
-			if (slot >= DALLAS_DONGLE_SLOT_COUNT || !s_dallas_dongle_loaded[slot] ||
+			const std::optional<u32> slot = GetDallasDongleSlotForKey(key);
+			if (!slot.has_value() || !s_dallas_dongle_loaded[*slot] ||
 				offset > DALLAS_DONGLE_PAYLOAD_SIZE || byte_count > DALLAS_DONGLE_PAYLOAD_SIZE - offset)
 			{
 				QueuePendingDbufQuadWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, KONAMI_DALLAS_NO_KEY_RESPONSE[0]);
@@ -1860,15 +1943,15 @@ namespace
 			}
 
 			if (byte_count != 0 && dest != 0)
-				QueuePendingDbufByteWrite(0x1000, dest, s_dallas_dongle_slots[slot].data() + DALLAS_DONGLE_SERIAL_SIZE + offset, byte_count);
+				QueuePendingDbufByteWrite(0x1000, dest, s_dallas_dongle_slots[*slot].data() + DALLAS_DONGLE_SERIAL_SIZE + offset, byte_count);
 			QueuePendingDbufQuadWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, 0);
 			return true;
 		}
 
 		if (subop == 2)
 		{
-			const u32 slot = key;
-			if (slot >= DALLAS_DONGLE_SLOT_COUNT || !s_dallas_dongle_loaded[slot] ||
+			const std::optional<u32> slot = GetDallasDongleSlotForKey(key);
+			if (!slot.has_value() || !s_dallas_dongle_loaded[*slot] ||
 				offset > DALLAS_DONGLE_PAYLOAD_SIZE || byte_count > DALLAS_DONGLE_PAYLOAD_SIZE - offset)
 			{
 				QueuePendingDbufQuadWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, KONAMI_DALLAS_NO_KEY_RESPONSE[0]);
@@ -1876,7 +1959,7 @@ namespace
 			}
 
 			if (byte_count != 0 && dest != 0 &&
-				!ReadIopMemory(dest, s_dallas_dongle_slots[slot].data() + DALLAS_DONGLE_SERIAL_SIZE + offset, byte_count))
+				!ReadIopMemory(dest, s_dallas_dongle_slots[*slot].data() + DALLAS_DONGLE_SERIAL_SIZE + offset, byte_count))
 			{
 				DevCon.WriteLn("FW HLE: failed Dallas dongle write DMA read src=0x%x bytes=0x%x", dest, byte_count);
 				QueuePendingDbufQuadWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, KONAMI_DALLAS_NO_KEY_RESPONSE[0]);
@@ -2258,6 +2341,33 @@ namespace
 
 	void MaybeQueueNetReply(u32 channel, const u32* payload, u32 payload_quads)
 	{
+		if (payload_quads >= 4 && payload[2] != 0 && payload[3] >= 20 && payload[3] <= 0x2000)
+		{
+			std::vector<u8> request(std::min<u32>(payload[3], 64));
+			if (ReadIopMemory(payload[2], request.data(), static_cast<u32>(request.size())))
+			{
+				if (ShouldLogLimited(s_net_packet_log_count, FW_NET_PACKET_LOG_LIMIT))
+				{
+					DevCon.WriteLn("FW HLE: NET data channel=0x%x bytes=0x%x head=%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
+						channel, payload[3], request[0], request[1], request[2], request[3], request[4], request[5], request[6], request[7],
+						request[8], request[9], request[10], request[11], request[12], request[13], request[14], request[15]);
+				}
+
+				if ((request[0] >> 4) == 4)
+				{
+					const u8 ip_header_bytes = static_cast<u8>((request[0] & 0x0f) * 4);
+					if (ip_header_bytes >= 20 && request.size() >= ip_header_bytes + 8)
+					{
+						const u16 src_port = ReadBe16(request.data() + ip_header_bytes);
+						const u16 dst_port = ReadBe16(request.data() + ip_header_bytes + 2);
+						DevCon.WriteLn("FW HLE: NET send channel=0x%x bytes=0x%x proto=0x%x src=%u.%u.%u.%u:%u dst=%u.%u.%u.%u:%u",
+							channel, payload[3], request[9], request[12], request[13], request[14], request[15], src_port,
+							request[16], request[17], request[18], request[19], dst_port);
+					}
+				}
+			}
+		}
+
 		if (KONAMI_NET_FORCE_OFFLINE)
 			return;
 
@@ -2300,6 +2410,16 @@ namespace
 			return false;
 
 		const u32 command = payload[0];
+		if (ShouldLogLimited(s_net_log_count, FW_NET_LOG_LIMIT))
+		{
+			const u32 word1 = payload_quads > 1 ? payload[1] : 0;
+			const u32 word2 = payload_quads > 2 ? payload[2] : 0;
+			const u32 word3 = payload_quads > 3 ? payload[3] : 0;
+			const u32 word4 = payload_quads > 4 ? payload[4] : 0;
+			const u32 word5 = payload_quads > 5 ? payload[5] : 0;
+			DevCon.WriteLn("FW HLE: NET command channel=0x%x command=0x%x words=0x%x w1=0x%x w2=0x%x w3=0x%x w4=0x%x w5=0x%x",
+				channel, command, payload_quads, word1, word2, word3, word4, word5);
+		}
 
 		switch (command)
 		{
@@ -2339,7 +2459,7 @@ namespace
 		{
 			return false;
 		}
-		else if (command == 0x15)
+		else if (command == 0x15 || command == 0x17)
 		{
 			MaybeQueueNetReply(channel, payload, payload_quads);
 		}
@@ -2361,7 +2481,7 @@ namespace
 		std::array<u32, 8> response = {};
 		if (command == 7)
 			response[1] = 1;
-		else if (command == 0x14 || command == 0x15)
+		else if (command == 0x13 || command == 0x14 || command == 0x15)
 			response[1] = ByteSwap32(payload[3]);
 		else if ((command == 0x16 || command == 0x17) && has_received_packet)
 		{
@@ -2580,15 +2700,18 @@ namespace
 
 			if (command_offset == KONAMI_JAMMA_OUTPUT_COMMAND_OFFSET && payload_quads >= 8)
 			{
-				const u32 previous_latch = s_p1io_output_latch_byte;
-				s_p1io_output_latch_byte = payload[4] & 0xff;
-				if ((previous_latch & 0x05) == 0x05 && (s_p1io_output_latch_byte & 0x05) == 0x04)
-					s_p1io_memcard_slot ^= 1;
-				if (ShouldLogLimited(s_p1io_output_log_count, FW_P1IO_OUTPUT_LOG_LIMIT))
+				if (IsPython1DogstationMode())
 				{
-					DevCon.WriteLn("FW HLE: P1IO output p0=0x%x p1=0x%x p2=0x%x p3=0x%x p4=0x%x p5=0x%x p6=0x%x p7=0x%x latch=0x%02x memcard_slot=%u",
-						payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6], payload[7],
-						s_p1io_output_latch_byte, s_p1io_memcard_slot);
+					const u32 previous_latch = s_p1io_output_latch_byte;
+					s_p1io_output_latch_byte = payload[4] & 0xff;
+					if ((previous_latch & 0x05) == 0x05 && (s_p1io_output_latch_byte & 0x05) == 0x04)
+						s_p1io_memcard_slot ^= 1;
+					if (ShouldLogLimited(s_p1io_output_log_count, FW_P1IO_OUTPUT_LOG_LIMIT))
+					{
+						DevCon.WriteLn("FW HLE: P1IO Dogstation output p0=0x%x p1=0x%x p2=0x%x p3=0x%x p4=0x%x p5=0x%x p6=0x%x p7=0x%x latch=0x%02x memcard_slot=%u",
+							payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6], payload[7],
+							s_p1io_output_latch_byte, s_p1io_memcard_slot);
+					}
 				}
 
 				if (s_jamma_input_dest == INVALID_JAMMA_INPUT_DEST)
@@ -2747,6 +2870,9 @@ namespace
 	{
 		if (bind_index >= P1IO_BIND_COUNT)
 		{
+			if (!IsPython1DogstationMode())
+				return 0.0f;
+
 			if (bind_index < P1IO_KEYBOARD_BIND_BASE)
 				return 0.0f;
 
@@ -2761,6 +2887,9 @@ namespace
 	{
 		if (bind_index >= P1IO_KEYBOARD_BIND_BASE)
 		{
+			if (!IsPython1DogstationMode())
+				return;
+
 			const Python1KeyboardKey key = GetPython1KeyboardKeyForHostKey(bind_index - P1IO_KEYBOARD_BIND_BASE);
 			if (key.ps2_set2_make == 0)
 				return;
@@ -2831,12 +2960,17 @@ namespace
 
 u32 FireWire::Devices::GetKonamiPython1P1IOLatchByte()
 {
-	return Host::GetStringSettingValue(PYTHON1_GAME_CONFIG_SECTION, "HddImageFile", "").empty() ? 0 : s_p1io_output_latch_byte;
+	return IsPython1DogstationMode() ? s_p1io_output_latch_byte : 0;
 }
 
 u32 FireWire::Devices::GetKonamiPython1P1IOMemcardSlot()
 {
-	return Host::GetStringSettingValue(PYTHON1_GAME_CONFIG_SECTION, "HddImageFile", "").empty() ? 0 : s_p1io_memcard_slot;
+	return IsPython1DogstationMode() ? s_p1io_memcard_slot : 0;
+}
+
+bool FireWire::Devices::IsKonamiPython1DogstationMode()
+{
+	return IsPython1DogstationMode();
 }
 
 namespace FireWire::Devices
