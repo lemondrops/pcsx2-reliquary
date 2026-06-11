@@ -104,7 +104,7 @@ uint16_t g_MemoryCardKeyIndexes[72] = {
 
 uint16_t g_KelfKeysIndex[4] = {0x110, 0x110, 0xC4, 0x15C};
 
-uint16_t g_cardKeyStore[96] = {
+uint16_t g_cardKeyStore[48] = {
 	/* SHA256: fef2015096181409b25fb4c4cd0e0fc48ca73c6ea845c0ed785c06bf9becd84e */
 };
 
@@ -1350,7 +1350,7 @@ void cdvdReset()
 		Error error;
 		std::string path = Path::Canonicalize(EmuConfig.Security.MgKeyStoreKeyFile);
 		auto fp = FileSystem::OpenManagedCFileTryIgnoreCase(path.c_str(), "rb", &error);
-		if (!fp || std::fread(g_KeyStoreKey, 1, sizeof(g_KeyStoreKey), fp.get()) != sizeof(g_cardKeyStore))
+		if (!fp || std::fread(g_KeyStoreKey, 1, sizeof(g_KeyStoreKey), fp.get()) != sizeof(g_KeyStoreKey))
 		{
 			ERROR_LOG("Failed to read Key Store Key file at {}: {}", path, error.GetDescription());
 		}
