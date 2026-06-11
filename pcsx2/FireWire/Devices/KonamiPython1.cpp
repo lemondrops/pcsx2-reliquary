@@ -29,12 +29,6 @@
 namespace
 {
 	constexpr bool FW_VERBOSE_LOGS = false;
-	constexpr u32 FW_CROM_LOG_LIMIT = 80;
-	constexpr u32 FW_SECTOR_LOG_LIMIT = 64;
-	constexpr u32 FW_RUNTIME_LOG_LIMIT = 256;
-	constexpr u32 FW_P1IO_OUTPUT_LOG_LIMIT = 8192;
-	constexpr u32 FW_NET_LOG_LIMIT = 512;
-	constexpr u32 FW_NET_PACKET_LOG_LIMIT = 16;
 	constexpr u32 UART_RX_QUEUE_LIMIT = 0x400;
 	constexpr u32 UART_CALLBACK_BYTE_LIMIT = 38;
 	constexpr u64 KONAMI_STORAGE_READ_BYTES_PER_SECOND = 24ull * 1024 * 1024;
@@ -438,13 +432,6 @@ namespace
 	u32 s_p1io_coin_counters[2] = {};
 	u32 s_p1io_output_latch_byte = 0;
 	u32 s_p1io_memcard_slot = 1;
-	u32 s_crom_log_count;
-	u32 s_sector_read_log_count;
-	u32 s_runtime_log_count;
-	u32 s_p1io_log_count;
-	u32 s_p1io_output_log_count;
-	u32 s_net_log_count;
-	u32 s_net_packet_log_count;
 	u64 s_next_sector_read_ready_cycle;
 	SubboardAdpcmPlayback s_subboard_adpcm;
 
@@ -457,7 +444,6 @@ namespace
 	void SaveBbsramIfDirty();
 	void CloseHddImageFile();
 	void ResetSubboardAdpcmPlayback();
-	void WarnIfConfigRomOuiMismatchesFactoryMac();
 	bool IsPython1DogstationMode();
 
 	bool ReadIopMemory(u32 address, void* data, u32 size)
@@ -498,13 +484,6 @@ namespace
 		if (s_host)
 			s_host->FlushPendingRemoteWrites();
 	}
-
-	bool ShouldLogLimited(u32& counter, u32 limit)
-	{
-		counter++;
-		return counter <= limit;
-	}
-
 
 	u8 CalculateAcioChecksum(const u8* data, u32 byte_count)
 	{
@@ -863,11 +842,6 @@ namespace
 		};
 	}
 
-	u32 ReadMacOui(const u8* mac)
-	{
-		return (static_cast<u32>(mac[0]) << 16) | (static_cast<u32>(mac[1]) << 8) | mac[2];
-	}
-
 	bool IsValidUnicastMac(const u8* mac)
 	{
 		bool all_zero = true;
@@ -968,8 +942,6 @@ namespace
 
 		std::memcpy(s_factory_mac.data(), s_bootrom + KONAMI_BOOTROM_MAC_BACKUP_OFFSET, s_factory_mac.size());
 		UpdateFsciMacResponses();
-		DevCon.WriteLn("FW HLE: BootROM MAC %02x:%02x:%02x:%02x:%02x:%02x",
-			s_factory_mac[0], s_factory_mac[1], s_factory_mac[2], s_factory_mac[3], s_factory_mac[4], s_factory_mac[5]);
 	}
 
 	u32 PackDallasSerialResponseWord(const u8* data)
@@ -1117,36 +1089,6 @@ namespace
 		s_io_config_rom.resize(data->size() / sizeof(u32));
 		for (size_t i = 0; i < s_io_config_rom.size(); i++)
 			s_io_config_rom[i] = ReadBigEndian32(data->data() + (i * sizeof(u32)));
-	}
-
-	void WarnIfConfigRomOuiMismatchesFactoryMac()
-	{
-		if (!IsPython1DogstationMode())
-			return;
-
-		const u32* words = s_io_config_rom.empty() ? KONAMI_IO_BOARD_CROM : s_io_config_rom.data();
-		const size_t word_count = s_io_config_rom.empty() ?
-			(sizeof(KONAMI_IO_BOARD_CROM) / sizeof(KONAMI_IO_BOARD_CROM[0])) :
-			s_io_config_rom.size();
-		const u32 bootrom_oui = ReadMacOui(s_factory_mac.data());
-
-		for (size_t i = 0; i < word_count; i++)
-		{
-			const u32 word = words[i];
-			const u32 key = word >> 24;
-			if (key != 0x03 && key != 0x12)
-				continue;
-
-			const u32 crom_oui = word & 0x00ffffffu;
-			if (crom_oui != bootrom_oui)
-			{
-				DevCon.WriteLn("FW HLE: warning: config ROM OUI key=0x%02x index=0x%zx (%02x:%02x:%02x) differs from BootROM MAC OUI (%02x:%02x:%02x)",
-					key, i,
-					(crom_oui >> 16) & 0xff, (crom_oui >> 8) & 0xff, crom_oui & 0xff,
-					s_factory_mac[0], s_factory_mac[1], s_factory_mac[2]);
-				return;
-			}
-		}
 	}
 
 	void LoadDallasDongles()
@@ -1711,10 +1653,6 @@ namespace
 
 	bool QueuePendingSectorAndStatusPackets(u32 dest, const std::vector<u8>& data, u32 status_offset, bool defer_status)
 	{
-		const size_t chunks = (data.size() + SECTOR_SIZE - 1) / SECTOR_SIZE;
-		if (ShouldLogLimited(s_sector_read_log_count, FW_SECTOR_LOG_LIMIT))
-			DevCon.WriteLn("FW HLE: FireWire sector DMA off_hi=0x1000 off_low=0x%x bytes=0x%zx chunks=0x%zx", dest, data.size(), chunks);
-
 		if (!PerformFireWireIopDmaWrite(dest, data.data(), data.size()))
 			return false;
 
@@ -1832,7 +1770,6 @@ namespace
 		const u32 offset = payload[1];
 		const u32 byte_count = payload[2];
 		const u32 dest = payload[3];
-		DevCon.WriteLn("FW HLE: BBSRAM command subop=0x%x offset=0x%x bytes=0x%x dest=0x%x", subop, offset, byte_count, dest);
 		if (offset > BBSRAM_SIZE || byte_count > BBSRAM_SIZE - offset)
 		{
 			DevCon.WriteLn("FW HLE: BBSRAM request out of range subop=0x%x offset=0x%x bytes=0x%x dest=0x%x", subop, offset, byte_count, dest);
@@ -1880,11 +1817,7 @@ namespace
 				}
 
 				const bool volatile_test_write = (offset == 0 && byte_count == KONAMI_BBSRAM_VOLATILE_TEST_BYTES);
-				if (volatile_test_write)
-				{
-					DevCon.WriteLn("FW HLE: BBSRAM full-area write kept volatile");
-				}
-				else
+				if (!volatile_test_write)
 				{
 					s_bbsram_dirty = true;
 					SaveBbsramIfDirty();
@@ -1910,8 +1843,6 @@ namespace
 		const u32 offset = payload_quads > 2 ? payload[2] : 0;
 		const u32 byte_count = payload_quads > 3 ? payload[3] : 0;
 		const u32 dest = payload_quads > 4 ? payload[4] : 0;
-		DevCon.WriteLn("FW HLE: DALLAS command subop=0x%x key=0x%x offset=0x%x bytes=0x%x dest=0x%x", subop, key, offset, byte_count, dest);
-
 		if (subop == 0)
 		{
 			const std::optional<u32> slot = (key == 0 || (key == 1 && offset == 0 && byte_count == 0)) ?
@@ -1978,8 +1909,6 @@ namespace
 		const u32 subop = payload[0];
 		const u32 byte_count = payload_quads > 1 ? payload[1] : 0;
 		const u32 dest = payload_quads > 2 ? payload[2] : 0;
-		DevCon.WriteLn("FW HLE: FSCI command subop=0x%x bytes=0x%x dest=0x%x", subop, byte_count, dest);
-
 		if (subop == 0)
 		{
 			ResetFsciStream();
@@ -2020,9 +1949,7 @@ namespace
 
 		const u32 subop = payload[0];
 		const u32 word1 = payload_quads > 1 ? payload[1] : 0;
-		const u32 word2 = payload_quads > 2 ? payload[2] : 0;
 		const u32 status = ByteSwap32(2);
-		DevCon.WriteLn("FW HLE: UART command subop=0x%x w1=0x%x w2=0x%x status=0x%x", subop, word1, word2, status);
 
 		const bool extio_mode = IsPython1ExtioMode();
 		bool queued_read_data = false;
@@ -2040,12 +1967,6 @@ namespace
 	bool HleAdpcmCommand(const u32* payload, u32 payload_quads)
 	{
 		const u32 command_words = payload_quads > 0 ? std::min<u32>(payload[0] + 1, payload_quads - 1) : 0;
-		const u32 word0 = payload_quads > 1 ? payload[1] : 0;
-		const u32 word1 = payload_quads > 2 ? payload[2] : 0;
-		const u32 word2 = payload_quads > 3 ? payload[3] : 0;
-		if (ShouldLogLimited(s_runtime_log_count, FW_RUNTIME_LOG_LIMIT))
-			DevCon.WriteLn("FW HLE: ADPCM command words=0x%x w0=0x%x w1=0x%x w2=0x%x", command_words, word0, word1, word2);
-
 		bool has_sector_high = false;
 		bool has_sector_low = false;
 		u32 sector_high = 0;
@@ -2097,8 +2018,6 @@ namespace
 		const u32 offset = payload[1];
 		const u32 byte_count = payload[2];
 		const u32 dest = payload[3];
-		DevCon.WriteLn("FW HLE: BOOTROM command subop=0x%x offset=0x%x bytes=0x%x dest=0x%x", subop, offset, byte_count, dest);
-
 		if (offset > BOOTROM_SIZE || byte_count > BOOTROM_SIZE - offset)
 		{
 			QueuePendingDbufQuadWrite(0xfffe, KONAMI_BOOTROM_STATUS_OFFSET, 0x41000000);
@@ -2341,33 +2260,6 @@ namespace
 
 	void MaybeQueueNetReply(u32 channel, const u32* payload, u32 payload_quads)
 	{
-		if (payload_quads >= 4 && payload[2] != 0 && payload[3] >= 20 && payload[3] <= 0x2000)
-		{
-			std::vector<u8> request(std::min<u32>(payload[3], 64));
-			if (ReadIopMemory(payload[2], request.data(), static_cast<u32>(request.size())))
-			{
-				if (ShouldLogLimited(s_net_packet_log_count, FW_NET_PACKET_LOG_LIMIT))
-				{
-					DevCon.WriteLn("FW HLE: NET data channel=0x%x bytes=0x%x head=%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
-						channel, payload[3], request[0], request[1], request[2], request[3], request[4], request[5], request[6], request[7],
-						request[8], request[9], request[10], request[11], request[12], request[13], request[14], request[15]);
-				}
-
-				if ((request[0] >> 4) == 4)
-				{
-					const u8 ip_header_bytes = static_cast<u8>((request[0] & 0x0f) * 4);
-					if (ip_header_bytes >= 20 && request.size() >= ip_header_bytes + 8)
-					{
-						const u16 src_port = ReadBe16(request.data() + ip_header_bytes);
-						const u16 dst_port = ReadBe16(request.data() + ip_header_bytes + 2);
-						DevCon.WriteLn("FW HLE: NET send channel=0x%x bytes=0x%x proto=0x%x src=%u.%u.%u.%u:%u dst=%u.%u.%u.%u:%u",
-							channel, payload[3], request[9], request[12], request[13], request[14], request[15], src_port,
-							request[16], request[17], request[18], request[19], dst_port);
-					}
-				}
-			}
-		}
-
 		if (KONAMI_NET_FORCE_OFFLINE)
 			return;
 
@@ -2392,7 +2284,6 @@ namespace
 			packet.source_ip = 0x0132a8c0;
 			packet.source_port = 53;
 			s_net_rx_packets[channel].push_back(std::move(packet));
-			DevCon.WriteLn("FW HLE: queued NET DNS response channel=0x%x bytes=0x%zx", channel, s_net_rx_packets[channel].back().data.size());
 		}
 	}
 
@@ -2410,17 +2301,6 @@ namespace
 			return false;
 
 		const u32 command = payload[0];
-		if (ShouldLogLimited(s_net_log_count, FW_NET_LOG_LIMIT))
-		{
-			const u32 word1 = payload_quads > 1 ? payload[1] : 0;
-			const u32 word2 = payload_quads > 2 ? payload[2] : 0;
-			const u32 word3 = payload_quads > 3 ? payload[3] : 0;
-			const u32 word4 = payload_quads > 4 ? payload[4] : 0;
-			const u32 word5 = payload_quads > 5 ? payload[5] : 0;
-			DevCon.WriteLn("FW HLE: NET command channel=0x%x command=0x%x words=0x%x w1=0x%x w2=0x%x w3=0x%x w4=0x%x w5=0x%x",
-				channel, command, payload_quads, word1, word2, word3, word4, word5);
-		}
-
 		switch (command)
 		{
 			case 0:
@@ -2488,8 +2368,6 @@ namespace
 			response[1] = ByteSwap32(static_cast<u32>(received_packet.data.size()));
 			response[2] = received_packet.source_ip;
 			response[3] = (ReadIopNative32(payload[5]) & 0xffff0000) | received_packet.source_port;
-			DevCon.WriteLn("FW HLE: NET receive channel=0x%x bytes=0x%zx src=0x%x port=0x%x",
-				channel, received_packet.data.size(), received_packet.source_ip, received_packet.source_port);
 		}
 		else if (command == 0x1e)
 			response[1] = ByteSwap32(property_response_bytes);
@@ -2645,13 +2523,7 @@ namespace
 		const std::array<u32, JAMMA_INPUT_REPORT_QUADS> report =
 			BuildP1IOJammaLiveReport(source_bits, jamma_status, include_jvs_present);
 		const u32 byte_count = static_cast<u32>(report.size() * sizeof(report[0]));
-		const bool dma_written = WriteIopMemory(dest, report.data(), byte_count);
-		if (ShouldLogLimited(s_p1io_log_count, 32))
-		{
-			DevCon.WriteLn("FW HLE: P1IO input DMA dest=0x%x bytes=0x%x source=0x%x coin1=%u coin2=%u jamma_status=0x%x ok=%u",
-				dest, byte_count, source_bits, s_p1io_coin_counters[0], s_p1io_coin_counters[1], jamma_status, dma_written ? 1 : 0);
-		}
-		return dma_written;
+		return WriteIopMemory(dest, report.data(), byte_count);
 	}
 
 	bool TryHleKonamiCommand(u32 offset_low, const u32* payload, u32 payload_quads)
@@ -2706,18 +2578,10 @@ namespace
 					s_p1io_output_latch_byte = payload[4] & 0xff;
 					if ((previous_latch & 0x05) == 0x05 && (s_p1io_output_latch_byte & 0x05) == 0x04)
 						s_p1io_memcard_slot ^= 1;
-					if (ShouldLogLimited(s_p1io_output_log_count, FW_P1IO_OUTPUT_LOG_LIMIT))
-					{
-						DevCon.WriteLn("FW HLE: P1IO Dogstation output p0=0x%x p1=0x%x p2=0x%x p3=0x%x p4=0x%x p5=0x%x p6=0x%x p7=0x%x latch=0x%02x memcard_slot=%u",
-							payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6], payload[7],
-							s_p1io_output_latch_byte, s_p1io_memcard_slot);
-					}
 				}
 
 				if (s_jamma_input_dest == INVALID_JAMMA_INPUT_DEST)
 				{
-					if (ShouldLogLimited(s_p1io_log_count, 32))
-						DevCon.WriteLn("FW HLE: P1IO output ignored until input dest is registered");
 					return true;
 				}
 
@@ -2756,30 +2620,16 @@ namespace
 				command_offset, subop, sector, count, dest, p4, p5, p6, p7);
 
 		if (command_offset == KONAMI_CF_COMMAND_OFFSET && subop == 0 && HleReadSectors(sector, count, dest, KONAMI_CF_STATUS_OFFSET))
-		{
-			if (ShouldLogLimited(s_sector_read_log_count, FW_SECTOR_LOG_LIMIT))
-				DevCon.WriteLn("FW HLE: P1IO CF read sector=0x%x count=0x%x bytes=0x%x dest=0x%x", sector, count, count * SECTOR_SIZE, dest);
 			return true;
-		}
 		if (command_offset == KONAMI_CF_COMMAND_OFFSET && subop == 4)
 		{
 			QueuePendingDbufQuadWrite(0xfffe, KONAMI_CF_STATUS_OFFSET, 0);
 			return true;
 		}
 		if (command_offset == KONAMI_ATA_COMMAND_OFFSET && (subop == 0 || subop == 2) && HleReadSectors(sector, count, dest, KONAMI_ATA_STATUS_OFFSET))
-		{
-			if (ShouldLogLimited(s_sector_read_log_count, FW_SECTOR_LOG_LIMIT))
-				DevCon.WriteLn("FW HLE: P1IO ATA read subop=0x%x device=0x%x sector=0x%x count=0x%x bytes=0x%x dest=0x%x",
-					subop, ata_device, sector, count, count * SECTOR_SIZE, dest);
 			return true;
-		}
 		if (command_offset == KONAMI_ATA_COMMAND_OFFSET && (subop == 1 || subop == 3) && HleWriteSectors(sector, count, dest, KONAMI_ATA_STATUS_OFFSET))
-		{
-			if (ShouldLogLimited(s_sector_read_log_count, FW_SECTOR_LOG_LIMIT))
-				DevCon.WriteLn("FW HLE: P1IO ATA write subop=0x%x device=0x%x sector=0x%x count=0x%x bytes=0x%x src=0x%x",
-					subop, ata_device, sector, count, count * SECTOR_SIZE, dest);
 			return true;
-		}
 		if (command_offset == KONAMI_ATA_COMMAND_OFFSET && subop == 7)
 		{
 			if (ata_device == 0x14)
@@ -2789,7 +2639,7 @@ namespace
 			QueuePendingDbufQuadWrite(0xfffe, KONAMI_ATA_STATUS_OFFSET, ByteSwap32(status));
 			return true;
 		}
-		else if (ShouldLogLimited(s_crom_log_count, FW_CROM_LOG_LIMIT))
+		else if (FW_VERBOSE_LOGS)
 		{
 			DevCon.WriteLn("FW HLE: unhandled Konami command off=0x%x subop=0x%x w1=0x%x sector=0x%x count=0x%x dest=0x%x p4=0x%x p5=0x%x p6=0x%x p7=0x%x",
 				command_offset, subop, ata_device, sector, count, dest, p4, p5, p6, p7);
@@ -2823,12 +2673,6 @@ namespace
 		s_p1io_coin_counters[1] = 0;
 		s_pythonfs_formatted = false;
 		LoadConfigRom();
-		WarnIfConfigRomOuiMismatchesFactoryMac();
-		s_crom_log_count = 0;
-		s_sector_read_log_count = 0;
-		s_runtime_log_count = 0;
-		s_p1io_log_count = 0;
-		s_p1io_output_log_count = 0;
 		s_next_sector_read_ready_cycle = 0;
 		return true;
 	}
