@@ -30,24 +30,6 @@ namespace
 	constexpr u32 FW_INTR_LOG_LIMIT = 16;
 	constexpr u32 FW_REMOTE_WRITE_LOG_LIMIT = 256;
 
-	constexpr u32 FW_INTR0_DRFR = 0x00000001;
-	constexpr u32 FW_INTR0_PBCntR = 0x00000200;
-	constexpr u32 FW_INTR0_AckRcvd = 0x00004000;
-	constexpr u32 FW_INTR0_URx = 0x00400000;
-	constexpr u32 FW_INTR0_PhyRst = 0x20000000;
-	constexpr u32 FW_INTR0_PhyRRx = 0x40000000;
-	constexpr u32 FW_INTR1_UTD = 0x00000002;
-
-	constexpr u32 FW_CTRL0_Root = 0x00080000;
-	constexpr u32 FW_CTRL0_BusIDRst = 0x00800000;
-
-	constexpr u32 PHT_CTRL_ST_EWREQ = 0x00010000;
-	constexpr u32 PHT_CTRL_ST_ERREQ = 0x00020000;
-	constexpr u32 PHT_CTRL_ST_PHTRst = 0x00200000;
-	constexpr u32 PHT_CTRL_ST_EWREQ_ERREQ = PHT_CTRL_ST_EWREQ | PHT_CTRL_ST_ERREQ;
-	constexpr u32 DBUF_FIFO_RESET_TX = 0x00008000;
-	constexpr u32 DBUF_FIFO_RESET_RX = 0x80000000;
-
 	constexpr u8 PHY_REG01_IBR = 0x40;
 	constexpr u8 PHY_REG05_ISBR = 0x40;
 	constexpr u8 PHY_REG05_EN_ACCL = 0x02;
@@ -110,27 +92,27 @@ namespace
 
 	void UpdateUbufRxLevel()
 	{
-		fwRu32(0x8454) = static_cast<u32>(s_ubuf_rx_fifo.size());
+		fwRu32(FW_UBUF_RX_LVL) = static_cast<u32>(s_ubuf_rx_fifo.size());
 	}
 
 	void UpdateDbufR0RxLevel()
 	{
-		fwRu32(0x84c0) = static_cast<u32>((s_dbuf_r0_rx_fifo.size() * sizeof(u32)) << 16);
+		fwRu32(FW_DBUF_FIFO_LV0) = static_cast<u32>((s_dbuf_r0_rx_fifo.size() * sizeof(u32)) << 16);
 	}
 
 	void RaiseIntr0(u32 bits)
 	{
-		fwRu32(0x8420) |= bits;
+		fwRu32(FW_INTR0) |= bits;
 		if (ShouldLogLimited(s_intr_log_count, FW_INTR_LOG_LIMIT))
-			DevCon.WriteLn("FW HLE: intr0 raise bits=0x%x intr0=0x%x mask=0x%x", bits, fwRu32(0x8420), fwRu32(0x8424));
-		if (fwRu32(0x8424) & bits)
+			DevCon.WriteLn("FW HLE: intr0 raise bits=0x%x intr0=0x%x mask=0x%x", bits, fwRu32(FW_INTR0), fwRu32(FW_INTR0_MASK));
+		if (fwRu32(FW_INTR0_MASK) & bits)
 			fwIrq();
 	}
 
 	void RaiseIntr1(u32 bits)
 	{
-		fwRu32(0x8428) |= bits;
-		if (fwRu32(0x842c) & bits)
+		fwRu32(FW_INTR1) |= bits;
+		if (fwRu32(FW_INTR1_MASK) & bits)
 			fwIrq();
 	}
 
@@ -221,8 +203,8 @@ namespace
 	void TriggerBusReset()
 	{
 		phyregs[0x00] = static_cast<u8>((LOCAL_PHY_ID << 2) | 0x03);
-		fwRu32(0x8400) = LOCAL_NODE_ID_REGISTER;
-		fwRu32(0x8408) = (fwRu32(0x8408) | FW_CTRL0_Root) & ~FW_CTRL0_BusIDRst;
+		fwRu32(FW_NODE_ID) = LOCAL_NODE_ID_REGISTER;
+		fwRu32(FW_CTRL0) = (fwRu32(FW_CTRL0) | FW_CTRL0_Root) & ~FW_CTRL0_BusIDRst;
 
 		s_ubuf_rx_fifo.clear();
 		s_dbuf_r0_rx_fifo.clear();
@@ -236,7 +218,8 @@ namespace
 
 	void MaybeRaisePendingInterrupts()
 	{
-		if ((fwRu32(0x8420) & fwRu32(0x8424)) || (fwRu32(0x8428) & fwRu32(0x842c)) || (fwRu32(0x8430) & fwRu32(0x8434)))
+		if ((fwRu32(FW_INTR0) & fwRu32(FW_INTR0_MASK)) || (fwRu32(FW_INTR1) & fwRu32(FW_INTR1_MASK)) ||
+			(fwRu32(FW_INTR2) & fwRu32(FW_INTR2_MASK)))
 			fwIrq();
 	}
 
@@ -257,9 +240,9 @@ namespace
 
 	void AckTransmit(u32 ack)
 	{
-		fwRu32(0x843c) = ack << 28;
+		fwRu32(FW_ACK_STAT) = ack << 28;
 		if (FW_VERBOSE_LOGS)
-			DevCon.WriteLn("FW HLE: tx ack ack=0x%x ack_status=0x%x", ack, fwRu32(0x843c));
+			DevCon.WriteLn("FW HLE: tx ack ack=0x%x ack_status=0x%x", ack, fwRu32(FW_ACK_STAT));
 		RaiseIntr0(FW_INTR0_AckRcvd);
 	}
 
@@ -389,7 +372,7 @@ namespace
 		if (!s_pending_dbuf_r0_rx_dma.empty())
 			s_pending_dbuf_r0_rx_dma.erase(s_pending_dbuf_r0_rx_dma.begin());
 		if (FW_VERBOSE_LOGS)
-			DevCon.WriteLn("FW HLE: queued deferred DBUF R0 rx packet quads=0x%zx level=0x%x pending_quads=0x%zx pending_dma=0x%zx", packet_quads, fwRu32(0x84c0), s_pending_dbuf_r0_rx_fifo.size(), s_pending_dbuf_r0_rx_dma.size());
+			DevCon.WriteLn("FW HLE: queued deferred DBUF R0 rx packet quads=0x%zx level=0x%x pending_quads=0x%zx pending_dma=0x%zx", packet_quads, fwRu32(FW_DBUF_FIFO_LV0), s_pending_dbuf_r0_rx_fifo.size(), s_pending_dbuf_r0_rx_dma.size());
 		RaiseIntr0(FW_INTR0_URx);
 	}
 
@@ -488,7 +471,7 @@ namespace
 
 	void LogPhtRequest(int channel)
 	{
-		const u32 base = channel == 0 ? 0x8480 : 0x8500;
+		const u32 base = channel == 0 ? FW_PHT_CTRL0 : FW_PHT_CTRL1;
 		const u32 hdr0 = fwRu32(base + 0x08);
 		const u32 hdr1 = fwRu32(base + 0x0c);
 		const u32 hdr2 = fwRu32(base + 0x10);
@@ -508,7 +491,7 @@ namespace
 		if (expected_bytes == 0 || s_pht_tx_fifo[channel].size() * sizeof(u32) < expected_bytes)
 			return;
 
-		const u32 base = channel == 0 ? 0x8480 : 0x8500;
+		const u32 base = channel == 0 ? FW_PHT_CTRL0 : FW_PHT_CTRL1;
 		const u32 hdr0 = fwRu32(base + 0x08);
 		const u32 hdr1 = fwRu32(base + 0x0c);
 		const u32 payload_quads = (expected_bytes + 3) >> 2;
@@ -532,8 +515,8 @@ namespace
 
 	void BeginPhtRequest(int channel, u32 control)
 	{
-		const u32 base = channel == 0 ? 0x8480 : 0x8500;
-		const bool is_write = (control & PHT_CTRL_ST_EWREQ) != 0;
+		const u32 base = channel == 0 ? FW_PHT_CTRL0 : FW_PHT_CTRL1;
+		const bool is_write = (control & FW_PHT_CTRL_EWREQ) != 0;
 
 		LogPhtRequest(channel);
 		if (!is_write)
@@ -660,8 +643,8 @@ s32 FWopen()
 		}
 		return -1;
 	}
-	fwRu32(0x8400) = LOCAL_NODE_ID_REGISTER;
-	fwRu32(0x8410) = 0x8;
+	fwRu32(FW_NODE_ID) = LOCAL_NODE_ID_REGISTER;
+	fwRu32(FW_CTRL2) = 0x8;
 	UpdateUbufRxLevel();
 	UpdateDbufR0RxLevel();
 	return 0;
@@ -711,8 +694,8 @@ void PHYWrite()
 		TriggerBusReset();
 	}
 
-	bool readback = (PHYACC & 0x8000'0000u) > 0;
-	PHYACC &= 0xBFFF'FFFF; // Clear WrPhy bit.
+	bool readback = (PHYACC & FW_PHY_ACCESS_READ) > 0;
+	PHYACC &= ~FW_PHY_ACCESS_WRITE;
 
 	if (readback)
 		PHYRead();
@@ -722,7 +705,7 @@ void PHYRead()
 {
 	u8 reg = (PHYACC >> 24) & 0xf;
 
-	PHYACC &= 0x7FFF'F000; // Clear RdPhy bit and RX data.
+	PHYACC &= ~(FW_PHY_ACCESS_READ | 0xfffu);
 	PHYACC |= ReadPhyRegister(reg) | (reg << 8);
 	RaiseIntr0(FW_INTR0_PhyRRx);
 }
@@ -734,30 +717,30 @@ u32 FWread32(u32 addr)
 	u32 ret = 0;
 	switch (addr)
 	{
-		case 0x1f808400:
+		case FW_NODE_ID:
 			ret = fwRu32(addr);
 			break;
-		case 0x1f808410:
+		case FW_CTRL2:
 			ret = fwRu32(addr);
 			break;
-		case 0x1f808420:
+		case FW_INTR0:
 			ret = fwRu32(addr);
 			break;
-		case 0x1f808450:
+		case FW_UBUF_RX:
 			ret = PopUbufRx();
 			break;
-		case 0x1f808454:
+		case FW_UBUF_RX_LVL:
 			ret = static_cast<u32>(s_ubuf_rx_fifo.size());
 			fwRu32(addr) = ret;
 			break;
-		case 0x1f8084c0:
+		case FW_DBUF_FIFO_LV0:
 			ret = static_cast<u32>((s_dbuf_r0_rx_fifo.size() * sizeof(u32)) << 16);
 			fwRu32(addr) = ret;
 			break;
-		case 0x1f8084c8:
+		case FW_DBUF_RX_DATA:
 			ret = PopDbufR0Rx();
 			break;
-		case 0x1f80847c:
+		case FW_REG_7C:
 			ret = 0x10000001;
 			break;
 		default:
@@ -776,83 +759,83 @@ void FWwrite32(u32 addr, u32 value)
 	logFwAction(addr, value, true);
 	switch (addr)
 	{
-		case 0x1f808400:
+		case FW_NODE_ID:
 			fwRu32(addr) = LOCAL_NODE_ID_REGISTER;
 			break;
-		case 0x1f808414:
+		case FW_PHY_ACCESS:
 			fwRu32(addr) = value;
-			if (value & 0x40000000)
+			if (value & FW_PHY_ACCESS_WRITE)
 				PHYWrite();
-			else if (value & 0x80000000)
+			else if (value & FW_PHY_ACCESS_READ)
 				PHYRead();
 			break;
-		case 0x1f808408:
+		case FW_CTRL0:
 			fwRu32(addr) = value;
-			fwRu32(addr) &= ~FW_CTRL0_BusIDRst;
+			fwRu32(addr) &= ~(FW_CTRL0_BusIDRst | FW_CTRL0_RxRst | FW_CTRL0_TxRst);
 			fwRu32(addr) |= FW_CTRL0_Root;
 			break;
-		case 0x1f808410:
+		case FW_CTRL2:
 			fwRu32(addr) = 0x8 | value & 0x2;
 			break;
-		case 0x1f808420:
-		case 0x1f808428:
-		case 0x1f808430:
-			if (addr == 0x1f808420 && ShouldLogLimited(s_intr_log_count, FW_INTR_LOG_LIMIT))
-				DevCon.WriteLn("FW HLE: intr0 ack value=0x%x before=0x%x mask=0x%x", value, fwRu32(addr), fwRu32(0x8424));
+		case FW_INTR0:
+		case FW_INTR1:
+		case FW_INTR2:
+			if (addr == FW_INTR0 && ShouldLogLimited(s_intr_log_count, FW_INTR_LOG_LIMIT))
+				DevCon.WriteLn("FW HLE: intr0 ack value=0x%x before=0x%x mask=0x%x", value, fwRu32(addr), fwRu32(FW_INTR0_MASK));
 			fwRu32(addr) &= ~value;
 			break;
-		case 0x1f808424:
-		case 0x1f80842C:
-		case 0x1f808434:
-			if (addr == 0x1f808424 && value != 0)
+		case FW_INTR0_MASK:
+		case FW_INTR1_MASK:
+		case FW_INTR2_MASK:
+			if (addr == FW_INTR0_MASK && value != 0)
 				value |= FW_INTR0_PhyRst;
 			fwRu32(addr) = value;
 			MaybeRaisePendingInterrupts();
 			break;
-		case 0x1f808440:
+		case FW_UBUF_TX_NEXT:
 			s_ubuf_tx_fifo.push_back(value);
 			fwRu32(addr) = value;
 			break;
-		case 0x1f808444:
+		case FW_UBUF_TX_LAST:
 			s_ubuf_tx_fifo.push_back(value);
 			fwRu32(addr) = value;
 			ProcessUbufTransmitPacket();
 			break;
-		case 0x1f808448:
+		case FW_UBUF_TX_CLR:
 			s_ubuf_tx_fifo.clear();
 			fwRu32(addr) = value;
 			break;
-		case 0x1f80844c:
+		case FW_UBUF_RX_CLR:
 			s_ubuf_rx_fifo.clear();
 			UpdateUbufRxLevel();
 			fwRu32(addr) = value;
 			break;
-		case 0x1f8084c0:
-			if (value & DBUF_FIFO_RESET_RX)
+		case FW_DBUF_FIFO_LV0:
+			if (value & FW_DBUF_FIFO_RESET_RX)
 				s_dbuf_r0_rx_fifo.clear();
 			UpdateDbufR0RxLevel();
-			fwRu32(addr) |= value & DBUF_FIFO_RESET_TX;
+			fwRu32(addr) |= value & FW_DBUF_FIFO_RESET_TX;
 			break;
-		case 0x1f808480:
-		case 0x1f808500:
-			fwRu32(addr) = value & ~PHT_CTRL_ST_PHTRst;
-			if (value & PHT_CTRL_ST_EWREQ_ERREQ)
-				BeginPhtRequest(addr == 0x1f808480 ? 0 : 1, value);
+		case FW_PHT_CTRL0:
+		case FW_PHT_CTRL1:
+			fwRu32(addr) = value & ~FW_PHT_CTRL_PHTRst;
+			if (value & (FW_PHT_CTRL_EWREQ | FW_PHT_CTRL_ERREQ))
+				BeginPhtRequest(addr == FW_PHT_CTRL0 ? 0 : 1, value);
 			break;
-		case 0x1f8084c4:
+		case FW_DBUF_TX_DATA0:
 			s_pht_tx_fifo[0].push_back(value);
 			fwRu32(addr) = value;
-			fwRu32(0x84c0) = static_cast<u32>(s_pht_tx_fifo[0].size() << 16);
+			fwRu32(FW_DBUF_FIFO_LV0) = static_cast<u32>(s_pht_tx_fifo[0].size() << 16);
 			TryProcessPhtWrite(0);
 			break;
-		case 0x1f808544:
+		case FW_DBUF_TX_DATA1:
 			s_pht_tx_fifo[1].push_back(value);
 			fwRu32(addr) = value;
-			fwRu32(0x8540) = static_cast<u32>(s_pht_tx_fifo[1].size() << 16);
+			fwRu32(FW_DBUF_FIFO_LV1) = static_cast<u32>(s_pht_tx_fifo[1].size() << 16);
 			TryProcessPhtWrite(1);
 			break;
-		case 0x1f8084B8:
-		case 0x1f808538:
+		case FW_DMA_CTRL0:
+		case FW_DMA_CTRL1:
 			fwRu32(addr) = value;
 			break;
 		default:
