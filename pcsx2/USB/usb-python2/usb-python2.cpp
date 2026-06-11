@@ -24,6 +24,23 @@ namespace usb_python2
 {
 	static const char* APINAME = "python2";
 
+	static void dump_packet_to_devcon(const char* prefix, const std::vector<uint8_t>& packet)
+	{
+		if (LOGLEVEL_DEV > Log::GetMaxLevel())
+			return;
+
+		static constexpr char hex[] = "0123456789abcdef";
+		std::string packetDump;
+		packetDump.reserve(packet.size() * 3);
+		for (const uint8_t byte : packet)
+		{
+			packetDump.push_back(hex[byte >> 4]);
+			packetDump.push_back(hex[byte & 0xf]);
+			packetDump.push_back(' ');
+		}
+		DevCon.WriteLn("%s%s", prefix, packetDump.c_str());
+	}
+
 	struct P2IO_PACKET_HEADER
 	{
 		uint8_t magic;
@@ -852,12 +869,7 @@ namespace usb_python2
 				const auto packetLen = s->buf[5];
 
 #ifdef PCSX2_DEVBUILD
-				DevCon.WriteLn("p2io: P2IO_CMD_SCI_WRITE: ");
-				for (size_t i = 0; i < s->buf.size(); i++)
-				{
-					printf("%02x ", s->buf[i]);
-				}
-				printf("\n");
+				dump_packet_to_devcon("p2io: P2IO_CMD_SCI_WRITE: ", s->buf);
 #endif
 
 				const auto device = s->devices[port].get();
@@ -892,12 +904,8 @@ namespace usb_python2
 			else
 			{
 #ifdef PCSX2_DEVBUILD
-				printf("usb_python2_handle_data %zx\n", s->buf.size());
-				for (size_t i = 0; i < s->buf.size(); i++)
-				{
-					printf("%02x ", s->buf[i]);
-				}
-				printf("\n");
+				DevCon.WriteLn("usb_python2_handle_data %zu", s->buf.size());
+				dump_packet_to_devcon("usb_python2_handle_data: ", s->buf);
 #endif
 			}
 

@@ -1,10 +1,29 @@
 ﻿#include "acio.h"
 
+#include "common/Console.h"
+
 #include <algorithm>
 #include <numeric>
 
 namespace usb_python2
 {
+	static void dump_packet_to_devcon(const char* prefix, const std::vector<uint8_t>& packet)
+	{
+		if (LOGLEVEL_DEV > Log::GetMaxLevel())
+			return;
+
+		static constexpr char hex[] = "0123456789abcdef";
+		std::string packetDump;
+		packetDump.reserve(packet.size() * 3);
+		for (const uint8_t byte : packet)
+		{
+			packetDump.push_back(hex[byte >> 4]);
+			packetDump.push_back(hex[byte & 0xf]);
+			packetDump.push_back(' ');
+		}
+		DevCon.WriteLn("%s%s", prefix, packetDump.c_str());
+	}
+
 	std::vector<uint8_t> acio_unescape_packet(const std::vector<uint8_t>& buffer)
 	{
 		std::vector<uint8_t> output;
@@ -138,12 +157,7 @@ namespace usb_python2
 		add_packet(response);
 
 #ifdef PCSX2_DEVBUILD
-		printf("acio_device response: ");
-		for (size_t i = 0; i < response.size(); i++)
-		{
-			printf("%02x ", response[i]);
-		}
-		printf("\n");
+		dump_packet_to_devcon("acio_device response: ", response);
 #endif
 	}
 } // namespace usb_python2
