@@ -7,6 +7,8 @@
 
 namespace FireWire
 {
+	constexpr u64 CROM_BASE = 0xffff'f000'0400;
+
 	class FireWireDeviceHost
 	{
 	public:
@@ -33,8 +35,8 @@ namespace FireWire
 		virtual bool Open(FireWireDeviceHost& host) = 0;
 		virtual void Close() = 0;
 		virtual void BusReset();
-		virtual bool ReadQuadlet(u32 offset_high, u32 offset_low, u32* value) = 0;
-		virtual bool Write(u32 offset_high, u32 offset_low, const u32* payload, u32 payload_quads) = 0;
+		virtual bool ReadQuadlet(u64 offset, u32* value) = 0;
+		virtual bool Write(u64 offset, const u32* payload, u32 payload_quads) = 0;
 		virtual void ServiceEvents();
 		virtual void MixAudio(s32* left, s32* right);
 	};

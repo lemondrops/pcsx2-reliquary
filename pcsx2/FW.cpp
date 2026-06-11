@@ -246,10 +246,9 @@ namespace
 		RaiseIntr0(FW_INTR0_AckRcvd);
 	}
 
-	void QueueReadResponse(u32 request_header, u32 request_offset_high, u32 value)
+	void QueueReadResponse(u32 request_header, u16 dest_node, u32 value)
 	{
 		const u32 tlabel = (request_header >> 10) & 0x3f;
-		const u32 dest_node = request_offset_high >> 16;
 		const u32 bus_id = dest_node >> 6;
 		if (FW_VERBOSE_LOGS)
 			DevCon.WriteLn("FW HLE: queue UBUF READQ_RESPONSE req_hdr=0x%x tlabel=0x%x dest_node=0x%x bus=0x%x value=0x%x", request_header, tlabel, dest_node, bus_id, value);
@@ -456,7 +455,7 @@ namespace
 		}
 	}
 
-	void LogRuntimePayloadPreview(const char* prefix, u32 offset_high, u32 offset_low, const u32* payload, u32 payload_quads, bool handled)
+	void LogRuntimePayloadPreview(const char* prefix, u64 offset, const u32* payload, u32 payload_quads, bool handled)
 	{
 		if (!FW_VERBOSE_LOGS || !ShouldLogLimited(s_remote_write_log_count, FW_REMOTE_WRITE_LOG_LIMIT))
 			return;
@@ -465,8 +464,8 @@ namespace
 		const u32 p1 = payload_quads > 1 ? payload[1] : 0;
 		const u32 p2 = payload_quads > 2 ? payload[2] : 0;
 		const u32 p3 = payload_quads > 3 ? payload[3] : 0;
-		DevCon.WriteLn("FW HLE: %s off_hi=0x%x off_low=0x%x payload_quads=0x%x handled=%u payload=%08x %08x %08x %08x",
-			prefix, offset_high & 0xffff, offset_low, payload_quads, handled ? 1 : 0, p0, p1, p2, p3);
+		DevCon.WriteLn("FW HLE: %s off=0x%llx payload_quads=0x%x handled=%u payload=%08x %08x %08x %08x",
+			prefix, offset, payload_quads, handled ? 1 : 0, p0, p1, p2, p3);
 	}
 
 	void LogPhtRequest(int channel)
@@ -494,12 +493,13 @@ namespace
 		const u32 base = channel == 0 ? FW_PHT_CTRL0 : FW_PHT_CTRL1;
 		const u32 hdr0 = fwRu32(base + 0x08);
 		const u32 hdr1 = fwRu32(base + 0x0c);
+		const u64 offset = ((hdr0 & 0xffffull) << 32) | hdr1;
 		const u32 payload_quads = (expected_bytes + 3) >> 2;
 		std::vector<u32> payload(payload_quads);
 		for (u32 i = 0; i < payload_quads; i++)
 			payload[i] = s_pht_tx_fifo[channel][i];
 
-		const bool handled = s_active_device && s_active_device->Write(hdr0, hdr1, payload.data(), payload_quads);
+		const bool handled = s_active_device && s_active_device->Write(offset, payload.data(), payload_quads);
 		if (ShouldLogLimited(s_pht_log_count, FW_DISCOVERY_LOG_LIMIT))
 		{
 			DevCon.WriteLn("FW HLE: PHT%d write complete node=0x%x off_hi=0x%x off_low=0x%x bytes=0x%x handled=%u",
@@ -545,8 +545,7 @@ namespace
 
 		if ((tcode == IEEE1394_TCODE_WRITEQ || tcode == IEEE1394_TCODE_WRITEB) && s_ubuf_tx_fifo.size() >= 4)
 		{
-			const u32 offset_high = s_ubuf_tx_fifo[1];
-			const u32 offset_low = s_ubuf_tx_fifo[2];
+			const u64 offset = ((s_ubuf_tx_fifo[1] & 0xffffull) << 32) | s_ubuf_tx_fifo[2];
 			const u32 payload_start = (tcode == IEEE1394_TCODE_WRITEQ) ? 3 : 4;
 			const u32 payload_quads = (s_ubuf_tx_fifo.size() > payload_start) ? static_cast<u32>(s_ubuf_tx_fifo.size() - payload_start) : 0;
 
@@ -557,8 +556,8 @@ namespace
 				for (u32 i = 0; i < payload_quads; i++)
 					payload[i] = ByteSwap32(s_ubuf_tx_fifo[payload_start + i]);
 
-				handled = s_active_device && s_active_device->Write(offset_high, offset_low, payload.data(), payload_quads);
-				LogRuntimePayloadPreview("UBUF write", offset_high, offset_low, payload.data(), payload_quads, handled);
+				handled = s_active_device && s_active_device->Write(offset, payload.data(), payload_quads);
+				LogRuntimePayloadPreview("UBUF write", offset, payload.data(), payload_quads, handled);
 				if (handled)
 					RaiseIntr0(FW_INTR0_PBCntR);
 			}
@@ -567,17 +566,17 @@ namespace
 		}
 		else if ((tcode == IEEE1394_TCODE_READQ || tcode == IEEE1394_TCODE_READB) && s_ubuf_tx_fifo.size() >= 3)
 		{
-			const u32 offset_high = s_ubuf_tx_fifo[1];
-			const u32 offset_low = s_ubuf_tx_fifo[2];
+			const u16 node = s_ubuf_tx_fifo[1] >> 16;
+			const u64 offset = ((s_ubuf_tx_fifo[1] & 0xffffull) << 32) | s_ubuf_tx_fifo[2];
 			u32 value = 0;
-			const bool handled = s_active_device && s_active_device->ReadQuadlet(offset_high, offset_low, &value);
+			const bool handled = s_active_device && s_active_device->ReadQuadlet(offset, &value);
 			if (FW_VERBOSE_LOGS && ShouldLogLimited(s_discovery_log_count, FW_DISCOVERY_LOG_LIMIT))
 			{
-				DevCon.WriteLn("FW HLE: UBUF read hdr=0x%x tlabel=0x%x node=0x%x off_hi=0x%x off_low=0x%x value=0x%x handled=%u",
-					header, (header >> 10) & 0x3f, offset_high >> 16, offset_high & 0xffff, offset_low, value, handled ? 1 : 0);
+				DevCon.WriteLn("FW HLE: UBUF read hdr=0x%x tlabel=0x%x node=0x%x off=0x%llx value=0x%x handled=%u",
+					header, (header >> 10) & 0x3f, node, offset, value, handled ? 1 : 0);
 			}
 			AckTransmit(IEEE1394_ACK_PEND);
-			QueueReadResponse(header, offset_high, value);
+			QueueReadResponse(header, node, value);
 		}
 
 		RaiseIntr1(FW_INTR1_UTD);

@@ -50,10 +50,8 @@ namespace
 	constexpr u32 KONAMI_BOOTROM_STATUS_OFFSET = 0x00090000;
 	constexpr u32 KONAMI_FSCI_STATUS_OFFSET = 0x000a0000;
 	constexpr u32 KONAMI_BBSRAM_NETWORK_ID_OFFSET = 0x686;
-	constexpr u32 KONAMI_CROM_BASE = 0xf0000400;
-	constexpr u32 KONAMI_BOOT_READY_OFFSET_HIGH = 0xfffd;
-	constexpr u32 KONAMI_BOOT_READY_OFFSET_LOW = 0x05735734;
-	constexpr u32 KONAMI_RUNTIME_READY_OFFSET_LOW = 0x05735730;
+	constexpr u64 KONAMI_RUNTIME_READY_OFFSET = 0xfffd'0573'5730;
+	constexpr u64 KONAMI_BOOT_READY_OFFSET = 0xfffd'0573'5734;
 	constexpr u32 KONAMI_NET_COMMAND_OFFSET_BASE = 0x180;
 	constexpr u32 KONAMI_NET_COMMAND_STRIDE = 0x20;
 	constexpr u32 KONAMI_NET_RESPONSE_OFFSET_BASE = 0x000b0000;
@@ -387,8 +385,8 @@ namespace
 	public:
 		bool Open(FireWire::FireWireDeviceHost& host) override;
 		void Close() override;
-		bool ReadQuadlet(u32 offset_high, u32 offset_low, u32* value) override;
-		bool Write(u32 offset_high, u32 offset_low, const u32* payload, u32 payload_quads) override;
+		bool ReadQuadlet(u64 offset, u32* value) override;
+		bool Write(u64 offset, const u32* payload, u32 payload_quads) override;
 		void ServiceEvents() override;
 		void MixAudio(s32* left, s32* right) override;
 
@@ -437,8 +435,8 @@ namespace
 
 	u32 ByteSwap32(u32 value);
 	u32 ReadBigEndian32(const u8* data);
-	bool TryReadKonamiQuadlet(u32 offset_high, u32 offset_low, u32* value);
-	bool TryHleKonamiCommand(u32 offset_low, const u32* payload, u32 payload_quads);
+	bool TryReadKonamiQuadlet(u64 offset, u32* value);
+	bool TryHleKonamiCommand(u64 offset, const u32* payload, u32 payload_quads);
 	void ServicePendingSectorStatusWrites();
 	void MixSubboardAdpcmAudio(s32* left, s32* right);
 	void SaveBbsramIfDirty();
@@ -1514,12 +1512,12 @@ namespace
 			StopSubboardAdpcmPlayback();
 	}
 
-	bool TryReadKonamiConfigRom(u32 offset_high, u32 offset_low, u32* value)
+	bool TryReadKonamiConfigRom(u64 offset, u32* value)
 	{
-		if ((offset_high & 0xffff) != 0xffff || offset_low < KONAMI_CROM_BASE)
+		if ((offset & ~0x3ffull) != FireWire::CROM_BASE)
 			return false;
 
-		const u32 relative_offset = offset_low - KONAMI_CROM_BASE;
+		const u32 relative_offset = offset - FireWire::CROM_BASE;
 		if ((relative_offset & 3) != 0)
 			return false;
 
@@ -1540,19 +1538,19 @@ namespace
 		return true;
 	}
 
-	bool TryReadKonamiQuadlet(u32 offset_high, u32 offset_low, u32* value)
+	bool TryReadKonamiQuadlet(u64 offset, u32* value)
 	{
-		if (TryReadKonamiConfigRom(offset_high, offset_low, value))
+		if (TryReadKonamiConfigRom(offset, value))
 			return true;
 
-		if ((offset_high & 0xffff) == KONAMI_BOOT_READY_OFFSET_HIGH && offset_low == KONAMI_BOOT_READY_OFFSET_LOW)
+		if (offset == KONAMI_BOOT_READY_OFFSET)
 		{
 			// Captured response to 0xfffd:0x05735734 immediately before the first CF command.
 			*value = 0x01000000;
 			return true;
 		}
 
-		if ((offset_high & 0xffff) == KONAMI_BOOT_READY_OFFSET_HIGH && offset_low == KONAMI_RUNTIME_READY_OFFSET_LOW)
+		if (offset == KONAMI_RUNTIME_READY_OFFSET)
 		{
 			// Captured runtime response to 0xfffd:0x05735730 before command traffic resumes.
 			*value = 0;
@@ -2526,11 +2524,11 @@ namespace
 		return WriteIopMemory(dest, report.data(), byte_count);
 	}
 
-	bool TryHleKonamiCommand(u32 offset_low, const u32* payload, u32 payload_quads)
+	bool TryHleKonamiCommand(u64 offset, const u32* payload, u32 payload_quads)
 	{
-		const u32 command_offset = offset_low & 0xfff;
+		const u32 command_offset = offset & 0xfff;
 		if (FW_VERBOSE_LOGS)
-			DevCon.WriteLn("FW HLE: TryHleKonamiCommand offset_low=0x%x command_offset=0x%x payload_quads=0x%x", offset_low, command_offset, payload_quads);
+			DevCon.WriteLn("FW HLE: TryHleKonamiCommand offset=0x%llx command_offset=0x%x payload_quads=0x%x", offset, command_offset, payload_quads);
 		if (command_offset != KONAMI_CF_COMMAND_OFFSET && command_offset != KONAMI_ATA_COMMAND_OFFSET && payload_quads >= 1)
 		{
 			if (HleNetCommand(command_offset, payload, payload_quads))
@@ -2690,14 +2688,14 @@ namespace
 		s_host = nullptr;
 	}
 
-	bool KonamiPython1Device::ReadQuadlet(u32 offset_high, u32 offset_low, u32* value)
+	bool KonamiPython1Device::ReadQuadlet(u64 offset, u32* value)
 	{
-		return TryReadKonamiQuadlet(offset_high, offset_low, value);
+		return TryReadKonamiQuadlet(offset, value);
 	}
 
-	bool KonamiPython1Device::Write(u32 offset_high, u32 offset_low, const u32* payload, u32 payload_quads)
+	bool KonamiPython1Device::Write(u64 offset, const u32* payload, u32 payload_quads)
 	{
-		return TryHleKonamiCommand(offset_low, payload, payload_quads);
+		return TryHleKonamiCommand(offset, payload, payload_quads);
 	}
 
 	void KonamiPython1Device::ServiceEvents()
