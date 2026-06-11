@@ -5119,6 +5119,8 @@ void FullscreenUI::DrawGameFixesSettingsPage()
 	DrawToggleSetting(bsi, FSUI_ICONSTR(ICON_FA_GAUGE, "Force Blit Internal FPS Detection"),
 		FSUI_CSTR("Use alternative method to calculate internal FPS to avoid false readings in some games."), "EmuCore/Gamefixes",
 		"BlitInternalFPSHack", false);
+	DrawToggleSetting(bsi, FSUI_ICONSTR(ICON_FA_VOLUME_HIGH, "Mix SPDIF and Analogue Audio output"),
+		FSUI_CSTR("Mixes S/PDIF bypass PCM with normal analogue SPU2 output."), "EmuCore/Gamefixes", "MixSpdifAnalogHack", false);
 
 	EndMenuButtons();
 }

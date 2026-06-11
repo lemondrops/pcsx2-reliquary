@@ -182,7 +182,7 @@ static void generateResponse(MemoryCardAuthState& auth)
 		Error error;
 		std::string path = Path::Canonicalize(EmuConfig.Security.MgChallengeIvFile);
 		auto fp = FileSystem::OpenManagedCFileTryIgnoreCase(path.c_str(), "rb", &error);
-		if (!fp || std::fread(challengeIV, 1, sizeof(challengeIV), fp.get()) == 0)
+		if (!fp || std::fread(challengeIV, 1, sizeof(challengeIV), fp.get()) != sizeof(challengeIV))
 		{
 			ERROR_LOG("Failed to read Challenge IV file at {}: {}", path, error.GetDescription());
 		}

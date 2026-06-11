@@ -341,14 +341,14 @@ namespace usb_python2
 		// configurations and then reorder file data if required.
 		// MAME format is 0x20 bytes for payload followed by 0x08 for serial.
 		// The format used in other dumps for Python 2 games is the reverse of that.
-		if (((~calc_crc8(temp, 0x1f, 0xff)) & 0xff) == temp[0x1f] && calc_crc8(temp + 0x20, 7, 0) == temp[0x27])
+		if (((~calc_crc8(temp, 0x1f, 0xff)) & 0xff) == temp[0x1f])
 		{
 			memcpy(payload, temp, 0x20);
 			memcpy(serial, temp + 0x20, 8);
 			DevCon.WriteLn("Dongle type MAME");
 			is_valid = true;
 		}
-		else if (calc_crc8(temp, 7, 0) == temp[7] && ((~calc_crc8(temp + 8, 0x1f, 0xff)) & 0xff) == temp[0x27])
+		else if (((~calc_crc8(temp + 8, 0x1f, 0xff)) & 0xff) == temp[0x27])
 		{
 			memcpy(serial, temp, 8);
 			memcpy(payload, temp + 8, 0x20);

@@ -94,12 +94,12 @@ void SettingsWindow::setupUi(const GameList::Entry* game)
 			addWidget(placeholder_label, tr("Summary"), QStringLiteral("file-list-line"), std::move(summary));
 		}
 
-		if (isPerGameSettings() && game && game->type == GameList::EntryType::Python1)
+		if (game && game->type == GameList::EntryType::Python1)
 		{
 			addWidget(m_python1_settings = new Python1SettingsWidget(game, this, m_ui.settingsContainer), tr("Python 1"), QStringLiteral("keyboard-line"),
 				tr("<strong>Python 1 Settings</strong><hr>These options control the settings specific to Python 1 games."));
 		}
-		else if (isPerGameSettings() && game && game->type == GameList::EntryType::Python2)
+		else if (game && game->type == GameList::EntryType::Python2)
 		{
 			addWidget(m_python2_settings = new Python2SettingsWidget(game, this, m_ui.settingsContainer), tr("Python 2"), QStringLiteral("keyboard-line"),
 				tr("<strong>Python 2 Settings</strong><hr>These options control the settings specific to Python 2 games."));

@@ -505,6 +505,7 @@ struct V_Core
 	s32 RevbGetIndexer(s32 offset);
 
 	StereoOut32 ReadInput();
+	StereoOut32 ReadSpdifBypass();
 	StereoOut32 ReadInput_HiFi();
 
 	// --------------------------------------------------------------------------
