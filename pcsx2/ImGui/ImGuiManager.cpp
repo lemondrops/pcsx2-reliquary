@@ -1,6 +1,12 @@
 // SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
+#ifdef HAVE_PARALLEL_GS
+#include "GS/Renderers/parallel-gs/GSRendererPGS.h"
+extern std::unique_ptr<GSRendererPGS> g_pgs_renderer;
+extern std::unique_ptr<GSDevicePGS> g_pgs_device;
+#endif
+
 #include "GS/Renderers/Common/GSDevice.h"
 #include "Config.h"
 #include "Counters.h"
@@ -137,7 +143,15 @@ bool ImGuiManager::Initialize()
 		return false;
 	}
 
-	s_global_scale = std::max(0.5f, g_gs_device->GetWindowScale() * (GSConfig.OsdScale / 100.0f));
+	float window_scale = 1.0f;
+	if (g_gs_device)
+		window_scale = g_gs_device->GetWindowScale();
+#ifdef HAVE_PARALLEL_GS
+	else if (g_pgs_renderer)
+		window_scale = g_pgs_device->GetWindowScale();
+#endif
+
+	s_global_scale = std::max(0.5f, window_scale * (GSConfig.OsdScale / 100.0f));
 	s_scale_changed = false;
 
 	ImGuiContext& g = *ImGui::CreateContext();
@@ -147,13 +161,38 @@ bool ImGuiManager::Initialize()
 	io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset | ImGuiBackendFlags_RendererHasTextures | ImGuiBackendFlags_HasGamepad;
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
 	io.KeyRepeatDelay = 0.5f;
+#ifdef __APPLE__
+	// For macOS we should use the standard macOS text editing shortcuts
+	io.ConfigMacOSXBehaviors = true;
+#endif
+
+	ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
+	platform_io.Platform_GetClipboardTextFn = [](ImGuiContext* ctx) -> const char* {
+		static thread_local std::string s_clipboard_text;
+		s_clipboard_text = Host::GetTextFromClipboard();
+		return s_clipboard_text.c_str();
+	};
+	platform_io.Platform_SetClipboardTextFn = [](ImGuiContext* ctx, const char* text) {
+		if (text)
+			Host::CopyTextToClipboard(text);
+	};
 
 	g.ConfigNavWindowingKeyNext = ImGuiKey_None;
 	g.ConfigNavWindowingKeyPrev = ImGuiKey_None;
 	g.ConfigNavWindowingWithGamepad = false;
 
-	s_window_width = static_cast<float>(g_gs_device->GetWindowWidth());
-	s_window_height = static_cast<float>(g_gs_device->GetWindowHeight());
+	if (g_gs_device)
+	{
+		s_window_width = static_cast<float>(g_gs_device->GetWindowWidth());
+		s_window_height = static_cast<float>(g_gs_device->GetWindowHeight());
+	}
+#ifdef HAVE_PARALLEL_GS
+	else if (g_pgs_device)
+	{
+		s_window_width = static_cast<float>(g_pgs_device->GetWindowWidth());
+		s_window_height = static_cast<float>(g_pgs_device->GetWindowHeight());
+	}
+#endif
 	io.DisplayFramebufferScale = ImVec2(1, 1); // We already scale things ourselves, this would double-apply scaling
 	io.DisplaySize = ImVec2(s_window_width, s_window_height);
 
@@ -202,7 +241,12 @@ void ImGuiManager::Shutdown(bool clear_state)
 	if (clear_state)
 		s_fullscreen_ui_was_initialized = false;
 
-	g_gs_device->DestroyImGuiTextures();
+	if (g_gs_device)
+		g_gs_device->DestroyImGuiTextures();
+#ifdef HAVE_PARALLEL_GS
+	else if (g_pgs_device)
+		g_pgs_device->DestroyImGuiTextures();
+#endif
 
 	if (ImGui::GetCurrentContext())
 		ImGui::DestroyContext();
@@ -227,8 +271,20 @@ float ImGuiManager::GetWindowHeight()
 
 void ImGuiManager::WindowResized()
 {
-	const u32 new_width = g_gs_device ? g_gs_device->GetWindowWidth() : 0;
-	const u32 new_height = g_gs_device ? g_gs_device->GetWindowHeight() : 0;
+	u32 new_width = 0, new_height = 0;
+
+	if (g_gs_device)
+	{
+		new_width = g_gs_device->GetWindowWidth();
+		new_height = g_gs_device->GetWindowHeight();
+	}
+#ifdef HAVE_PARALLEL_GS
+	else if (g_pgs_device)
+	{
+		new_width = g_pgs_device->GetWindowWidth();
+		new_height = g_pgs_device->GetWindowHeight();
+	}
+#endif
 
 	s_window_width = static_cast<float>(new_width);
 	s_window_height = static_cast<float>(new_height);
@@ -268,7 +324,15 @@ void ImGuiManager::ReloadFonts()
 
 void ImGuiManager::UpdateScale()
 {
-	const float window_scale = g_gs_device ? g_gs_device->GetWindowScale() : 1.0f;
+	float window_scale = 1.0f;
+
+	if (g_gs_device)
+		window_scale = g_gs_device->GetWindowScale();
+#ifdef HAVE_PARALLEL_GS
+	else if (g_pgs_device)
+		window_scale = g_pgs_device->GetWindowScale();
+#endif
+
 	const float scale = std::max(window_scale * (EmuConfig.GS.OsdScale / 100.0f), 0.5f);
 
 	if ((!ImGuiFullscreen::UpdateLayoutScale()) && scale == s_global_scale)
@@ -398,10 +462,10 @@ void ImGuiManager::SetKeyMap()
 	static constexpr KeyMapping mapping[] = {{ImGuiKey_LeftArrow, "Left"}, {ImGuiKey_RightArrow, "Right"}, {ImGuiKey_UpArrow, "Up"},
 		{ImGuiKey_DownArrow, "Down"}, {ImGuiKey_PageUp, "PageUp"}, {ImGuiKey_PageDown, "PageDown"}, {ImGuiKey_Home, "Home"},
 		{ImGuiKey_End, "End"}, {ImGuiKey_Insert, "Insert"}, {ImGuiKey_Delete, "Delete"}, {ImGuiKey_Backspace, "Backspace"},
-		{ImGuiKey_Space, "Space"}, {ImGuiKey_Enter, "Return"}, {ImGuiKey_Escape, "Escape"}, {ImGuiKey_LeftCtrl, "LeftCtrl", "Ctrl"},
-		{ImGuiKey_LeftShift, "LeftShift", "Shift"}, {ImGuiKey_LeftAlt, "LeftAlt", "Alt"}, {ImGuiKey_LeftSuper, "LeftSuper", "Super"},
+		{ImGuiKey_Space, "Space"}, {ImGuiKey_Enter, "Return"}, {ImGuiKey_Escape, "Escape"}, {ImGuiKey_LeftCtrl, "LeftCtrl", "Control"},
+		{ImGuiKey_LeftShift, "LeftShift", "Shift"}, {ImGuiKey_LeftAlt, "LeftAlt", "Alt"}, {ImGuiKey_LeftSuper, "Meta", "Super_L"},
 		{ImGuiKey_RightCtrl, "RightCtrl"}, {ImGuiKey_RightShift, "RightShift"}, {ImGuiKey_RightAlt, "RightAlt"},
-		{ImGuiKey_RightSuper, "RightSuper"}, {ImGuiKey_Menu, "Menu"}, {ImGuiKey_0, "0"}, {ImGuiKey_1, "1"}, {ImGuiKey_2, "2"},
+		{ImGuiKey_RightSuper, "Super_R"}, {ImGuiKey_Menu, "Menu"}, {ImGuiKey_0, "0"}, {ImGuiKey_1, "1"}, {ImGuiKey_2, "2"},
 		{ImGuiKey_3, "3"}, {ImGuiKey_4, "4"}, {ImGuiKey_5, "5"}, {ImGuiKey_6, "6"}, {ImGuiKey_7, "7"}, {ImGuiKey_8, "8"}, {ImGuiKey_9, "9"},
 		{ImGuiKey_A, "A"}, {ImGuiKey_B, "B"}, {ImGuiKey_C, "C"}, {ImGuiKey_D, "D"}, {ImGuiKey_E, "E"}, {ImGuiKey_F, "F"}, {ImGuiKey_G, "G"},
 		{ImGuiKey_H, "H"}, {ImGuiKey_I, "I"}, {ImGuiKey_J, "J"}, {ImGuiKey_K, "K"}, {ImGuiKey_L, "L"}, {ImGuiKey_M, "M"}, {ImGuiKey_N, "N"},
@@ -1122,14 +1186,45 @@ bool ImGuiManager::ProcessPointerAxisEvent(InputBindingKey key, float value)
 	return s_imgui_wants_mouse.load(std::memory_order_acquire);
 }
 
+static ImGuiKey GetModifierForKey(ImGuiKey key)
+{
+	static constexpr std::pair<ImGuiKey, ImGuiKey> modifier_map[] = {
+		{ImGuiKey_LeftCtrl, ImGuiMod_Ctrl},
+		{ImGuiKey_RightCtrl, ImGuiMod_Ctrl},
+		{ImGuiKey_LeftShift, ImGuiMod_Shift},
+		{ImGuiKey_RightShift, ImGuiMod_Shift},
+		{ImGuiKey_LeftAlt, ImGuiMod_Alt},
+		{ImGuiKey_RightAlt, ImGuiMod_Alt},
+		{ImGuiKey_LeftSuper, ImGuiMod_Super},
+		{ImGuiKey_RightSuper, ImGuiMod_Super},
+	};
+
+	for (const auto& [k, mod] : modifier_map)
+	{
+		if (key == k)
+			return mod;
+	}
+
+	return ImGuiKey_None;
+}
+
 bool ImGuiManager::ProcessHostKeyEvent(InputBindingKey key, float value)
 {
-	decltype(s_imgui_key_map)::iterator iter;
-	if (!ImGui::GetCurrentContext() || (iter = s_imgui_key_map.find(key.data)) == s_imgui_key_map.end())
+	if (!ImGui::GetCurrentContext())
+		return false;
+
+	const auto iter = s_imgui_key_map.find(key.data);
+	if (iter == s_imgui_key_map.end())
 		return false;
 
 	// still update state anyway
-	MTGS::RunOnGSThread([imkey = iter->second, down = (value != 0.0f)]() { ImGui::GetIO().AddKeyEvent(imkey, down); });
+	MTGS::RunOnGSThread([imkey = iter->second, down = (value != 0.0f)]() {
+		ImGuiIO& io = ImGui::GetIO();
+		io.AddKeyEvent(imkey, down);
+
+		if (const ImGuiKey mod = GetModifierForKey(imkey); mod != ImGuiKey_None)
+			io.AddKeyEvent(mod, down);
+	});
 
 	return s_imgui_wants_keyboard.load(std::memory_order_acquire);
 }
@@ -1218,7 +1313,9 @@ void ImGuiManager::DestroySoftwareCursorTextures()
 void ImGuiManager::UpdateSoftwareCursorTexture(u32 index)
 {
 	SoftwareCursor& sc = s_software_cursors[index];
-	if (sc.image_path.empty())
+
+	// TODO: Figure out how to deal with this in PGS.
+	if (sc.image_path.empty() || !g_gs_device)
 	{
 		sc.texture.reset();
 		return;

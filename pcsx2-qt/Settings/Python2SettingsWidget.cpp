@@ -65,23 +65,23 @@ Python2SettingsWidget::Python2SettingsWidget(const GameList::Entry* entry, Setti
 
 	// Nullable bools are weird so don't use BindWidgetToBoolSetting
 	const bool dipsw1Value = m_window->getBoolValue("Python2/Game", "DIPSW1", false).value();
-	connect(m_ui.dipsw1, QOverload<int>::of(&QCheckBox::stateChanged), this, [&](int state) { m_window->setBoolSettingValue("Python2/Game", "DIPSW1", state); });
+	connect(m_ui.dipsw1, QOverload<int>::of(&QCheckBox::stateChanged), this, [&](int state) { m_window->setBoolSettingValue("Python2/Game", "DIPSW1", state == Qt::Checked); });
 	m_ui.dipsw1->setCheckState(dipsw1Value ? Qt::CheckState::Checked : Qt::CheckState::Unchecked);
 
 	const bool dipsw2Value = m_window->getBoolValue("Python2/Game", "DIPSW2", false).value();
-	connect(m_ui.dipsw2, QOverload<int>::of(&QCheckBox::stateChanged), this, [&](int state) { m_window->setBoolSettingValue("Python2/Game", "DIPSW2", state); });
+	connect(m_ui.dipsw2, QOverload<int>::of(&QCheckBox::stateChanged), this, [&](int state) { m_window->setBoolSettingValue("Python2/Game", "DIPSW2", state == Qt::Checked); });
 	m_ui.dipsw2->setCheckState(dipsw2Value ? Qt::CheckState::Checked : Qt::CheckState::Unchecked);
 
 	const bool dipsw3Value = m_window->getBoolValue("Python2/Game", "DIPSW3", false).value();
-	connect(m_ui.dipsw3, QOverload<int>::of(&QCheckBox::stateChanged), this, [&](int state) { m_window->setBoolSettingValue("Python2/Game", "DIPSW3", state); });
+	connect(m_ui.dipsw3, QOverload<int>::of(&QCheckBox::stateChanged), this, [&](int state) { m_window->setBoolSettingValue("Python2/Game", "DIPSW3", state == Qt::Checked); });
 	m_ui.dipsw3->setCheckState(dipsw3Value ? Qt::CheckState::Checked : Qt::CheckState::Unchecked);
 
 	const bool dipsw4Value = m_window->getBoolValue("Python2/Game", "DIPSW4", false).value();
-	connect(m_ui.dipsw4, QOverload<int>::of(&QCheckBox::stateChanged), this, [&](int state) { m_window->setBoolSettingValue("Python2/Game", "DIPSW4", state); });
+	connect(m_ui.dipsw4, QOverload<int>::of(&QCheckBox::stateChanged), this, [&](int state) { m_window->setBoolSettingValue("Python2/Game", "DIPSW4", state == Qt::Checked); });
 	m_ui.dipsw4->setCheckState(dipsw4Value ? Qt::CheckState::Checked : Qt::CheckState::Unchecked);
 
 	const bool force31kHzValue = m_window->getBoolValue("Python2/Game", "Force31kHz", false).value();
-	connect(m_ui.force31khz, QOverload<int>::of(&QCheckBox::stateChanged), this, [&](int state) { m_window->setBoolSettingValue("Python2/Game", "Force31kHz", state); });
+	connect(m_ui.force31khz, QOverload<int>::of(&QCheckBox::stateChanged), this, [&](int state) { m_window->setBoolSettingValue("Python2/Game", "Force31kHz", state == Qt::Checked); });
 	m_ui.force31khz->setCheckState(force31kHzValue ? Qt::CheckState::Checked : Qt::CheckState::Unchecked);
 
 	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.patchFilePath, "Python2/Game", "PatchFile", "patches.pnach");

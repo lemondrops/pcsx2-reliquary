@@ -746,7 +746,7 @@ Pcsx2Config::GSOptions::GSOptions()
 	DisableShaderCache = false;
 	DisableFramebufferFetch = false;
 	DisableVertexShaderExpand = false;
-	SkipDuplicateFrames = false;
+	SkipDuplicateFrames = true;
 	OsdMessagesPos = OsdOverlayPos::TopLeft;
 	OsdPerformancePos = OsdOverlayPos::TopRight;
 	OsdShowSpeed = false;
@@ -778,6 +778,10 @@ Pcsx2Config::GSOptions::GSOptions()
 	HWMipmap = true;
 	HWAccurateAlphaTest = false;
 	HWAA1 = false;
+	UseDebugBlend = false;
+	HWROV = true;
+	HWROVLogging = false;
+	HWROVBarriersVK = false;
 
 	ManualUserHacks = false;
 	UserHacks_AlignSpriteX = false;
@@ -921,7 +925,22 @@ bool Pcsx2Config::GSOptions::OptionsAreEqual(const GSOptions& right) const
 		OpEqu(PGSDisableMipmaps) &&
 		OpEqu(PGSDisableReadbackSync) &&
 		OpEqu(PGSSharpBackbuffer) &&
-		OpEqu(PGSBlendDemotion);
+		OpEqu(PGSBlendDemotion) &&
+		OpEqu(PGSTVEmulation) &&
+		OpEqu(PGSCable) &&
+		OpEqu(PGSCompositeDecode) &&
+		OpEqu(PGSDisableAutoProgressive) &&
+		OpEqu(PGSDisableCRTCEnhancements) &&
+		OpEqu(PGSPhosphorPrimaries) &&
+		OpEqu(PGSPhosphorGamma) &&
+		OpEqu(PGSDisplayCalibration) &&
+		OpEqu(PGSPaperWhite) &&
+		OpEqu(PGSHighRefreshInsertion) &&
+		OpEqu(PGSApertureGrille) &&
+		OpEqu(PGSPhosphorBloom) &&
+		OpEqu(PGSExposure) &&
+		OpEqu(PGSScanlineSharpness) &&
+		OpEqu(PGSScanlineBreathing);
 }
 
 bool Pcsx2Config::GSOptions::operator!=(const GSOptions& right) const
@@ -1011,6 +1030,7 @@ void Pcsx2Config::GSOptions::LoadSave(SettingsWrapper& wrap)
 	SettingsWrapBitBool(HWSpinCPUForReadbacks);
 	SettingsWrapBitBoolEx(GPUPaletteConversion, "paltex");
 	SettingsWrapBitBoolEx(AutoFlushSW, "autoflush_sw");
+
 	SettingsWrapIntEnumEx(PGSSuperSampling, "pgsSuperSampling");
 	SettingsWrapBitBoolEx(PGSHighResScanout, "pgsHighResScanout");
 	SettingsWrapBitBoolEx(PGSSuperSampleTextures, "pgsSuperSampleTextures");
@@ -1018,6 +1038,22 @@ void Pcsx2Config::GSOptions::LoadSave(SettingsWrapper& wrap)
 	SettingsWrapBitBoolEx(PGSDisableReadbackSync, "pgsDisableReadbackSync");
 	SettingsWrapBitBoolEx(PGSSharpBackbuffer, "pgsSharpBackbuffer");
 	SettingsWrapBitBoolEx(PGSBlendDemotion, "pgsBlendDemotion");
+	SettingsWrapIntEnumEx(PGSTVEmulation, "pgsTVEmulation");
+	SettingsWrapIntEnumEx(PGSCable, "pgsCable");
+	SettingsWrapIntEnumEx(PGSCompositeDecode, "pgsCompositeDecode");
+	SettingsWrapBitBoolEx(PGSDisableAutoProgressive, "pgsDisableAutoProgressive");
+	SettingsWrapBitBoolEx(PGSDisableCRTCEnhancements, "pgsDisableCRTCEnhancements");
+	SettingsWrapIntEnumEx(PGSPhosphorPrimaries, "pgsPhosphorPrimaries");
+	SettingsWrapIntEnumEx(PGSPhosphorGamma, "pgsPhosphorGamma");
+	SettingsWrapIntEnumEx(PGSDisplayCalibration, "pgsDisplayCalibration");
+	SettingsWrapIntEnumEx(PGSPaperWhite, "pgsPaperWhite");
+	SettingsWrapBitBoolEx(PGSHighRefreshInsertion, "pgsHighRefreshInsertion");
+	SettingsWrapBitBoolEx(PGSApertureGrille, "pgsApertureGrille");
+	SettingsWrapIntEnumEx(PGSPhosphorBloom, "pgsPhosphorBloom");
+	SettingsWrapIntEnumEx(PGSExposure, "pgsExposure");
+	SettingsWrapIntEnumEx(PGSScanlineSharpness, "pgsScanlineSharpness");
+	SettingsWrapIntEnumEx(PGSScanlineBreathing, "pgsScanlineBreathing");
+
 	SettingsWrapBitBoolEx(PreloadFrameWithGSData, "preload_frame_with_gs_data");
 	SettingsWrapBitBoolEx(Mipmap, "mipmap");
 	SettingsWrapBitBoolEx(ManualUserHacks, "UserHacks");
@@ -1079,6 +1115,10 @@ void Pcsx2Config::GSOptions::LoadSave(SettingsWrapper& wrap)
 	SettingsWrapBitBoolEx(HWMipmap, "hw_mipmap");
 	SettingsWrapBitBool(HWAccurateAlphaTest);
 	SettingsWrapBitBool(HWAA1);
+	SettingsWrapBitBool(UseDebugBlend);
+	SettingsWrapBitBool(HWROV);
+	SettingsWrapBitBool(HWROVLogging);
+	SettingsWrapBitBool(HWROVBarriersVK);
 	SettingsWrapIntEnumEx(AccurateBlendingUnit, "accurate_blending_unit");
 	SettingsWrapIntEnumEx(TextureFiltering, "filter");
 	SettingsWrapIntEnumEx(TexturePreloading, "texture_preloading");
@@ -1461,7 +1501,8 @@ bool Pcsx2Config::DEV9Options::operator==(const DEV9Options& right) const
 		   OpEqu(EthHosts) &&
 
 		   OpEqu(HddEnable) &&
-		   OpEqu(HddFile);
+		   OpEqu(HddFile) &&
+		   OpEqu(HddIdFile);
 }
 
 void Pcsx2Config::DEV9Options::LoadIPHelper(u8* field, const std::string& setting)

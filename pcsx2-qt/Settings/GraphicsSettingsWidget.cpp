@@ -227,8 +227,10 @@ GraphicsSettingsWidget::GraphicsSettingsWidget(SettingsWindow* settings_dialog, 
 	//////////////////////////////////////////////////////////////////////////
 	// Advanced Settings
 	//////////////////////////////////////////////////////////////////////////
+	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_advanced.rov, "EmuCore/GS", "HWROV", true);
 	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_advanced.useBlitSwapChain, "EmuCore/GS", "UseBlitSwapChain", false);
 	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_advanced.useDebugDevice, "EmuCore/GS", "UseDebugDevice", false);
+	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_advanced.useDebugBlend, "EmuCore/GS", "UseDebugBlend", false);
 	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_advanced.disableMailboxPresentation, "EmuCore/GS", "DisableMailboxPresentation", false);
 	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_advanced.extendedUpscales, "EmuCore/GS", "ExtendedUpscalingMultipliers", false);
 	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_advanced.exclusiveFullscreenControl, "EmuCore/GS", "ExclusiveFullscreenControl", -1, -1);
@@ -242,6 +244,7 @@ GraphicsSettingsWidget::GraphicsSettingsWidget(SettingsWindow* settings_dialog, 
 	SettingWidgetBinder::BindWidgetToFloatSetting(sif, m_advanced.palFrameRate, "EmuCore/GS", "FrameRatePAL", 50.00f);
 	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_advanced.spinCPUDuringReadbacks, "EmuCore/GS", "HWSpinCPUForReadbacks", false);
 	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_advanced.spinGPUDuringReadbacks, "EmuCore/GS", "HWSpinGPUForReadbacks", false);
+	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_advanced.rovBarriersVK, "EmuCore/GS", "HWROVBarriersVK", false);
 	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_advanced.texturePreloading, "EmuCore/GS", "texture_preloading", static_cast<int>(TexturePreloadingLevel::Off));
 
 	setTabVisible(m_advanced_tab, QtHost::ShouldShowAdvancedSettings());
@@ -256,6 +259,21 @@ GraphicsSettingsWidget::GraphicsSettingsWidget(SettingsWindow* settings_dialog, 
 	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_pgs.pgsDisableReadbackSync, "EmuCore/GS", "pgsDisableReadbackSync", 0);
 	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_pgs.pgsSharpBackbuffer, "EmuCore/GS", "pgsSharpBackbuffer", 0);
 	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_pgs.pgsBlendDemotion, "EmuCore/GS", "pgsBlendDemotion", 0);
+	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_pgs.pgsTVEmulation, "EmuCore/GS", "pgsTVEmulation", 0);
+	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_pgs.pgsCable, "EmuCore/GS", "pgsCable", 0);
+	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_pgs.pgsCompositeDecode, "EmuCore/GS", "pgsCompositeDecode", 0);
+	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_pgs.pgsDisableAutoProgressive, "EmuCore/GS", "pgsDisableAutoProgressive", 0);
+	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_pgs.pgsDisableCRTCEnhancements, "EmuCore/GS", "pgsDisableCRTCEnhancements", 0);
+	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_pgs.pgsPhosphorPrimaries, "EmuCore/GS", "pgsPhosphorPrimaries", 0);
+	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_pgs.pgsPhosphorGamma, "EmuCore/GS", "pgsPhosphorGamma", 0);
+	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_pgs.pgsDisplayCalibration, "EmuCore/GS", "pgsDisplayCalibration", 0);
+	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_pgs.pgsPaperWhite, "EmuCore/GS", "pgsPaperWhite", 200);
+	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_pgs.pgsHighRefreshInsertion, "EmuCore/GS", "pgsHighRefreshInsertion", 0);
+	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_pgs.pgsApertureGrille, "EmuCore/GS", "pgsApertureGrille", 1);
+	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_pgs.pgsPhosphorBloom, "EmuCore/GS", "pgsPhosphorBloom", 100);
+	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_pgs.pgsExposure, "EmuCore/GS", "pgsExposure", 100);
+	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_pgs.pgsScanlineSharpness, "EmuCore/GS", "pgsScanlineSharpness", 50);
+	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_pgs.pgsScanlineBreathing, "EmuCore/GS", "pgsScanlineBreathing", 50);
 
 	//////////////////////////////////////////////////////////////////////////
 	// Non-trivial settings
@@ -424,10 +442,10 @@ GraphicsSettingsWidget::GraphicsSettingsWidget(SettingsWindow* settings_dialog, 
 
 	// Display tab
 	{
-		dialog()->registerWidgetHelp(m_display.widescreenPatches, tr("Enable Widescreen Patches"), tr("Unchecked"),
+		dialog()->registerWidgetHelp(m_display.widescreenPatches, tr("Apply Widescreen Patches"), tr("Unchecked"),
 			tr("Automatically loads and applies widescreen patches on game start. Can cause issues."));
 
-		dialog()->registerWidgetHelp(m_display.noInterlacingPatches, tr("Enable No-Interlacing Patches"), tr("Unchecked"),
+		dialog()->registerWidgetHelp(m_display.noInterlacingPatches, tr("Apply No-Interlacing Patches"), tr("Unchecked"),
 			tr("Automatically loads and applies no-interlacing patches on game start. Can cause issues."));
 
 		dialog()->registerWidgetHelp(m_display.disableInterlaceOffset, tr("Disable Interlace Offset"), tr("Unchecked"),
@@ -608,6 +626,68 @@ GraphicsSettingsWidget::GraphicsSettingsWidget(SettingsWindow* settings_dialog, 
 
 		dialog()->registerWidgetHelp(m_pgs.pgsDisableReadbackSync, tr("Disable readback sync"), tr("Unchecked"),
 			tr("Disables sync for readbacks. Eliminates stalls, but will probably break things. Used for perf debug."));
+
+		dialog()->registerWidgetHelp(m_pgs.pgsTVEmulation, tr("Analog emulation"), tr("Up to your taste"),
+			tr("Emulates an analog video signal generated by the console.<br>"
+			   "Raw RGB: Just the raw digital image as-is without any filtering. Might match a perfect RGB SCART cable?<br>"
+			   "Auto: Picks NTSC or PAL based on the game.<br>"
+			   "NTSC or PAL can force specific analog encoding (e.g. PAL at 60 Hz)."));
+
+		dialog()->registerWidgetHelp(m_pgs.pgsCable, tr("Cable emulation"), tr("Up to your taste"),
+			tr("Emulates behavior of a specific kind of analog cable.<br>"
+			   "Component: The highest quality analog cable. Only cable that supports progressive scan. Very slight blur to conform with BT.1358 spec.<br>"
+			   "S-Video: A composite signal where luma and chroma are separate signals. Chroma is smeared significantly.<br>"
+			   "Composite: The classic yellow cable. Introduces artifacts and smear.<br>"));
+
+		dialog()->registerWidgetHelp(m_pgs.pgsCompositeDecode, tr("Composite decoding"), tr("Up to your taste"),
+			tr("Implements different strategies for luma/chroma separation that TVs would have done back in the day.<br>"
+			   "Notch: Very basic filter circuit. Leads to blurrier image. Color fringing is expected.<br>"
+			   "3-line comb: Less blurry, but can artifact more. Color fringing is reduced.<br>"
+			   "3-line comb + notch: Blurrier, but fewer artifacts.<br>"));
+
+		dialog()->registerWidgetHelp(m_pgs.pgsDisableAutoProgressive, tr("Disable automatic progressive scan"), tr("Unchecked"),
+			tr("Only enables progressive scan output if the game specifically enables it. More authentic, but will probably just look worse."));
+
+		dialog()->registerWidgetHelp(m_pgs.pgsDisableCRTCEnhancements, tr("Disable CRTC enhancements"), tr("Unchecked"),
+			tr("Disables all hacks which aim to enhance the image clarity. More authentic, but will probably just look worse."));
+
+		dialog()->registerWidgetHelp(m_pgs.pgsPhosphorPrimaries, tr("CRT phosphor primaries"), tr("Up to your taste"),
+			tr("Auto: picks appropriate color primaries based on the game region.<br>"
+				"NTSC BT.601: SMPTE standard from the 80s which should match real-world TV phosphors.<br>"
+				"PAL BT.601: Based on EBU standard.<br>"
+				"NTSC 1953: Based on legacy spec from 1953. Apparently Japan kept this standard."));
+
+		dialog()->registerWidgetHelp(m_pgs.pgsPhosphorGamma, tr("CRT phosphor gamma"), tr("2.4"),
+			tr("Sets gamma response of the phosphors. BT.1886 calls for 2.4 as default on both NTSC and PAL."));
+
+		dialog()->registerWidgetHelp(m_pgs.pgsDisplayCalibration, tr("Display calibration"), tr("Depends on your display"),
+			tr("Configures how to map the emulated CRT light onto your display. For PQ, you can set a target MaxCLL. "
+			   "If your setup automatically tonemaps HDR, you can disable tonemapping and let the compositor/display take care of it."));
+
+		dialog()->registerWidgetHelp(m_pgs.pgsPaperWhite, tr("Paper white"), tr("200 nits"),
+			tr("Sets a rough target for how bright the image should be in HDR mode. For good results make sure there is ample headroom between paper white and MaxCLL target."));
+
+		dialog()->registerWidgetHelp(m_pgs.pgsHighRefreshInsertion, tr("High-refresh rate insertion (WARNING: do not use if sensitive to flickering)"), tr("Unchecked"),
+			tr("Highly experimental mode that aims to emulate quick phosphor decay by driving the display at its native refresh rate. "
+			   "Requires EXT_present_timing to work. If VRR is detected or the display is close to a multiple of the target refresh rate, "
+			   "multiple in-between frames are presented that aim to simulate phosphor decay. "
+			   "Can be interesting for interlaced games since old CRTs got de-interlacing for free this way. "
+			   "This approach will darken the overall image so HDR with higher paper white setting is recommended."));
+
+		dialog()->registerWidgetHelp(m_pgs.pgsApertureGrille, tr("Aperture grille"), tr("Unchecked"),
+			tr("Emulates the classic CRT TV look. Some phosphor blooming is added on top to blend the dots together."));
+
+		dialog()->registerWidgetHelp(m_pgs.pgsPhosphorBloom, tr("Phosphor bloom"), tr("Up to taste"),
+			tr("Adds a bloom effect."));
+
+		dialog()->registerWidgetHelp(m_pgs.pgsExposure, tr("Exposure"), tr("Up to taste"),
+			tr("Tunes the exposure."));
+
+		dialog()->registerWidgetHelp(m_pgs.pgsScanlineSharpness, tr("Gaussian scanline sharpness"), tr("Up to taste"),
+			tr("Tunes how focused the electron guns are."));
+
+		dialog()->registerWidgetHelp(m_pgs.pgsScanlineBreathing, tr("Scanline breathing"), tr("Up to taste"),
+			tr("Simulates behavior where intense scanlines become less focused."));
 	}
 
 	// Hardware Fixes tab
@@ -808,6 +888,12 @@ GraphicsSettingsWidget::GraphicsSettingsWidget(SettingsWindow* settings_dialog, 
 			tr("Overrides the driver's heuristics for enabling exclusive fullscreen, or direct flip/scanout.<br>"
 			   "Disallowing exclusive fullscreen may enable smoother task switching and overlays, but increase input latency."));
 
+		dialog()->registerWidgetHelp(
+			m_advanced.rov, tr("Rasterizer Ordered View"), tr("Checked"), tr("Enables Rasterizer Ordered View (ROV), which allows feedback loops to be executed with fewer draw calls. Can improve performance in feedback heavy games with higher accuracy settings."));
+
+		dialog()->registerWidgetHelp(m_advanced.rovBarriersVK, tr("ROV Barriers Vulkan"), tr("Unchecked"),
+			tr("Forces extra barriers when using ROV with Vulkan to fix graphical issues present in some games and hardware configurations."));
+
 		dialog()->registerWidgetHelp(m_advanced.disableMailboxPresentation, tr("Disable Mailbox Presentation"), tr("Unchecked"),
 			tr("Forces the use of FIFO over Mailbox presentation, i.e. double buffering instead of triple buffering. "
 			   "Usually results in worse frame pacing."));
@@ -815,8 +901,11 @@ GraphicsSettingsWidget::GraphicsSettingsWidget(SettingsWindow* settings_dialog, 
 		dialog()->registerWidgetHelp(m_advanced.extendedUpscales, tr("Extended Upscaling Multipliers"), tr("Unchecked"),
 			tr("Displays additional, very high upscaling multipliers dependent on GPU and driver capability."));
 
-		dialog()->registerWidgetHelp(m_advanced.useDebugDevice, tr("Enable Debug Device"), tr("Unchecked"),
+		dialog()->registerWidgetHelp(m_advanced.useDebugDevice, tr("Use Debug Device"), tr("Unchecked"),
 			tr("Enables API-level validation of graphics commands."));
+
+		dialog()->registerWidgetHelp(m_advanced.useDebugBlend, tr("Use Debug Blend"), tr("Unchecked"),
+			tr("Forces SW blending and disables several optimizations."));
 
 		dialog()->registerWidgetHelp(m_advanced.gsDownloadMode, tr("GS Download Mode"), tr("Accurate"),
 			tr("Skips synchronizing with the GS thread and host GPU for GS downloads. "
@@ -1051,6 +1140,7 @@ void GraphicsSettingsWidget::updateRendererDependentOptions()
 	const bool is_pgs = (type == GSRendererType::ParallelGS);
 	const bool is_auto = (type == GSRendererType::Auto);
 	const bool is_vk = (type == GSRendererType::VK);
+	const bool is_ogl = (type == GSRendererType::OGL);
 	const bool is_disable_barriers = (type == GSRendererType::Metal || type == GSRendererType::SW);
 	const bool hw_fixes = (is_hardware && m_hw.enableHWFixes && m_hw.enableHWFixes->checkState() == Qt::Checked);
 
@@ -1103,6 +1193,9 @@ void GraphicsSettingsWidget::updateRendererDependentOptions()
 
 	if (m_advanced.exclusiveFullscreenControl)
 		m_advanced.exclusiveFullscreenControl->setEnabled(is_auto || is_vk);
+
+	if (m_advanced.rov)
+		m_advanced.rov->setDisabled(!is_hardware || is_ogl);
 
 	// populate adapters
 	std::vector<GSAdapterInfo> adapters = GSGetAdapterInfo(type);

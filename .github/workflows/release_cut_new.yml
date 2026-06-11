@@ -214,6 +214,7 @@ jobs:
           gh release upload "${TAG_VAL}" ${{ github.WORKSPACE }}/ci-artifacts/out/*  --repo "${RELEASE_REPO}" --clobber
 
       - name: Publish Release
+        if: github.event_name != 'workflow_dispatch' || inputs.is_prerelease == 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           RELEASE_REPO: ${{ github.repository }}

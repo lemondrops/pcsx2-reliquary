@@ -454,8 +454,6 @@ void MainWindow::connectVMThreadSignals(EmuThread* thread)
 	connect(thread, &EmuThread::onCaptureStopped, this, &MainWindow::onCaptureStopped);
 	connect(thread, &EmuThread::onAchievementsLoginRequested, this, &MainWindow::onAchievementsLoginRequested);
 	connect(thread, &EmuThread::onAchievementsHardcoreModeChanged, this, &MainWindow::onAchievementsHardcoreModeChanged);
-	connect(thread, &EmuThread::onCoverDownloaderOpenRequested, this, &MainWindow::onToolsCoverDownloaderTriggered);
-	connect(thread, &EmuThread::onCreateMemoryCardOpenRequested, this, &MainWindow::onCreateMemoryCardOpenRequested);
 
 	connect(m_ui.actionReset, &QAction::triggered, this, &MainWindow::requestReset);
 	connect(m_ui.actionPause, &QAction::toggled, thread, &EmuThread::setVMPaused);
@@ -831,6 +829,26 @@ void MainWindow::saveStateToConfig()
 		changed = true;
 	}
 
+	if (Host::ContainsBaseSettingValue("UI", "MainWindowMaximized"))
+	{
+		const bool maximized = Host::GetBaseBoolSettingValue("UI", "MainWindowMaximized");
+		if (maximized != isMaximized())
+		{
+			Host::SetBaseBoolSettingValue("UI", "MainWindowMaximized", isMaximized());
+			changed = true;
+		}
+	}
+
+	if (Host::ContainsBaseSettingValue("UI", "MainWindowFullscreen"))
+	{
+		const bool fullscreen = Host::GetBaseBoolSettingValue("UI", "MainWindowFullscreen");
+		if (fullscreen != isFullScreen())
+		{
+			Host::SetBaseBoolSettingValue("UI", "MainWindowFullscreen", isFullScreen());
+			changed = true;
+		}
+	}
+
 	if (changed)
 		Host::CommitBaseSettingChanges();
 }
@@ -857,6 +875,24 @@ void MainWindow::restoreStateFromConfig()
 		{
 			QSignalBlocker sb(m_ui.actionViewStatusBar);
 			m_ui.actionViewStatusBar->setChecked(!m_ui.statusBar->isHidden());
+		}
+	}
+
+	{
+		if (Host::ContainsBaseSettingValue("UI", "MainWindowMaximized"))
+		{
+			const bool maximized = Host::GetBaseBoolSettingValue("UI", "MainWindowMaximized");
+			if (maximized)
+				showMaximized();
+		}
+	}
+
+	{
+		if (Host::ContainsBaseSettingValue("UI", "MainWindowFullscreen"))
+		{
+			const bool fullscreen = Host::GetBaseBoolSettingValue("UI", "MainWindowFullscreen");
+			if (fullscreen)
+				showFullScreen();
 		}
 	}
 }
@@ -1672,7 +1708,7 @@ void MainWindow::onStartFullscreenUITriggered()
 
 void MainWindow::onFullscreenUIStateChange(bool running)
 {
-	m_ui.actionStartFullscreenUI->setText(running ? tr("Stop Big Picture Mode") : tr("Start Big Picture Mode"));
+	m_ui.actionStartFullscreenUI->setText(running ? tr("Stop Big Picture Mode") : tr("Start Big Picture &Mode"));
 	m_ui.actionToolbarStartFullscreenUI->setText(running ? tr("Exit Big Picture", "In Toolbar") : tr("Big Picture", "In Toolbar"));
 }
 

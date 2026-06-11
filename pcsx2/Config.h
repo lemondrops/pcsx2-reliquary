@@ -403,9 +403,8 @@ enum class GSDumpCompressionMethod : u8
 enum class SavestateCompressionMethod : u8
 {
 	Uncompressed = 0,
-	Deflate64 = 1,
-	Zstandard = 2,
-	LZMA2 = 3
+	Deflate = 1,
+	Zstandard = 2
 };
 
 enum class SavestateCompressionLevel : u8
@@ -419,6 +418,7 @@ enum class SavestateCompressionLevel : u8
 enum class GSHardwareDownloadMode : u8
 {
 	Enabled,
+	EnabledForceFull,
 	NoReadbacks,
 	Unsynchronized,
 	Disabled
@@ -787,6 +787,7 @@ struct Pcsx2Config
 					PCRTCOverscan : 1,
 					IntegerScaling : 1,
 					UseDebugDevice : 1,
+					UseDebugBlend : 1,
 					UseBlitSwapChain : 1,
 					DisableShaderCache : 1,
 					DisableFramebufferFetch : 1,
@@ -818,8 +819,11 @@ struct Pcsx2Config
 					PreloadFrameWithGSData : 1,
 					Mipmap : 1,
 					HWMipmap : 1,
-					HWAccurateAlphaTest: 1,
+					HWAccurateAlphaTest : 1,
 					HWAA1 : 1,
+					HWROV : 1,
+					HWROVLogging : 1,
+					HWROVBarriersVK : 1,
 					ManualUserHacks : 1,
 					UserHacks_AlignSpriteX : 1,
 					UserHacks_CPUFBConversion : 1,
@@ -924,6 +928,7 @@ struct Pcsx2Config
 		u8 ShadeBoost_Saturation = DEFAULT_SHADEBOOST_SATURATION;
 		u8 ShadeBoost_Gamma = DEFAULT_SHADEBOOST_GAMMA;
 		u8 PNGCompressionLevel = 1;
+
 		u8 PGSSuperSampling = 0;
 		u8 PGSHighResScanout = 0;
 		u8 PGSDisableMipmaps = 0;
@@ -931,6 +936,21 @@ struct Pcsx2Config
 		u8 PGSSuperSampleTextures = 0;
 		u8 PGSSharpBackbuffer = 0;
 		u8 PGSBlendDemotion = 0;
+		u8 PGSTVEmulation = 0;
+		u8 PGSCable = 0;
+		u8 PGSCompositeDecode = 0;
+		u8 PGSDisableAutoProgressive = 0;
+		u8 PGSDisableCRTCEnhancements = 0;
+		u8 PGSPhosphorPrimaries = 0;
+		u8 PGSPhosphorGamma = 0;
+		u8 PGSDisplayCalibration = 0;
+		u16 PGSPaperWhite = 200;
+		u8 PGSHighRefreshInsertion = 0;
+		u8 PGSApertureGrille = 1;
+		u8 PGSPhosphorBloom = 100;
+		u8 PGSExposure = 100;
+		u8 PGSScanlineSharpness = 50;
+		u8 PGSScanlineBreathing = 50;
 
 		u16 SWExtraThreads = 2;
 		u16 SWExtraThreadsHeight = 4;

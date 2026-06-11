@@ -131,8 +131,6 @@ protected:
 
 	GSVertex m_v = {};
 	float m_q = 1.0f;
-	GSVector4i m_scissor_cull_min = {};
-	GSVector4i m_scissor_cull_max = {};
 	GSVector4i m_xyof = {};
 	int  m_used_buffers_idx = 0;
 	int m_current_buffer_idx = 0;
@@ -260,15 +258,15 @@ public:
 	{
 		EE_to_GS,
 		GS_to_GS,
-		GS_to_EE
+		GS_to_EE,
+		Clear
 	};
 
 	struct GSUploadQueue
 	{
 		GIFRegBITBLTBUF blit;
-		GSVector4i rect;
 		u64 draw;
-		bool zero_clear;
+		GSVector4i rect;
 		EEGS_TransferType transfer_type;
 	};
 
@@ -394,6 +392,7 @@ public:
 	PRIM_OVERLAP m_prim_overlap = PRIM_OVERLAP_UNKNOW;
 	std::vector<size_t> m_drawlist;
 	std::vector<GSVector4i> m_drawlist_bbox;
+	std::vector<GSVector4i> m_drawlist_bbox_tex;
 
 	struct GSPCRTCRegs
 	{
@@ -534,9 +533,14 @@ public:
 	bool TrianglesAreQuadsImpl();
 	bool TrianglesAreQuads(bool shuffle_check = false);
 	template <u32 primclass>
-	PRIM_OVERLAP GetPrimitiveOverlapDrawlistImpl(bool save_drawlist = false, bool save_bbox = false, float bbox_scale = 1.0f);
-	PRIM_OVERLAP GetPrimitiveOverlapDrawlist(bool save_drawlist = false, bool save_bbox = false, float bbox_scale = 1.0f);
+	PRIM_OVERLAP GetPrimitiveOverlapDrawlistImpl(bool save_drawlist = false, bool save_bbox = false,
+		float bbox_scale = 1.0f, u32* max_size = nullptr);
+	PRIM_OVERLAP GetPrimitiveOverlapDrawlist(bool save_drawlist = false, bool save_bbox = false,
+		float bbox_scale = 1.0f, u32* max_size = nullptr);
 	PRIM_OVERLAP PrimitiveOverlap(bool save_drawlist = false);
+	template <u32 primclass, bool fst>
+	void GetPrimitiveOverlapDrawlistTextureBBoxImpl(float bbox_scale = 1.0f);
+	void GetPrimitiveOverlapDrawlistTextureBBox(float bbox_scale = 1.0f);
 	bool SpriteDrawWithoutGaps();
 	void CalculatePrimitiveCoversWithoutGaps();
 	GIFRegTEX0 GetTex0Layer(u32 lod);

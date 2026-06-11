@@ -1,5 +1,7 @@
 ﻿#include "ddr_extio.h"
 
+#include "common/Console.h"
+
 namespace usb_python2
 {
 	enum
@@ -35,15 +37,12 @@ namespace usb_python2
 		if (!isOpen)
 			return;
 
-#if PCSX2_DEVBUILD
-		printf("EXTIO packet: ");
-		for (int i = 0; i < packet.size(); i++)
-			printf("%02x ", packet[i]);
-		printf("\n");
-#endif
-
 		if (packet.size() != 4)
 			return;
+
+#if PCSX2_DEVBUILD
+		DevCon.WriteLn("EXTIO packet: %02x %02x %02x %02x", packet[0], packet[1], packet[2], packet[3]);
+#endif
 
 		/*
 		* DDR:
