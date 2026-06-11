@@ -6,6 +6,8 @@
 #include "Common.h"
 #include "Host.h"
 
+#include "Input/InputManager.h"
+
 #include "common/Console.h"
 #include "common/FileSystem.h"
 #include "common/Path.h"
@@ -18,6 +20,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
@@ -29,6 +32,7 @@ namespace
 	constexpr u32 FW_CROM_LOG_LIMIT = 80;
 	constexpr u32 FW_SECTOR_LOG_LIMIT = 64;
 	constexpr u32 FW_RUNTIME_LOG_LIMIT = 256;
+	constexpr u32 FW_P1IO_OUTPUT_LOG_LIMIT = 8192;
 	constexpr u32 UART_RX_QUEUE_LIMIT = 0x400;
 	constexpr u32 UART_CALLBACK_BYTE_LIMIT = 38;
 	constexpr u64 KONAMI_STORAGE_READ_BYTES_PER_SECOND = 24ull * 1024 * 1024;
@@ -102,6 +106,7 @@ namespace
 	constexpr const char* PYTHON1_IO_MODE_EXTIO = "EXTIO";
 	constexpr const char* PYTHON1_IO_MODE_POPN = "POPN";
 	constexpr const char* P1IO_CONFIG_PREFIX = "P1IO_";
+	constexpr u32 P1IO_KEYBOARD_BIND_BASE = 0x1000;
 	// EE byte-swaps the JAMMA word, then maps source bit 8 to P1 bit 0x200.
 	constexpr u32 JAMMA_P1_JVS_PRESENT = 0x00010000;
 	constexpr u32 JAMMA_COIN1_COUNTER_BASE = 0xaa2c0698;
@@ -180,6 +185,7 @@ namespace
 		{"P2Button4", "P2 Button 4", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P2_BUTTON4, GenericInputBinding::Unknown},
 		{"P2Button5", "P2 Button 5", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P2_BUTTON5, GenericInputBinding::Unknown},
 		{"P2Button6", "P2 Button 6", nullptr, InputBindingInfo::Type::Button, P1IO_BIND_P2_BUTTON6, GenericInputBinding::Unknown},
+		{"Keyboard1", "Keyboard Player 1", nullptr, InputBindingInfo::Type::Keyboard, P1IO_KEYBOARD_BIND_BASE, GenericInputBinding::Unknown},
 	};
 
 	// P1IO's input report is still being documented, so keep the bit layout centralized.
@@ -319,6 +325,41 @@ namespace
 		bool filter_initialized = false;
 	};
 
+	struct Python1KeyboardKeyMapping
+	{
+		const char* host_name;
+		u8 ps2_set2_make;
+		bool extended = false;
+	};
+
+	struct Python1KeyboardKey
+	{
+		u8 ps2_set2_make = 0;
+		bool extended = false;
+
+		u32 Index() const { return static_cast<u32>(ps2_set2_make) | (extended ? 0x100u : 0); }
+	};
+
+	static constexpr Python1KeyboardKeyMapping PYTHON1_KEYBOARD_MAPPINGS[] = {
+		{"A", 0x1c}, {"B", 0x32}, {"C", 0x21}, {"D", 0x23}, {"E", 0x24}, {"F", 0x2b}, {"G", 0x34},
+		{"H", 0x33}, {"I", 0x43}, {"J", 0x3b}, {"K", 0x42}, {"L", 0x4b}, {"M", 0x3a}, {"N", 0x31},
+		{"O", 0x44}, {"P", 0x4d}, {"Q", 0x15}, {"R", 0x2d}, {"S", 0x1b}, {"T", 0x2c}, {"U", 0x3c},
+		{"V", 0x2a}, {"W", 0x1d}, {"X", 0x22}, {"Y", 0x35}, {"Z", 0x1a},
+		{"0", 0x45}, {"1", 0x16}, {"2", 0x1e}, {"3", 0x26}, {"4", 0x25}, {"5", 0x2e}, {"6", 0x36},
+		{"7", 0x3d}, {"8", 0x3e}, {"9", 0x46},
+		{"Return", 0x5a}, {"Escape", 0x76}, {"Backspace", 0x66}, {"Tab", 0x0d}, {"Space", 0x29},
+		{"Minus", 0x4e}, {"Equal", 0x55}, {"BracketLeft", 0x54}, {"BracketRight", 0x5b},
+		{"Backslash", 0x5d}, {"Semicolon", 0x4c}, {"Apostrophe", 0x52}, {"Agrave", 0x0e},
+		{"Comma", 0x41}, {"Period", 0x49}, {"Slash", 0x4a},
+		{"F1", 0x05}, {"F2", 0x06}, {"F3", 0x04}, {"F4", 0x0c}, {"F5", 0x03}, {"F6", 0x0b},
+		{"F7", 0x83}, {"F8", 0x0a}, {"F9", 0x01}, {"F10", 0x09}, {"F11", 0x78}, {"F12", 0x07},
+		{"Shift", 0x12}, {"Shift_r", 0x59}, {"Control", 0x14}, {"Alt", 0x11},
+		{"Henkan", 0x64}, {"Muhenkan", 0x67}, {"KatakanaHiragana", 0x13}, {"Yen", 0x6a}, {"Ro", 0x51},
+		{"Up", 0xf5}, {"Down", 0xf2}, {"Left", 0xeb}, {"Right", 0xf4},
+		{"Insert", 0x70, true}, {"Delete", 0x71, true}, {"Home", 0x6c, true}, {"End", 0x69, true},
+		{"PageUp", 0x7d, true}, {"PageDown", 0x7a, true}, {"NumpadReturn", 0x5a, true},
+	};
+
 	// Captured from the WE2K3 Python1 IO board's config-ROM reads in python1-boot-ioerror.nosy.
 	constexpr u32 KONAMI_IO_BOARD_CROM[] = {
 		0x0404a1a4, 0x31333934, 0x407d8002, 0x00000000, 0x00000000, 0x00053f04,
@@ -342,9 +383,14 @@ namespace
 		void SetBindingValue(u32 bind_index, float value);
 		void ResetBindingState();
 		u32 GetBindingState() const;
+		bool IsKeyboard1KeyPressed(Python1KeyboardKey key) const;
+		u32 PopKeyboard1Events(u8* dest, u32 max_events);
 
 	private:
 		std::atomic<u32> m_p1io_bind_state{0};
+		mutable std::mutex m_keyboard1_mutex;
+		std::array<bool, 0x200> m_keyboard1_pressed = {};
+		std::vector<u8> m_keyboard1_events;
 	};
 
 	FireWire::FireWireDeviceHost* s_host = nullptr;
@@ -371,10 +417,13 @@ namespace
 	u32 s_last_jamma_input_status = JAMMA_STATUS_NEUTRAL;
 	u32 s_last_p1io_bind_state = 0;
 	u32 s_p1io_coin_counters[2] = {};
+	u32 s_p1io_output_latch_byte = 0;
+	u32 s_p1io_memcard_slot = 1;
 	u32 s_crom_log_count;
 	u32 s_sector_read_log_count;
 	u32 s_runtime_log_count;
 	u32 s_p1io_log_count;
+	u32 s_p1io_output_log_count;
 	u64 s_next_sector_read_ready_cycle;
 	SubboardAdpcmPlayback s_subboard_adpcm;
 
@@ -520,6 +569,41 @@ namespace
 		QueueUartBytes(packet.data(), static_cast<u32>(packet.size()));
 	}
 
+	Python1KeyboardKey GetPython1KeyboardKeyForHostKey(u32 host_key_code)
+	{
+		for (const Python1KeyboardKeyMapping& mapping : PYTHON1_KEYBOARD_MAPPINGS)
+		{
+			const std::optional<u32> mapped_host_code = InputManager::ConvertHostKeyboardStringToCode(mapping.host_name);
+			if (mapped_host_code.has_value() && mapped_host_code.value() == host_key_code)
+				return {mapping.ps2_set2_make, mapping.extended};
+		}
+
+		return {};
+	}
+
+	void PushKeyboardMakeEvent(std::vector<u8>& events, Python1KeyboardKey key)
+	{
+		if (key.extended)
+			events.push_back(0xe0);
+		events.push_back(key.ps2_set2_make);
+	}
+
+	void PushKeyboardBreakEvent(std::vector<u8>& events, Python1KeyboardKey key)
+	{
+		if (key.extended)
+			events.push_back(0xe0);
+		events.push_back(0xf0);
+		events.push_back(key.ps2_set2_make);
+	}
+
+	std::array<u8, 9> BuildExternalIoStatusPayload(u8 device_id, u8 command)
+	{
+		std::array<u8, 9> status = {0x04};
+		if (device_id == 0x01 && command == 0x26 && s_device)
+			(void)s_device->PopKeyboard1Events(status.data() + 1, 8);
+		return status;
+	}
+
 	Python1IOMode GetPython1IOMode()
 	{
 		const std::string mode = Host::GetStringSettingValue(PYTHON1_GAME_CONFIG_SECTION, "IOMode", PYTHON1_IO_MODE_JVS);
@@ -647,8 +731,8 @@ namespace
 				case 0x26:
 				case 0x36:
 				{
-					const std::array<u8, 9> empty_cardunit_status = {0x04};
-					QueueExternalIoWrappedResponse(request, empty_cardunit_status.data(), static_cast<u32>(empty_cardunit_status.size()));
+					const std::array<u8, 9> status = BuildExternalIoStatusPayload(request[2], command);
+					QueueExternalIoWrappedResponse(request, status.data(), static_cast<u32>(status.size()));
 					break;
 				}
 				default:
@@ -2496,6 +2580,17 @@ namespace
 
 			if (command_offset == KONAMI_JAMMA_OUTPUT_COMMAND_OFFSET && payload_quads >= 8)
 			{
+				const u32 previous_latch = s_p1io_output_latch_byte;
+				s_p1io_output_latch_byte = payload[4] & 0xff;
+				if ((previous_latch & 0x05) == 0x05 && (s_p1io_output_latch_byte & 0x05) == 0x04)
+					s_p1io_memcard_slot ^= 1;
+				if (ShouldLogLimited(s_p1io_output_log_count, FW_P1IO_OUTPUT_LOG_LIMIT))
+				{
+					DevCon.WriteLn("FW HLE: P1IO output p0=0x%x p1=0x%x p2=0x%x p3=0x%x p4=0x%x p5=0x%x p6=0x%x p7=0x%x latch=0x%02x memcard_slot=%u",
+						payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6], payload[7],
+						s_p1io_output_latch_byte, s_p1io_memcard_slot);
+				}
+
 				if (s_jamma_input_dest == INVALID_JAMMA_INPUT_DEST)
 				{
 					if (ShouldLogLimited(s_p1io_log_count, 32))
@@ -2599,6 +2694,8 @@ namespace
 		s_jamma_input_dest = INVALID_JAMMA_INPUT_DEST;
 		s_last_jamma_input_status = JAMMA_STATUS_NEUTRAL;
 		s_last_p1io_bind_state = 0;
+		s_p1io_output_latch_byte = 0;
+		s_p1io_memcard_slot = 1;
 		s_p1io_coin_counters[0] = 0;
 		s_p1io_coin_counters[1] = 0;
 		s_pythonfs_formatted = false;
@@ -2608,6 +2705,7 @@ namespace
 		s_sector_read_log_count = 0;
 		s_runtime_log_count = 0;
 		s_p1io_log_count = 0;
+		s_p1io_output_log_count = 0;
 		s_next_sector_read_ready_cycle = 0;
 		return true;
 	}
@@ -2648,13 +2746,47 @@ namespace
 	float KonamiPython1Device::GetBindingValue(u32 bind_index) const
 	{
 		if (bind_index >= P1IO_BIND_COUNT)
-			return 0.0f;
+		{
+			if (bind_index < P1IO_KEYBOARD_BIND_BASE)
+				return 0.0f;
+
+			const Python1KeyboardKey key = GetPython1KeyboardKeyForHostKey(bind_index - P1IO_KEYBOARD_BIND_BASE);
+			return IsKeyboard1KeyPressed(key) ? 1.0f : 0.0f;
+		}
 
 		return (m_p1io_bind_state.load(std::memory_order_relaxed) & (1u << bind_index)) ? 1.0f : 0.0f;
 	}
 
 	void KonamiPython1Device::SetBindingValue(u32 bind_index, float value)
 	{
+		if (bind_index >= P1IO_KEYBOARD_BIND_BASE)
+		{
+			const Python1KeyboardKey key = GetPython1KeyboardKeyForHostKey(bind_index - P1IO_KEYBOARD_BIND_BASE);
+			if (key.ps2_set2_make == 0)
+				return;
+
+			const u32 key_index = key.Index();
+
+			std::lock_guard lock(m_keyboard1_mutex);
+			if (value >= 0.5f)
+			{
+				if (m_keyboard1_pressed[key_index])
+					return;
+
+				m_keyboard1_pressed[key_index] = true;
+				PushKeyboardMakeEvent(m_keyboard1_events, key);
+			}
+			else
+			{
+				if (!m_keyboard1_pressed[key_index])
+					return;
+
+				m_keyboard1_pressed[key_index] = false;
+				PushKeyboardBreakEvent(m_keyboard1_events, key);
+			}
+			return;
+		}
+
 		if (bind_index >= P1IO_BIND_COUNT)
 			return;
 
@@ -2668,13 +2800,44 @@ namespace
 	void KonamiPython1Device::ResetBindingState()
 	{
 		m_p1io_bind_state.store(0, std::memory_order_relaxed);
+		std::lock_guard lock(m_keyboard1_mutex);
+		m_keyboard1_pressed.fill(false);
+		m_keyboard1_events.clear();
 	}
 
 	u32 KonamiPython1Device::GetBindingState() const
 	{
 		return m_p1io_bind_state.load(std::memory_order_relaxed);
 	}
+
+	bool KonamiPython1Device::IsKeyboard1KeyPressed(Python1KeyboardKey key) const
+	{
+		if (key.ps2_set2_make == 0 || key.Index() >= m_keyboard1_pressed.size())
+			return false;
+
+		std::lock_guard lock(m_keyboard1_mutex);
+		return m_keyboard1_pressed[key.Index()];
+	}
+
+	u32 KonamiPython1Device::PopKeyboard1Events(u8* dest, u32 max_events)
+	{
+		std::lock_guard lock(m_keyboard1_mutex);
+		const u32 count = std::min<u32>(max_events, static_cast<u32>(m_keyboard1_events.size()));
+		std::copy_n(m_keyboard1_events.begin(), count, dest);
+		m_keyboard1_events.erase(m_keyboard1_events.begin(), m_keyboard1_events.begin() + count);
+		return count;
+	}
 } // namespace
+
+u32 FireWire::Devices::GetKonamiPython1P1IOLatchByte()
+{
+	return Host::GetStringSettingValue(PYTHON1_GAME_CONFIG_SECTION, "HddImageFile", "").empty() ? 0 : s_p1io_output_latch_byte;
+}
+
+u32 FireWire::Devices::GetKonamiPython1P1IOMemcardSlot()
+{
+	return Host::GetStringSettingValue(PYTHON1_GAME_CONFIG_SECTION, "HddImageFile", "").empty() ? 0 : s_p1io_memcard_slot;
+}
 
 namespace FireWire::Devices
 {

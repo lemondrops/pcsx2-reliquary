@@ -890,8 +890,8 @@ void InputManager::AddPadBindings(SettingsInterface& si, u32 pad_index, bool is_
 
 	for (const InputBindingInfo& bi : cinfo->bindings)
 	{
-		switch (bi.bind_type)
-		{
+			switch (bi.bind_type)
+			{
 			case InputBindingInfo::Type::Button:
 			case InputBindingInfo::Type::Axis:
 			case InputBindingInfo::Type::HalfAxis:
@@ -1484,6 +1484,14 @@ void InputManager::AddFireWireBindings(SettingsInterface& si, bool is_profile)
 						}},
 						bi.bind_type, si, FireWire::GetConfigSection(), bind_name.c_str(), is_profile);
 				}
+			}
+			break;
+
+			case InputBindingInfo::Type::Keyboard:
+			{
+				s_keyboard_event_callbacks.push_back([base = static_cast<u32>(bi.bind_index)](InputBindingKey key, float value) {
+					FireWire::SetDeviceBindValue(base + key.data, value);
+				});
 			}
 			break;
 

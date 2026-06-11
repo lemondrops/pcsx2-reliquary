@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "Common.h"
+#include "FireWire/Devices/KonamiPython1.h"
 #include "Host.h"
 #include "IopDma.h"
 #include "Recording/InputRecording.h"
@@ -21,6 +22,29 @@ std::deque<u8> g_Sio2FifoIn;
 std::deque<u8> g_Sio2FifoOut;
 
 Sio2 g_Sio2;
+
+namespace
+{
+	static constexpr u32 PYTHON1_SIO2_LOG_LIMIT = 8192;
+	u32 s_python1_sio2_log_count = 0;
+
+	bool IsPython1HleEnabled()
+	{
+		return !Host::GetStringSettingValue("Python1/Game", "HddImageFile", "").empty();
+	}
+
+	bool ShouldLogPython1Sio2Port2()
+	{
+		if (s_python1_sio2_log_count >= PYTHON1_SIO2_LOG_LIMIT)
+			return false;
+
+		if (!IsPython1HleEnabled())
+			return false;
+
+		s_python1_sio2_log_count++;
+		return true;
+	}
+} // namespace
 
 Sio2::Sio2() = default;
 Sio2::~Sio2() = default;
@@ -199,6 +223,11 @@ void Sio2::Pad()
 void Sio2::Multitap()
 {
 	const bool multitapEnabled = EmuConfig.Pad.IsMultitapPortEnabled(this->port);
+	const u8 commandByte = g_Sio2FifoIn.empty() ? 0xff : g_Sio2FifoIn.front();
+	const u8 selectByte = g_Sio2FifoIn.size() > 1 ? g_Sio2FifoIn[1] : 0xff;
+	if (this->port == 1 && ShouldLogPython1Sio2Port2())
+		DevCon.WriteLn("Python1 SIO2: port2 multitap cmd=0x%02x arg=0x%02x enabled=%u current_mc_slot=%u",
+			commandByte, selectByte, multitapEnabled ? 1 : 0, g_MultitapArr.at(this->port).GetMemcardSlot());
 	
 	// Update the third nibble with which ports have been accessed
 	if (this->CmdStat & CmdStat::ONE_PORT_OPEN)
@@ -248,8 +277,30 @@ void Sio2::Infrared()
 void Sio2::Memcard()
 {
 	MultitapProtocol& mtap = g_MultitapArr.at(this->port);
+	const u8 commandByte = g_Sio2FifoIn.empty() ? 0xff : g_Sio2FifoIn.front();
+	const u32 python1_p1io_latch = this->port == 1 ? FireWire::Devices::GetKonamiPython1P1IOLatchByte() : 0;
+	const bool python1_memcard = this->port == 1 && IsPython1HleEnabled();
+	const u8 memcard_slot = python1_memcard ? static_cast<u8>(FireWire::Devices::GetKonamiPython1P1IOMemcardSlot()) : mtap.GetMemcardSlot();
+	const bool python1_unimplemented_reader = python1_memcard && memcard_slot != 0;
+	if (this->port == 1 && ShouldLogPython1Sio2Port2())
+		DevCon.WriteLn("Python1 SIO2: port2 memcard cmd=0x%02x mtap_slot=%u selected_slot=%u p1io_latch=0x%02x present=%u",
+			commandByte, mtap.GetMemcardSlot(), memcard_slot, python1_p1io_latch,
+			!python1_unimplemented_reader && mcds[port][memcard_slot].IsPresent() ? 1 : 0);
 
-	mcd = &mcds[port][mtap.GetMemcardSlot()];
+	mcd = &mcds[port][memcard_slot];
+	if (python1_unimplemented_reader)
+	{
+		SetCmdStat(CmdStat::DISCONNECTED);
+		g_Sio2FifoOut.push_back(0xff);
+
+		while (!g_Sio2FifoIn.empty())
+		{
+			g_Sio2FifoIn.pop_front();
+			g_Sio2FifoOut.push_back(0xff);
+		}
+
+		return;
+	}
 
 	// Check if auto ejection is active. If so, set cmd stat to DISCONNECTED,
 	// and zero out the fifo to simulate dead air over the wire.
@@ -269,7 +320,6 @@ void Sio2::Memcard()
 
 	SetCmdStat(mcd->IsPresent() ? CmdStat::CONNECTED : CmdStat::DISCONNECTED);
 
-	const u8 commandByte = g_Sio2FifoIn.front();
 	g_Sio2FifoIn.pop_front();
 	const u8 responseByte = mcd->IsPresent() ? 0x00 : 0xff;
 	g_Sio2FifoOut.push_back(responseByte);
@@ -447,6 +497,22 @@ void Sio2::Write(u8 data)
 				this->Infrared();
 				break;
 			case SioMode::MEMCARD:
+				if (this->port == 1 && ShouldLogPython1Sio2Port2())
+				{
+					const u8 commandByte = g_Sio2FifoIn.empty() ? 0xff : g_Sio2FifoIn.front();
+					const u8 b0 = g_Sio2FifoIn.size() > 0 ? g_Sio2FifoIn[0] : 0xff;
+					const u8 b1 = g_Sio2FifoIn.size() > 1 ? g_Sio2FifoIn[1] : 0xff;
+					const u8 b2 = g_Sio2FifoIn.size() > 2 ? g_Sio2FifoIn[2] : 0xff;
+					const u8 b3 = g_Sio2FifoIn.size() > 3 ? g_Sio2FifoIn[3] : 0xff;
+					const u8 b4 = g_Sio2FifoIn.size() > 4 ? g_Sio2FifoIn[4] : 0xff;
+					const u8 b5 = g_Sio2FifoIn.size() > 5 ? g_Sio2FifoIn[5] : 0xff;
+					const u8 b6 = g_Sio2FifoIn.size() > 6 ? g_Sio2FifoIn[6] : 0xff;
+					const u8 b7 = g_Sio2FifoIn.size() > 7 ? g_Sio2FifoIn[7] : 0xff;
+					DevCon.WriteLn("Python1 SIO2: port2 memcard packet qpos=%u len=%u dma=%u cmd=0x%02x p1io_latch=0x%02x selector_bit=%u bytes=%02x %02x %02x %02x %02x %02x %02x %02x",
+						g_Sio2.queuePosition - 1, g_Sio2.commandLength, g_Sio2.dmaBlockSize,
+						commandByte, FireWire::Devices::GetKonamiPython1P1IOLatchByte(),
+						FireWire::Devices::GetKonamiPython1P1IOLatchByte() & 1, b0, b1, b2, b3, b4, b5, b6, b7);
+				}
 				this->Memcard();
 				break;
 			default:
