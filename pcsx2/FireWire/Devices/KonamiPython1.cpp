@@ -1853,9 +1853,7 @@ namespace
 			return false;
 
 		const u32 subop = payload[0];
-		const u32 raw_key = payload_quads > 1 ? payload[1] : 0;
-		// Serial probes can carry the selected slot in word 4; 0xffffffff means current key.
-		const u32 key = (subop == 0 && payload_quads > 4 && payload[4] != 0xffffffffu) ? payload[4] : raw_key;
+		const u32 key = payload_quads > 1 ? payload[1] : 0;
 		const u32 offset = payload_quads > 2 ? payload[2] : 0;
 		const u32 byte_count = payload_quads > 3 ? payload[3] : 0;
 		const u32 dest = payload_quads > 4 ? payload[4] : 0;
