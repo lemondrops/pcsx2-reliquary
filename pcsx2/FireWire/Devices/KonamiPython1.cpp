@@ -238,8 +238,8 @@ namespace
 		'G', 'E', 'C', '2', '7', 0x00, 0x00, 0x00,
 		0x20, 0x03, 'J', 'A', 'E', 0x00, 0x8f, 0x43,
 	};
-	constexpr u32 KONAMI_DEFAULT_DALLAS_KEY_RESPONSE[] = {
-		0x00000000, 0x5f040001, 0x00010000,
+	constexpr u8 KONAMI_DEFAULT_DALLAS_ID[] = {
+		0x14, 0x5f, 0x04, 0x00, 0x01, 0x00, 0x01, 0xef,
 	};
 	constexpr u32 KONAMI_DALLAS_NO_KEY_RESPONSE[] = {
 		0x01000000, 0x00000000, 0x00000000,
@@ -419,13 +419,14 @@ namespace
 	u8 s_bootrom[BOOTROM_SIZE];
 	std::vector<u32> s_io_config_rom;
 	u8 s_bbsram[BBSRAM_SIZE];
-	std::array<u32, 3> s_dallas_key_response;
 	std::array<std::array<u8, DALLAS_DONGLE_TOTAL_SIZE>, DALLAS_DONGLE_SLOT_COUNT> s_dallas_dongle_slots;
 	std::array<bool, DALLAS_DONGLE_SLOT_COUNT> s_dallas_dongle_loaded;
 	std::array<u8, sizeof(KONAMI_FACTORY_MAC)> s_factory_mac;
 	std::array<u8, KONAMI_FSCI_INITIAL_MAC_STREAM_SIZE> s_fsci_mac_stream;
 	u32 s_fsci_stream_offset;
+	bool s_bootrom_dirty;
 	bool s_bbsram_dirty;
+	bool s_dallas_dongle_dirty[DALLAS_DONGLE_SLOT_COUNT];
 	u32 s_jamma_input_dest = INVALID_JAMMA_INPUT_DEST;
 	u32 s_last_jamma_input_status = JAMMA_STATUS_NEUTRAL;
 	u32 s_last_p1io_bind_state = 0;
@@ -441,7 +442,9 @@ namespace
 	bool TryHleKonamiCommand(u32 offset_low, const u32* payload, u32 payload_quads);
 	void ServicePendingSectorStatusWrites();
 	void MixSubboardAdpcmAudio(s32* left, s32* right);
+	void SaveBootromIfDirty();
 	void SaveBbsramIfDirty();
+	void SaveDallasDongleIfDirty();
 	void CloseHddImageFile();
 	void ResetSubboardAdpcmPlayback();
 	bool IsPython1DogstationMode();
@@ -824,22 +827,26 @@ namespace
 			GetPython1GamePath("DongleWhiteFile", "PCSX2_FW_DONGLE_WHITE_FILE");
 	}
 
-	void SetDefaultDallasKeyResponse()
+	u8 CalculateDallasCrc8(const u8* data, u32 size, u8 crc)
 	{
-		s_dallas_key_response = {
-			KONAMI_DEFAULT_DALLAS_KEY_RESPONSE[0],
-			KONAMI_DEFAULT_DALLAS_KEY_RESPONSE[1],
-			KONAMI_DEFAULT_DALLAS_KEY_RESPONSE[2],
-		};
+		for (u32 index = 0; index < size; index++)
+		{
+			u8 in_byte = data[index];
+			for (u32 bit = 0; bit < 8; bit++)
+			{
+				const u8 mix = (crc ^ in_byte) & 1;
+				crc >>= 1;
+				if (mix != 0)
+					crc ^= 0x8c;
+				in_byte >>= 1;
+			}
+		}
+		return crc;
 	}
 
 	void SetDallasKeyResponseFromId(const u8* id)
 	{
-		s_dallas_key_response = {
-			0,
-			0x01u | (static_cast<u32>(id[0]) << 8) | (static_cast<u32>(id[1]) << 16) | (static_cast<u32>(id[2]) << 24),
-			static_cast<u32>(id[3]) | (static_cast<u32>(id[4]) << 8) | (static_cast<u32>(id[5]) << 16),
-		};
+		std::copy_n(id, 8, s_dallas_dongle_slots[0].data());
 	}
 
 	bool IsValidUnicastMac(const u8* mac)
@@ -957,38 +964,17 @@ namespace
 		return {{0, PackDallasSerialResponseWord(dongle.data()), PackDallasSerialResponseWord(dongle.data() + 4)}};
 	}
 
-	const u8* GetSelectedDallasBootromRecord()
-	{
-		const u8* record = s_bootrom + 0xf010;
-		for (u32 i = 0; i < 0x20; i++)
-		{
-			if (record[i] != 0xff)
-				return record;
-		}
-
-		return s_bootrom + 0xf030;
-	}
-
-	bool IsDallasDongleBoardKey(u32 slot)
-	{
-		if (slot >= DALLAS_DONGLE_SLOT_COUNT || !s_dallas_dongle_loaded[slot])
-			return false;
-
-		const u8* record = GetSelectedDallasBootromRecord();
-		return std::memcmp(s_dallas_dongle_slots[slot].data() + 1, record, 6) == 0;
-	}
-
 	std::optional<u32> GetDallasDongleSlotForKey(u32 key)
 	{
-		if (key == 0 || key > DALLAS_DONGLE_SLOT_COUNT)
+		if (key >= DALLAS_DONGLE_SLOT_COUNT)
 			return std::nullopt;
 
-		return key - 1;
+		return key;
 	}
 
 	void UpdateDallasKeyResponseFromBootrom()
 	{
-		SetDefaultDallasKeyResponse();
+		SetDallasKeyResponseFromId(KONAMI_DEFAULT_DALLAS_ID);
 		for (u32 offset = 0xf000; offset <= BOOTROM_SIZE - 0x20; offset += 0x20)
 		{
 			const u8* record = s_bootrom + offset;
@@ -1020,33 +1006,10 @@ namespace
 		return written == size;
 	}
 
-	u8 CalculateDallasCrc8(const u8* data, u32 size, u8 crc)
-	{
-		for (u32 index = 0; index < size; index++)
-		{
-			u8 in_byte = data[index];
-			for (u32 bit = 0; bit < 8; bit++)
-			{
-				const u8 mix = (crc ^ in_byte) & 1;
-				crc >>= 1;
-				if (mix != 0)
-					crc ^= 0x8c;
-				in_byte >>= 1;
-			}
-		}
-		return crc;
-	}
-
 	bool NormalizeDallasDongleData(const u8* raw, std::array<u8, DALLAS_DONGLE_TOTAL_SIZE>* output)
 	{
-		const bool mame_payload_valid =
-			((~CalculateDallasCrc8(raw, DALLAS_DONGLE_PAYLOAD_SIZE - 1, 0xff)) & 0xff) == raw[DALLAS_DONGLE_PAYLOAD_SIZE - 1];
-		const bool mame_payload_erased =
-			std::all_of(raw, raw + DALLAS_DONGLE_PAYLOAD_SIZE, [](u8 value) { return value == 0xff; });
-		const bool mame_serial_valid =
-			CalculateDallasCrc8(raw + DALLAS_DONGLE_PAYLOAD_SIZE, DALLAS_DONGLE_SERIAL_SIZE - 1, 0) == raw[DALLAS_DONGLE_TOTAL_SIZE - 1];
 		const bool mame_format =
-			(mame_payload_valid || mame_payload_erased) && mame_serial_valid;
+			CalculateDallasCrc8(raw + DALLAS_DONGLE_PAYLOAD_SIZE, DALLAS_DONGLE_SERIAL_SIZE - 1, 0) == raw[DALLAS_DONGLE_TOTAL_SIZE - 1];
 		if (mame_format)
 		{
 			std::memcpy(output->data(), raw + DALLAS_DONGLE_PAYLOAD_SIZE, DALLAS_DONGLE_SERIAL_SIZE);
@@ -1055,8 +1018,7 @@ namespace
 		}
 
 		const bool old_format =
-			CalculateDallasCrc8(raw, DALLAS_DONGLE_SERIAL_SIZE - 1, 0) == raw[DALLAS_DONGLE_SERIAL_SIZE - 1] &&
-			((~CalculateDallasCrc8(raw + DALLAS_DONGLE_SERIAL_SIZE, DALLAS_DONGLE_PAYLOAD_SIZE - 1, 0xff)) & 0xff) == raw[DALLAS_DONGLE_TOTAL_SIZE - 1];
+			CalculateDallasCrc8(raw, DALLAS_DONGLE_SERIAL_SIZE - 1, 0) == raw[DALLAS_DONGLE_SERIAL_SIZE - 1];
 		if (old_format)
 		{
 			std::memcpy(output->data(), raw, DALLAS_DONGLE_TOTAL_SIZE);
@@ -1097,6 +1059,7 @@ namespace
 		{
 			s_dallas_dongle_slots[slot].fill(0);
 			s_dallas_dongle_loaded[slot] = false;
+			s_dallas_dongle_dirty[slot] = false;
 
 			const std::string path = GetDallasDonglePath(slot);
 			if (path.empty())
@@ -1120,6 +1083,13 @@ namespace
 
 			s_dallas_dongle_loaded[slot] = true;
 		}
+
+		// Initialize internal Dallas if one wasn't loaded from file.
+		if (!s_dallas_dongle_loaded[0])
+		{
+			UpdateDallasKeyResponseFromBootrom();
+			s_dallas_dongle_loaded[0] = true;
+		}
 	}
 
 	void BuildGeneratedBootrom()
@@ -1132,6 +1102,8 @@ namespace
 
 	void LoadBootrom()
 	{
+		s_bootrom_dirty = false;
+
 		BuildGeneratedBootrom();
 
 		const std::string path = GetBootromPath();
@@ -1177,6 +1149,25 @@ namespace
 		std::fclose(file);
 	}
 
+	void SaveBootromIfDirty()
+	{
+		if (!s_bootrom_dirty)
+			return;
+
+		const std::string path = GetBootromPath();
+		if (path.empty())
+			return;
+
+		std::FILE* file = std::fopen(path.c_str(), "wb");
+		if (!file)
+			return;
+
+		const size_t written = std::fwrite(s_bootrom, 1, sizeof(s_bootrom), file);
+		std::fclose(file);
+		if (written == sizeof(s_bootrom))
+			s_bootrom_dirty = false;
+	}
+
 	void SaveBbsramIfDirty()
 	{
 		if (!s_bbsram_dirty)
@@ -1194,6 +1185,31 @@ namespace
 		std::fclose(file);
 		if (written == sizeof(s_bbsram))
 			s_bbsram_dirty = false;
+	}
+
+	void SaveDallasDongleIfDirty()
+	{
+		for (u32 slot = 0; slot < DALLAS_DONGLE_SLOT_COUNT; slot++)
+		{
+			if (!s_dallas_dongle_dirty[slot])
+				continue;
+
+			const std::string path = GetDallasDonglePath(slot);
+			if (path.empty())
+			{
+				DevCon.WriteLn("FW HLE: Dallas dongle slot=%u is dirty but has no associated file path", slot);
+				continue;
+			}
+
+			std::FILE* file = std::fopen(path.c_str(), "wb");
+			if (!file)
+				return;
+
+			const size_t written = std::fwrite(s_dallas_dongle_slots[slot].data(), 1, sizeof(s_dallas_dongle_slots[slot]), file);
+			std::fclose(file);
+			if (written == sizeof(s_dallas_dongle_slots[slot]))
+				s_dallas_dongle_dirty[slot] = false;
+		}
 	}
 
 	void CloseHddImageFile()
@@ -1843,29 +1859,27 @@ namespace
 		const u32 offset = payload_quads > 2 ? payload[2] : 0;
 		const u32 byte_count = payload_quads > 3 ? payload[3] : 0;
 		const u32 dest = payload_quads > 4 ? payload[4] : 0;
+
 		if (subop == 0)
 		{
-			const std::optional<u32> slot = (key == 0 || (key == 1 && offset == 0 && byte_count == 0)) ?
-				std::optional<u32>(0) : std::nullopt;
+			const std::optional<u32> slot = GetDallasDongleSlotForKey(key);
 			if (slot.has_value() && s_dallas_dongle_loaded[*slot])
 			{
 				std::array<u32, 3> response = BuildDallasDongleSerialResponse(*slot);
-				if (key != 0 && IsDallasDongleBoardKey(*slot))
-					response[0] = KONAMI_DALLAS_NO_KEY_RESPONSE[0];
 				QueuePendingDbufBlockWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, response.data(), static_cast<u32>(response.size()));
 				return true;
 			}
 
-			const bool probe_current_key = key == 0;
-			const u32* response = probe_current_key ? s_dallas_key_response.data() : KONAMI_DALLAS_NO_KEY_RESPONSE;
 			QueuePendingDbufBlockWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET,
-				response, static_cast<u32>(s_dallas_key_response.size()));
+				KONAMI_DALLAS_NO_KEY_RESPONSE,
+				static_cast<u32>(sizeof(KONAMI_DALLAS_NO_KEY_RESPONSE) / sizeof(KONAMI_DALLAS_NO_KEY_RESPONSE[0])));
 			return true;
 		}
 
 		if (subop == 1)
 		{
 			const std::optional<u32> slot = GetDallasDongleSlotForKey(key);
+
 			if (!slot.has_value() || !s_dallas_dongle_loaded[*slot] ||
 				offset > DALLAS_DONGLE_PAYLOAD_SIZE || byte_count > DALLAS_DONGLE_PAYLOAD_SIZE - offset)
 			{
@@ -1896,6 +1910,8 @@ namespace
 				QueuePendingDbufQuadWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, KONAMI_DALLAS_NO_KEY_RESPONSE[0]);
 				return true;
 			}
+			s_dallas_dongle_dirty[*slot] = true;
+			SaveDallasDongleIfDirty();
 			QueuePendingDbufQuadWrite(0xfffe, KONAMI_DALLAS_STATUS_OFFSET, 0);
 			return true;
 		}
@@ -2042,8 +2058,15 @@ namespace
 		{
 			if (byte_count != 0 && dest != 0)
 			{
-				if (!ReadIopMemory(dest, s_bootrom + offset, byte_count))
+				if (ReadIopMemory(dest, s_bootrom + offset, byte_count))
+				{
+					s_bootrom_dirty = true;
+					SaveBootromIfDirty();
+				}
+				else
+				{
 					DevCon.WriteLn("FW HLE: failed BOOTROM write DMA read src=0x%x bytes=0x%x", dest, byte_count);
+				}
 			}
 			QueuePendingDbufQuadWrite(0xfffe, KONAMI_BOOTROM_STATUS_OFFSET, 0x41000000);
 			return true;
@@ -2679,7 +2702,9 @@ namespace
 
 	void KonamiPython1Device::Close()
 	{
+		SaveBootromIfDirty();
 		SaveBbsramIfDirty();
+		SaveDallasDongleIfDirty();
 		CloseHddImageFile();
 		ResetSubboardAdpcmPlayback();
 		s_pending_sector_status_writes.clear();
