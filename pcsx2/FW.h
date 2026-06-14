@@ -23,6 +23,9 @@ void PHYWrite();
 void PHYRead();
 u32 FWread32(u32 addr);
 void FWwrite32(u32 addr, u32 value);
+
+void FWwriteDMA(u32* pMem, int size);
+
 void FWsectorReadStatusInterrupt();
 void FWmixSubboardAudio(s32* left, s32* right);
 
@@ -91,6 +94,9 @@ namespace FireWire
 #define   FW_PHT_CTRL_ERREQ      (1 << 17)
 #define   FW_PHT_CTRL_PHTRst     (1 << 21)
 #define FW_PHT_SPLIT0    (FW_BASE + 0x084)
+#define FW_PHT_REQ_HDR0  (FW_BASE + 0x088)
+#define FW_PHT_REQ_HDR1  (FW_BASE + 0x08c)
+#define FW_PHT_REQ_HDR2  (FW_BASE + 0x090)
 #define FW_CH_SEL_HI0    (FW_BASE + 0x094)
 #define FW_CH_SEL_LO0    (FW_BASE + 0x098)
 #define FW_DMA_CTRL0     (FW_BASE + 0x0b8)

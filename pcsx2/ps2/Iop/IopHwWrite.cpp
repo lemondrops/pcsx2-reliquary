@@ -360,23 +360,23 @@ static __fi void _HwWrite_16or32_Page1( u32 addr, T val )
 			// ------------------------------------------------------------------------
 			//
 
-			mcase(0x1f801088) :	// DMA0 CHCR -- MDEC IN
+			mcase(HWx_DMA0_CHCR) :	// DMA0 CHCR -- MDEC IN
 				// psx mode
 				HW_DMA0_CHCR = val;
 				psxDma0(HW_DMA0_MADR, HW_DMA0_BCR, HW_DMA0_CHCR);
 			break;
 
-			mcase(0x1f801098):	// DMA1 CHCR -- MDEC OUT
+			mcase(HWx_DMA1_CHCR):	// DMA1 CHCR -- MDEC OUT
 				// psx mode
 				HW_DMA1_CHCR = val;
 				psxDma1(HW_DMA1_MADR, HW_DMA1_BCR, HW_DMA1_CHCR);
 			break;
-			mcase(0x1f8010ac):
+			mcase(HWx_DMA2_TADR):
 				DevCon.Warning("SIF2 IOP TADR?? write");
 				psxHu(addr) = val;
 			break;
 
-			mcase(0x1f8010a8) :	// DMA2 CHCR -- GPU
+			mcase(HWx_DMA2_CHCR) :	// DMA2 CHCR -- GPU
 				// BIOS functions
 				// send_gpu_linked_list: [1F8010A8h]=1000401h
 				// gpu_abort_dma: [1F8010A8h]=401h
@@ -385,56 +385,71 @@ static __fi void _HwWrite_16or32_Page1( u32 addr, T val )
 				DmaExec(2);
 			break;
 
-			mcase(0x1f8010b8):	// DMA3 CHCR -- CDROM
+			mcase(HWx_DMA3_CHCR):	// DMA3 CHCR -- CDROM
 				psxHu(addr) = val;
 				DmaExec(3);
 			break;
 
-			mcase(0x1f8010c8):	// DMA4 CHCR -- SPU2 Core 1
+			mcase(HWx_DMA4_CHCR):	// DMA4 CHCR -- SPU2 Core 1
 				psxHu(addr) = val;
 				DmaExec(4);
 			break;
 
-			mcase(0x1f8010e8):	// DMA6 CHCR -- OT clear
+			mcase(HWx_DMA6_CHCR):	// DMA6 CHCR -- OT clear
 				psxHu(addr) = val;
 				DmaExec(6);
 			break;
 
-			mcase(0x1f801508):	// DMA7 CHCR -- SPU2 core 2
+			mcase(HWx_DMA7_CHCR):	// DMA7 CHCR -- SPU2 core 2
 				psxHu(addr) = val;
 				DmaExec2(7);
 			break;
 
-			mcase(0x1f801518):	// DMA8 CHCR -- DEV9
+			mcase(HWx_DMA8_CHCR):	// DMA8 CHCR -- DEV9
 				psxHu(addr) = val;
 				DmaExec2(8);
 			break;
 
-			mcase(0x1f801528):	// DMA9 CHCR -- SIF0
+			mcase(HWx_DMA9_CHCR):	// DMA9 CHCR -- SIF0
 				psxHu(addr) = val;
 				DmaExec2(9);
 			break;
 
-			mcase(0x1f801538):	// DMA10 CHCR -- SIF1
+			mcase(HWx_DMA10_CHCR):	// DMA10 CHCR -- SIF1
 				psxHu(addr) = val;
 				DmaExec2(10);
 			break;
 
 
-			mcase(0x1f801548):	// DMA11 CHCR -- SIO2 IN
+			mcase(HWx_DMA11_CHCR):	// DMA11 CHCR -- SIO2 IN
 				psxHu(addr) = val;
 				DmaExec2(11);
 			break;
 
-			mcase(0x1f801558):	// DMA12 CHCR -- SIO2 OUT
+			mcase(HWx_DMA12_CHCR):	// DMA12 CHCR -- SIO2 OUT
 				psxHu(addr) = val;
 				DmaExec2(12);
+			break;
+
+			mcase(HWx_DMA13_CHCR):	// DMA13 CHCR -- FW0
+				psxHu(addr) = val;
+				DmaExec3(13);
+			break;
+
+			mcase(HWx_DMA14_CHCR):	// DMA14 CHCR -- FW1
+				psxHu(addr) = val;
+				DmaExec3(14);
+			break;
+
+			mcase(HWx_DMA15_CHCR):	// DMA15 CHCR -- FW2
+				psxHu(addr) = val;
+				DmaExec3(15);
 			break;
 
 			// ------------------------------------------------------------------------
 			// DMA ICR handlers -- General XOR behavior!
 
-			mcase(0x1f8010f4):
+			mcase(0x1f8010f4): // ICR
 			{
 				//u32 tmp = (~val) & HW_DMA_ICR;
 				//u32 old = ((tmp ^ val) & 0xffffff) ^ tmp;
@@ -470,7 +485,7 @@ static __fi void _HwWrite_16or32_Page1( u32 addr, T val )
 			}
 			break;
 
-			mcase(0x1f801574):
+			mcase(0x1f801574): // ICR2
 			{
 				/*u32 tmp = (~val) & HW_DMA_ICR2;
 				psxHu(addr) = ((tmp ^ val) & 0xffffff) ^ tmp;*/
