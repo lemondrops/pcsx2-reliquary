@@ -104,7 +104,6 @@ namespace
 	constexpr u32 P1IO_KEYBOARD_BIND_BASE = 0x1000;
 	// EE byte-swaps the JAMMA word, then maps source bit 8 to P1 bit 0x200.
 	constexpr u32 JAMMA_P1_JVS_PRESENT = 0x00010000;
-	constexpr u32 JAMMA_COIN1_COUNTER_BASE = 0xaa2c0698;
 	// Captured neutral JAMMA status/DIP bytes. The present signal is in the input word above.
 	constexpr u32 JAMMA_STATUS_NEUTRAL = 0x0100ffff;
 	constexpr u32 JAMMA_ACTIVE_LOW_INPUT_MASK = 0x0000ffff;
@@ -237,7 +236,7 @@ namespace
 		0x20, 0x03, 'J', 'A', 'E', 0x00, 0x8f, 0x43,
 	};
 	constexpr u8 KONAMI_DEFAULT_DALLAS_ID[] = {
-		0x14, 0x5f, 0x04, 0x00, 0x01, 0x00, 0x01, 0xef,
+		0x5f, 0x04, 0x00, 0x01, 0x00, 0x01,
 	};
 	constexpr u32 KONAMI_DALLAS_NO_KEY_RESPONSE[] = {
 		0x01000000, 0x00000000, 0x00000000,
@@ -428,7 +427,7 @@ namespace
 	u32 s_jamma_input_dest = INVALID_JAMMA_INPUT_DEST;
 	u32 s_last_jamma_input_status = JAMMA_STATUS_NEUTRAL;
 	u32 s_last_p1io_bind_state = 0;
-	u32 s_p1io_coin_counters[2] = {};
+	u16 s_p1io_coin_counters[2] = {};
 	u32 s_p1io_output_latch_byte = 0;
 	u32 s_p1io_memcard_slot = 1;
 	u64 s_next_sector_read_ready_cycle;
@@ -844,7 +843,9 @@ namespace
 
 	void SetDallasKeyResponseFromId(const u8* id)
 	{
-		std::copy_n(id, 8, s_dallas_dongle_slots[0].data());
+		s_dallas_dongle_slots[0][0] = 0x14;
+		std::copy_n(id, 6, s_dallas_dongle_slots[0].data() + 1);
+		s_dallas_dongle_slots[0][7] = CalculateDallasCrc8(s_dallas_dongle_slots[0].data(), DALLAS_DONGLE_SERIAL_SIZE - 1, 0);
 	}
 
 	bool IsValidUnicastMac(const u8* mac)
@@ -973,7 +974,7 @@ namespace
 	void UpdateDallasKeyResponseFromBootrom()
 	{
 		SetDallasKeyResponseFromId(KONAMI_DEFAULT_DALLAS_ID);
-		for (u32 offset = 0xf000; offset <= BOOTROM_SIZE - 0x20; offset += 0x20)
+		for (u32 offset = 0xf000; offset <= BOOTROM_SIZE - 0x20; offset += 0x10)
 		{
 			const u8* record = s_bootrom + offset;
 			if (record[0x10] != 'G' || record[0x1a] != 'J' || record[0x1b] != 'A')
@@ -2529,7 +2530,7 @@ namespace
 		u32 source_bits, u32 jamma_status, bool include_jvs_present)
 	{
 		return {{
-			ByteSwap32(JAMMA_COIN1_COUNTER_BASE + s_p1io_coin_counters[0]), ByteSwap32(s_p1io_coin_counters[1]),
+			ByteSwap32(s_p1io_coin_counters[0]), ByteSwap32(s_p1io_coin_counters[1]),
 			0x00000000, 0x00000000,
 			ByteSwap32(source_bits) | (include_jvs_present ? JAMMA_P1_JVS_PRESENT : 0),
 			0x80000000, 0x00000000, 0x01020101,
@@ -2645,9 +2646,9 @@ namespace
 			QueuePendingDbufQuadWrite(0xfffe, KONAMI_CF_STATUS_OFFSET, 0);
 			return true;
 		}
-		if (command_offset == KONAMI_ATA_COMMAND_OFFSET && (subop == 0 || subop == 2) && HleReadSectors(sector, count, dest, KONAMI_ATA_STATUS_OFFSET))
+		if (command_offset == KONAMI_ATA_COMMAND_OFFSET && subop == 0 && HleReadSectors(sector, count, dest, KONAMI_ATA_STATUS_OFFSET))
 			return true;
-		if (command_offset == KONAMI_ATA_COMMAND_OFFSET && (subop == 1 || subop == 3) && HleWriteSectors(sector, count, dest, KONAMI_ATA_STATUS_OFFSET))
+		if (command_offset == KONAMI_ATA_COMMAND_OFFSET && subop == 2 && HleWriteSectors(sector, count, dest, KONAMI_ATA_STATUS_OFFSET))
 			return true;
 		if (command_offset == KONAMI_ATA_COMMAND_OFFSET && subop == 7)
 		{
