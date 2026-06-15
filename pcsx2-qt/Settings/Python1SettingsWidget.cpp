@@ -39,13 +39,13 @@ Python1SettingsWidget::Python1SettingsWidget(const GameList::Entry* entry, Setti
 	m_ui.ioConfigRomPath->setEnabled(true);
 	connect(m_ui.ioConfigRomBrowse, &QPushButton::clicked, this, &Python1SettingsWidget::onIoConfigRomBrowseClicked);
 
-	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.dongleBlackPath, "Python1/Game", "DongleBlackFile", "");
-	m_ui.dongleBlackPath->setEnabled(true);
-	connect(m_ui.dongleBlackBrowse, &QPushButton::clicked, this, &Python1SettingsWidget::onDongleBlackBrowseClicked);
+	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.internalDonglePath, "Python1/Game", "InternalDongleFile", "");
+	m_ui.internalDonglePath->setEnabled(true);
+	connect(m_ui.internalDongleBrowse, &QPushButton::clicked, this, &Python1SettingsWidget::onInternalDongleBrowseClicked);
 
-	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.dongleWhitePath, "Python1/Game", "DongleWhiteFile", "");
-	m_ui.dongleWhitePath->setEnabled(true);
-	connect(m_ui.dongleWhiteBrowse, &QPushButton::clicked, this, &Python1SettingsWidget::onDongleWhiteBrowseClicked);
+	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.externalDonglePath, "Python1/Game", "ExternalDongleFile", "");
+	m_ui.externalDonglePath->setEnabled(true);
+	connect(m_ui.externalDongleBrowse, &QPushButton::clicked, this, &Python1SettingsWidget::onExternalDongleBrowseClicked);
 
 	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.memoryCardDonglePath, "Python1/Game", "MemoryCardDongleFile", "");
 	m_ui.memoryCardDonglePath->setEnabled(true);
@@ -112,32 +112,32 @@ void Python1SettingsWidget::onIoConfigRomBrowseClicked()
 	m_ui.ioConfigRomPath->editingFinished();
 }
 
-void Python1SettingsWidget::onDongleBlackBrowseClicked()
+void Python1SettingsWidget::onInternalDongleBrowseClicked()
 {
 	QString path =
-		QDir::toNativeSeparators(QFileDialog::getOpenFileName(QtUtils::GetRootWidget(this), tr("Black Dongle File"),
-			!m_ui.dongleBlackPath->text().isEmpty() ? m_ui.dongleBlackPath->text() : QString(), tr("BIN (*.bin);;All Files (*)"), nullptr,
+		QDir::toNativeSeparators(QFileDialog::getOpenFileName(QtUtils::GetRootWidget(this), tr("Internal Dongle File"),
+			!m_ui.internalDonglePath->text().isEmpty() ? m_ui.internalDonglePath->text() : QString(), tr("BIN (*.bin);;All Files (*)"), nullptr,
 			QFileDialog::DontConfirmOverwrite));
 
 	if (path.isEmpty())
 		return;
 
-	m_ui.dongleBlackPath->setText(path);
-	m_ui.dongleBlackPath->editingFinished();
+	m_ui.internalDonglePath->setText(path);
+	m_ui.internalDonglePath->editingFinished();
 }
 
-void Python1SettingsWidget::onDongleWhiteBrowseClicked()
+void Python1SettingsWidget::onExternalDongleBrowseClicked()
 {
 	QString path =
-		QDir::toNativeSeparators(QFileDialog::getOpenFileName(QtUtils::GetRootWidget(this), tr("White Dongle File"),
-			!m_ui.dongleWhitePath->text().isEmpty() ? m_ui.dongleWhitePath->text() : QString(), tr("BIN (*.bin);;All Files (*)"), nullptr,
+		QDir::toNativeSeparators(QFileDialog::getOpenFileName(QtUtils::GetRootWidget(this), tr("External Dongle File"),
+			!m_ui.externalDonglePath->text().isEmpty() ? m_ui.externalDonglePath->text() : QString(), tr("BIN (*.bin);;All Files (*)"), nullptr,
 			QFileDialog::DontConfirmOverwrite));
 
 	if (path.isEmpty())
 		return;
 
-	m_ui.dongleWhitePath->setText(path);
-	m_ui.dongleWhitePath->editingFinished();
+	m_ui.externalDonglePath->setText(path);
+	m_ui.externalDonglePath->editingFinished();
 }
 
 void Python1SettingsWidget::onMemoryCardDongleBrowseClicked()

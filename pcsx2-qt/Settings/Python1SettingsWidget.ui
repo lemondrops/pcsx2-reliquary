@@ -101,34 +101,34 @@
        </widget>
       </item>
       <item row="4" column="0">
-       <widget class="QLabel" name="dongleBlackLabel">
+       <widget class="QLabel" name="internalDongleLabel">
         <property name="text">
-         <string>Black Dongle Path:</string>
+         <string>Internal Dongle Path:</string>
         </property>
        </widget>
       </item>
       <item row="4" column="1">
-       <widget class="QLineEdit" name="dongleBlackPath"/>
+       <widget class="QLineEdit" name="internalDonglePath"/>
       </item>
       <item row="4" column="2">
-       <widget class="QPushButton" name="dongleBlackBrowse">
+       <widget class="QPushButton" name="internalDongleBrowse">
         <property name="text">
          <string>Browse</string>
         </property>
        </widget>
       </item>
       <item row="5" column="0">
-       <widget class="QLabel" name="dongleWhiteLabel">
+       <widget class="QLabel" name="externalDongleLabel">
         <property name="text">
-         <string>White Dongle Path:</string>
+         <string>External Dongle Path:</string>
         </property>
        </widget>
       </item>
       <item row="5" column="1">
-       <widget class="QLineEdit" name="dongleWhitePath"/>
+       <widget class="QLineEdit" name="externalDonglePath"/>
       </item>
       <item row="5" column="2">
-       <widget class="QPushButton" name="dongleWhiteBrowse">
+       <widget class="QPushButton" name="externalDongleBrowse">
         <property name="text">
          <string>Browse</string>
         </property>

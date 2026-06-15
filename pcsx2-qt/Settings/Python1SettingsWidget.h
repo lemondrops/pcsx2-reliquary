@@ -23,8 +23,8 @@ private Q_SLOTS:
 	void onBbsramBrowseClicked();
 	void onIoBootRomBrowseClicked();
 	void onIoConfigRomBrowseClicked();
-	void onDongleBlackBrowseClicked();
-	void onDongleWhiteBrowseClicked();
+	void onInternalDongleBrowseClicked();
+	void onExternalDongleBrowseClicked();
 	void onMemoryCardDongleBrowseClicked();
 	void onMemoryCardIdBrowseClicked();
 

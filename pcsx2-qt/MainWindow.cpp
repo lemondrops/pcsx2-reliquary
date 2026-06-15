@@ -3760,13 +3760,13 @@ bool MainWindow::verifyPython1Configuration(const GameList::Entry* entry)
 	if (!memoryCardIdPath.empty() && !FileSystem::FileExists(memoryCardIdPath.c_str()))
 		Console.Error("Could not find Python 1 memory card ID file: '%s'", memoryCardIdPath.c_str());
 
-	const std::string dongleBlackPath = si->GetStringValue("Python1/Game", "DongleBlackFile", "");
-	if (!dongleBlackPath.empty() && !FileSystem::FileExists(dongleBlackPath.c_str()))
-		Console.Error("Could not find black Python 1 dongle file: '%s'", dongleBlackPath.c_str());
+	const std::string internalDonglePath = si->GetStringValue("Python1/Game", "InternalDongleFile", "");
+	if (!internalDonglePath.empty() && !FileSystem::FileExists(internalDonglePath.c_str()))
+		Console.Error("Could not find internal Python 1 dongle file: '%s'", internalDonglePath.c_str());
 
-	const std::string dongleWhitePath = si->GetStringValue("Python1/Game", "DongleWhiteFile", "");
-	if (!dongleWhitePath.empty() && !FileSystem::FileExists(dongleWhitePath.c_str()))
-		Console.Error("Could not find white Python 1 dongle file: '%s'", dongleWhitePath.c_str());
+	const std::string externalDonglePath = si->GetStringValue("Python1/Game", "ExternalDongleFile", "");
+	if (!externalDonglePath.empty() && !FileSystem::FileExists(externalDonglePath.c_str()))
+		Console.Error("Could not find external Python 1 dongle file: '%s'", externalDonglePath.c_str());
 
 	return valid;
 }

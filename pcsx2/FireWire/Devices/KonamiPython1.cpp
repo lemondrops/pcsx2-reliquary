@@ -927,8 +927,8 @@ namespace
 	std::string GetDallasDonglePath(u32 slot)
 	{
 		return slot == 0 ?
-			GetPython1GamePath("DongleBlackFile", "PCSX2_FW_DONGLE_BLACK_FILE") :
-			GetPython1GamePath("DongleWhiteFile", "PCSX2_FW_DONGLE_WHITE_FILE");
+			GetPython1GamePath("InternalDongleFile", "PCSX2_FW_INTERNAL_DONGLE_FILE") :
+			GetPython1GamePath("ExternalDongleFile", "PCSX2_FW_EXTERNAL_DONGLE_FILE");
 	}
 
 	u8 CalculateDallasCrc8(const u8* data, u32 size, u8 crc)

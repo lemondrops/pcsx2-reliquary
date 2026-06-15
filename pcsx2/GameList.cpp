@@ -521,8 +521,8 @@ bool GameList::GetPython1ListEntry(const std::string& path, GameList::Entry* ent
 	const std::string bbsram_path = GetRelativeGameIniPath(path, *new_interface, "BBSRamPath");
 	const std::string io_bootrom_path = GetRelativeGameIniPath(path, *new_interface, "IOBootRomPath");
 	const std::string io_config_rom_path = GetRelativeGameIniPath(path, *new_interface, "IOConfigRomPath");
-	const std::string dongle_black_path = GetRelativeGameIniPath(path, *new_interface, "DongleBlackPath");
-	const std::string dongle_white_path = GetRelativeGameIniPath(path, *new_interface, "DongleWhitePath");
+	const std::string internal_dongle_path = GetRelativeGameIniPath(path, *new_interface, "InternalDonglePath");
+	const std::string external_dongle_path = GetRelativeGameIniPath(path, *new_interface, "ExternalDonglePath");
 	const std::string memory_card_dongle_path = GetRelativeGameIniPath(path, *new_interface, "MemoryCardDonglePath");
 	const std::string memory_card_id_path = GetRelativeGameIniPath(path, *new_interface, "MemoryCardIdPath");
 	std::string io_mode = new_interface->GetStringValue("Game", "IOMode", "JVS");
@@ -557,8 +557,8 @@ bool GameList::GetPython1ListEntry(const std::string& path, GameList::Entry* ent
 	sif->SetStringValue("Python1/Game", "BBSRamFile", bbsram_path.c_str());
 	sif->SetStringValue("Python1/Game", "IOBootRomFile", io_bootrom_path.c_str());
 	sif->SetStringValue("Python1/Game", "IOConfigRomFile", io_config_rom_path.c_str());
-	sif->SetStringValue("Python1/Game", "DongleBlackFile", dongle_black_path.c_str());
-	sif->SetStringValue("Python1/Game", "DongleWhiteFile", dongle_white_path.c_str());
+	sif->SetStringValue("Python1/Game", "InternalDongleFile", internal_dongle_path.c_str());
+	sif->SetStringValue("Python1/Game", "ExternalDongleFile", external_dongle_path.c_str());
 	sif->SetStringValue("Python1/Game", "MemoryCardDongleFile", memory_card_dongle_path.c_str());
 	sif->SetStringValue("Python1/Game", "MemoryCardIdFile", memory_card_id_path.c_str());
 	sif->SetStringValue("Python1/Game", "IOMode", io_mode.c_str());
