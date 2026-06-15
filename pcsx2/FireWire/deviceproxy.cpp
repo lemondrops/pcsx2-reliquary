@@ -8,6 +8,7 @@
 #include "Host.h"
 
 #include "common/SettingsInterface.h"
+#include "common/StringUtil.h"
 
 #include <algorithm>
 
@@ -18,10 +19,12 @@ namespace FireWire
 		constexpr const char* FIREWIRE_CONFIG_SECTION = "FireWire";
 		constexpr const char* FIREWIRE_DEVICE_KEY = "Device";
 		constexpr const char* FIREWIRE_DEVICE_NONE = "None";
-		constexpr const char* FIREWIRE_DEFAULT_DEVICE = "KonamiPython1";
+		constexpr const char* FIREWIRE_DEFAULT_DEVICE = FIREWIRE_DEVICE_NONE;
+		constexpr const char* FIREWIRE_P1IO_DEVICE = "KonamiPython1";
 
 		const FireWireDeviceProxy* s_active_device_proxy = nullptr;
 		FireWireDevice* s_active_device = nullptr;
+		std::string s_config_device_override;
 	}
 
 	RegisterDevice* RegisterDevice::s_register_device = nullptr;
@@ -190,14 +193,25 @@ namespace FireWire
 		si.SetStringValue(FIREWIRE_CONFIG_SECTION, FIREWIRE_DEVICE_KEY, devname ? devname : FIREWIRE_DEFAULT_DEVICE);
 	}
 
+	void SetConfigDeviceOverride(const char* devname)
+	{
+		s_config_device_override = devname ? devname : "";
+	}
+
 	static const FireWireDeviceProxy* GetDefaultDeviceProxy()
 	{
 		return RegisterDevice::instance().Device(FIREWIRE_DEFAULT_DEVICE);
 	}
 
+	static const FireWireDeviceProxy* GetP1IODeviceProxy()
+	{
+		return RegisterDevice::instance().Device(FIREWIRE_P1IO_DEVICE);
+	}
+
 	static const FireWireDeviceProxy* GetConfiguredDeviceProxy(const SettingsInterface* si)
 	{
-		const std::string device = si ? GetConfigDevice(*si) : Host::GetStringSettingValue(FIREWIRE_CONFIG_SECTION, FIREWIRE_DEVICE_KEY, FIREWIRE_DEFAULT_DEVICE);
+		const std::string device = !s_config_device_override.empty() ? s_config_device_override :
+			(si ? GetConfigDevice(*si) : Host::GetStringSettingValue(FIREWIRE_CONFIG_SECTION, FIREWIRE_DEVICE_KEY, FIREWIRE_DEFAULT_DEVICE));
 		if (device == FIREWIRE_DEVICE_NONE)
 			return nullptr;
 
@@ -214,6 +228,18 @@ namespace FireWire
 	std::string GetConfigSubKey(const SettingsInterface& si, std::string_view bind_name)
 	{
 		const FireWireDeviceProxy* proxy = GetConfiguredDeviceProxy(&si);
+		if (proxy && proxy->TypeName() == std::string_view(FIREWIRE_P1IO_DEVICE))
+		{
+			std::string key = GetP1IOConfigSubKey(si, bind_name);
+			const std::string legacy_key = GetP1IOLegacyConfigSubKey(bind_name);
+			const std::string io_mode = si.GetStringValue("Python1/Game", "IOMode", "JVS");
+			const bool is_jvs = !StringUtil::compareNoCase(io_mode, "EXTIO") && !StringUtil::compareNoCase(io_mode, "POPN") &&
+				!StringUtil::compareNoCase(io_mode, "DOGSTATION");
+			if (is_jvs && !si.ContainsValue(FIREWIRE_CONFIG_SECTION, key.c_str()) && si.ContainsValue(FIREWIRE_CONFIG_SECTION, legacy_key.c_str()))
+				key = legacy_key;
+			return key;
+		}
+
 		return proxy ? proxy->BindingConfigKey(bind_name) : std::string(bind_name);
 	}
 
@@ -299,7 +325,7 @@ namespace FireWire
 
 	std::span<const InputBindingInfo> GetP1IOBindings()
 	{
-		return GetDeviceBindings(FIREWIRE_DEFAULT_DEVICE);
+		return GetDeviceBindings(FIREWIRE_P1IO_DEVICE);
 	}
 
 	float GetP1IOBindValue(u32 bind_index)
@@ -319,13 +345,13 @@ namespace FireWire
 
 	bool MapP1IO(SettingsInterface& si, const std::vector<std::pair<GenericInputBinding, std::string>>& mapping)
 	{
-		const FireWireDeviceProxy* proxy = GetDefaultDeviceProxy();
+		const FireWireDeviceProxy* proxy = GetP1IODeviceProxy();
 		return proxy ? proxy->MapAutomaticBindings(si, mapping) : false;
 	}
 
 	void ClearP1IOBindings(SettingsInterface& si)
 	{
-		const FireWireDeviceProxy* proxy = GetDefaultDeviceProxy();
+		const FireWireDeviceProxy* proxy = GetP1IODeviceProxy();
 		if (proxy)
 			proxy->ClearBindings(si);
 	}

@@ -8,9 +8,11 @@
 #include "ui_FireWireDeviceWidget.h"
 
 #include <QtGui/QIcon>
+#include <QtCore/QString>
 #include <QtWidgets/QWidget>
 
 class ControllerSettingsWindow;
+class InputBindingWidget;
 
 class FireWireDeviceWidget final : public QWidget
 {
@@ -32,8 +34,11 @@ private Q_SLOTS:
 
 private:
 	void updateHeaderToolButtons();
+	void updateBindingGroupStates();
 	void initializeBindingWidgets();
 	void reloadBindingWidgets();
+	QString getCurrentIOMode() const;
+	QString getBindingWidgetIOMode(const InputBindingWidget* widget) const;
 	void doDeviceAutomaticBinding(const QString& device);
 
 	Ui::FireWireDeviceWidget m_ui;

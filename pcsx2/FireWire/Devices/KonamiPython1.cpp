@@ -101,6 +101,10 @@ namespace
 	constexpr const char* PYTHON1_IO_MODE_POPN = "POPN";
 	constexpr const char* PYTHON1_IO_MODE_DOGSTATION = "DOGSTATION";
 	constexpr const char* P1IO_CONFIG_PREFIX = "P1IO_";
+	constexpr const char* P1IO_CONFIG_PREFIX_JVS = "P1IO_JVS_";
+	constexpr const char* P1IO_CONFIG_PREFIX_EXTIO = "P1IO_EXTIO_";
+	constexpr const char* P1IO_CONFIG_PREFIX_POPN = "P1IO_POPN_";
+	constexpr const char* P1IO_CONFIG_PREFIX_DOGSTATION = "P1IO_DOGSTATION_";
 	constexpr u32 P1IO_KEYBOARD_BIND_BASE = 0x1000;
 	// EE byte-swaps the JAMMA word, then maps source bit 8 to P1 bit 0x200.
 	constexpr u32 JAMMA_P1_JVS_PRESENT = 0x00010000;
@@ -629,6 +633,39 @@ namespace
 		if (StringUtil::Strcasecmp(mode.c_str(), PYTHON1_IO_MODE_DOGSTATION) == 0)
 			return Python1IOMode::DOGSTATION;
 		return Python1IOMode::JVS;
+	}
+
+	const char* NormalizePython1IOModeName(std::string_view mode)
+	{
+		if (StringUtil::compareNoCase(mode, PYTHON1_IO_MODE_EXTIO))
+			return PYTHON1_IO_MODE_EXTIO;
+		if (StringUtil::compareNoCase(mode, PYTHON1_IO_MODE_POPN))
+			return PYTHON1_IO_MODE_POPN;
+		if (StringUtil::compareNoCase(mode, PYTHON1_IO_MODE_DOGSTATION))
+			return PYTHON1_IO_MODE_DOGSTATION;
+		return PYTHON1_IO_MODE_JVS;
+	}
+
+	const char* GetPython1IOModeConfigPrefix(std::string_view mode)
+	{
+		mode = NormalizePython1IOModeName(mode);
+		if (mode == PYTHON1_IO_MODE_EXTIO)
+			return P1IO_CONFIG_PREFIX_EXTIO;
+		if (mode == PYTHON1_IO_MODE_POPN)
+			return P1IO_CONFIG_PREFIX_POPN;
+		if (mode == PYTHON1_IO_MODE_DOGSTATION)
+			return P1IO_CONFIG_PREFIX_DOGSTATION;
+		return P1IO_CONFIG_PREFIX_JVS;
+	}
+
+	std::string GetPython1IOModeName(const SettingsInterface& si)
+	{
+		return si.GetStringValue(PYTHON1_GAME_CONFIG_SECTION, "IOMode", PYTHON1_IO_MODE_JVS);
+	}
+
+	std::string GetPython1IOModeName()
+	{
+		return Host::GetStringSettingValue(PYTHON1_GAME_CONFIG_SECTION, "IOMode", PYTHON1_IO_MODE_JVS);
 	}
 
 	bool IsPython1DogstationMode()
@@ -2837,6 +2874,25 @@ namespace
 	}
 } // namespace
 
+std::string FireWire::GetP1IOConfigSubKey(std::string_view io_mode, std::string_view bind_name)
+{
+	std::string key(GetPython1IOModeConfigPrefix(io_mode));
+	key.append(bind_name);
+	return key;
+}
+
+std::string FireWire::GetP1IOConfigSubKey(const SettingsInterface& si, std::string_view bind_name)
+{
+	return GetP1IOConfigSubKey(GetPython1IOModeName(si), bind_name);
+}
+
+std::string FireWire::GetP1IOLegacyConfigSubKey(std::string_view bind_name)
+{
+	std::string key(P1IO_CONFIG_PREFIX);
+	key.append(bind_name);
+	return key;
+}
+
 u32 FireWire::Devices::GetKonamiPython1P1IOLatchByte()
 {
 	return IsPython1DogstationMode() ? s_p1io_output_latch_byte : 0;
@@ -2881,9 +2937,7 @@ namespace FireWire::Devices
 
 	std::string KonamiPython1DeviceProxy::BindingConfigKey(std::string_view bind_name) const
 	{
-		std::string key(P1IO_CONFIG_PREFIX);
-		key.append(bind_name);
-		return key;
+		return FireWire::GetP1IOConfigSubKey(GetPython1IOModeName(), bind_name);
 	}
 
 	bool KonamiPython1DeviceProxy::MapAutomaticBindings(SettingsInterface& si, const std::vector<std::pair<GenericInputBinding, std::string>>& mapping) const
@@ -2897,7 +2951,7 @@ namespace FireWire::Devices
 			const auto found = std::find_if(mapping.begin(), mapping.end(), [generic = bi.generic_mapping](const auto& entry) {
 				return entry.first == generic;
 			});
-			const std::string key = BindingConfigKey(bi.name);
+			const std::string key = FireWire::GetP1IOConfigSubKey(si, bi.name);
 			if (found != mapping.end())
 			{
 				si.SetStringValue(FireWire::GetConfigSection(), key.c_str(), found->second.c_str());
@@ -2915,7 +2969,13 @@ namespace FireWire::Devices
 	void KonamiPython1DeviceProxy::ClearBindings(SettingsInterface& si) const
 	{
 		for (const InputBindingInfo& bi : P1IO_BINDINGS)
-			si.DeleteValue(FireWire::GetConfigSection(), BindingConfigKey(bi.name).c_str());
+		{
+			si.DeleteValue(FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_JVS, bi.name).c_str());
+			si.DeleteValue(FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_EXTIO, bi.name).c_str());
+			si.DeleteValue(FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_POPN, bi.name).c_str());
+			si.DeleteValue(FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_DOGSTATION, bi.name).c_str());
+			si.DeleteValue(FireWire::GetConfigSection(), FireWire::GetP1IOLegacyConfigSubKey(bi.name).c_str());
+		}
 	}
 
 	void KonamiPython1DeviceProxy::CopyConfiguration(SettingsInterface* dest_si, const SettingsInterface& src_si, bool copy_bindings) const
@@ -2924,7 +2984,13 @@ namespace FireWire::Devices
 			return;
 
 		for (const InputBindingInfo& bi : P1IO_BINDINGS)
-			dest_si->CopyStringValue(src_si, FireWire::GetConfigSection(), BindingConfigKey(bi.name).c_str());
+		{
+			dest_si->CopyStringValue(src_si, FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_JVS, bi.name).c_str());
+			dest_si->CopyStringValue(src_si, FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_EXTIO, bi.name).c_str());
+			dest_si->CopyStringValue(src_si, FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_POPN, bi.name).c_str());
+			dest_si->CopyStringValue(src_si, FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_DOGSTATION, bi.name).c_str());
+			dest_si->CopyStringValue(src_si, FireWire::GetConfigSection(), FireWire::GetP1IOLegacyConfigSubKey(bi.name).c_str());
+		}
 	}
 
 	float KonamiPython1DeviceProxy::GetBindingValue(const FireWireDevice* dev, u32 bind_index) const

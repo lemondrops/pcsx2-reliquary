@@ -103,6 +103,7 @@ namespace VMManager
 	static void WarnAboutUnsafeSettings();
 
 	static void ApplyPythonBootParameters(const VMBootParameters& boot_params);
+	static void ApplyPythonDeviceSettings();
 	static bool IsPythonGameFileName(const std::string_view filename);
 	static bool LoadPythonGameBootParameters(const std::string& filename, VMBootParameters* params, Error* error);
 	static bool AutoDetectSource(const std::string& filename, Error* error = nullptr);
@@ -669,6 +670,7 @@ void VMManager::LoadCoreSettings(SettingsInterface& si)
 	SettingsLoadWrapper slw(si);
 	EmuConfig.LoadSave(slw);
 	Patch::ApplyPatchSettingOverrides();
+	ApplyPythonDeviceSettings();
 
 	// Achievements hardcore mode disallows setting some configuration options.
 	EnforceAchievementsChallengeModeSettings();
@@ -1351,6 +1353,17 @@ void VMManager::ApplyPythonBootParameters(const VMBootParameters& boot_params)
 		s_python2_crc = 0;
 		s_python2_serial = "";
 		s_python2_patch_file = "";
+	}
+}
+
+void VMManager::ApplyPythonDeviceSettings()
+{
+	FireWire::SetConfigDeviceOverride(s_is_python1 ? "KonamiPython1" : nullptr);
+
+	if (s_is_python2)
+	{
+		EmuConfig.USB.Ports[0].DeviceType = USB::DeviceTypeNameToIndex("python2io");
+		EmuConfig.USB.Ports[0].DeviceSubtype = 0;
 	}
 }
 

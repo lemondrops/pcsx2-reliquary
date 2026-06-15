@@ -34,6 +34,7 @@ namespace FireWire
 	const char* GetConfigSection();
 	std::string GetConfigDevice(const SettingsInterface& si);
 	void SetConfigDevice(SettingsInterface& si, const char* devname);
+	void SetConfigDeviceOverride(const char* devname);
 	std::string GetConfigSubKey(std::string_view bind_name);
 	std::string GetConfigSubKey(const SettingsInterface& si, std::string_view bind_name);
 	std::vector<std::pair<const char*, const char*>> GetDeviceTypes();
@@ -45,6 +46,9 @@ namespace FireWire
 	void SetDeviceBindValue(u32 bind_index, float value);
 	void ResetDeviceBindState();
 	std::span<const InputBindingInfo> GetP1IOBindings();
+	std::string GetP1IOConfigSubKey(std::string_view io_mode, std::string_view bind_name);
+	std::string GetP1IOConfigSubKey(const SettingsInterface& si, std::string_view bind_name);
+	std::string GetP1IOLegacyConfigSubKey(std::string_view bind_name);
 	float GetP1IOBindValue(u32 bind_index);
 	void SetP1IOBindValue(u32 bind_index, float value);
 	void ResetP1IOBindState();
