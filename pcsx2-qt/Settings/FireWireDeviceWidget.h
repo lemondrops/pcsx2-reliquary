@@ -34,7 +34,6 @@ private Q_SLOTS:
 
 private:
 	void updateHeaderToolButtons();
-	void updateBindingGroupStates();
 	void initializeBindingWidgets();
 	void reloadBindingWidgets();
 	QString getCurrentIOMode() const;

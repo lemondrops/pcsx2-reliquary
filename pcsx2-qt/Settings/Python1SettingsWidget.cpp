@@ -60,7 +60,7 @@ void Python1SettingsWidget::onHddImageBrowseClicked()
 {
 	QString path =
 		QDir::toNativeSeparators(QFileDialog::getOpenFileName(QtUtils::GetRootWidget(this), tr("HDD Image File"),
-			!m_ui.hddImagePath->text().isEmpty() ? m_ui.hddImagePath->text() : QString(), tr("BIN (*.bin);;All Files (*)"), nullptr,
+			!m_ui.hddImagePath->text().isEmpty() ? m_ui.hddImagePath->text() : QString(), tr("HDD Images (*.bin *.raw *.chd);;All Files (*)"), nullptr,
 			QFileDialog::DontConfirmOverwrite));
 
 	if (path.isEmpty())

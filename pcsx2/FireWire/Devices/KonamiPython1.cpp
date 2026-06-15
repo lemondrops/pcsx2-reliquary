@@ -4,6 +4,7 @@
 #include "FireWire/Devices/KonamiPython1.h"
 
 #include "Common.h"
+#include "DEV9/ATA/HddChdImage.h"
 #include "Host.h"
 
 #include "Input/InputManager.h"
@@ -423,7 +424,8 @@ namespace
 	FireWire::FireWireDeviceHost* s_host = nullptr;
 	KonamiPython1Device* s_device = nullptr;
 	std::vector<PendingSectorStatusWrite> s_pending_sector_status_writes;
-	std::FILE* s_hdd_image_file = nullptr;
+	std::FILE* s_hdd_raw_image_file = nullptr;
+	std::unique_ptr<ChdHddImage> s_hdd_chd_image;
 	std::string s_hdd_image_open_path;
 	bool s_hdd_image_writable = false;
 	bool s_pythonfs_formatted = false;
@@ -667,6 +669,61 @@ namespace
 	{
 		return Host::GetStringSettingValue(PYTHON1_GAME_CONFIG_SECTION, "IOMode", PYTHON1_IO_MODE_JVS);
 	}
+
+	bool IsP1IOUniversalBinding(std::string_view bind_name)
+	{
+		return bind_name == "Test" || bind_name == "Service" || bind_name == "Coin1" || bind_name == "Coin2";
+	}
+
+	struct P1IOAutomaticBinding
+	{
+		const char* name;
+		GenericInputBinding generic_mapping;
+	};
+
+	static constexpr P1IOAutomaticBinding P1IO_AUTOMATIC_BINDINGS_UNIVERSAL[] = {
+		{"Test", GenericInputBinding::Select},
+		{"Service", GenericInputBinding::System},
+		{"Coin1", GenericInputBinding::L3},
+		{"Coin2", GenericInputBinding::R3},
+	};
+
+	static constexpr P1IOAutomaticBinding P1IO_AUTOMATIC_BINDINGS_JVS[] = {
+		{"P1Start", GenericInputBinding::Start},
+		{"P1Up", GenericInputBinding::DPadUp},
+		{"P1Down", GenericInputBinding::DPadDown},
+		{"P1Left", GenericInputBinding::DPadLeft},
+		{"P1Right", GenericInputBinding::DPadRight},
+		{"P1Button1", GenericInputBinding::Cross},
+		{"P1Button2", GenericInputBinding::Circle},
+		{"P1Button3", GenericInputBinding::Square},
+		{"P1Button4", GenericInputBinding::Triangle},
+		{"P1Button5", GenericInputBinding::L1},
+		{"P1Button6", GenericInputBinding::R1},
+	};
+
+	static constexpr P1IOAutomaticBinding P1IO_AUTOMATIC_BINDINGS_EXTIO[] = {
+		{"P1Start", GenericInputBinding::Start},
+		{"P1Up", GenericInputBinding::DPadUp},
+		{"P1Down", GenericInputBinding::Cross},
+		{"P1Left", GenericInputBinding::DPadLeft},
+		{"P1Right", GenericInputBinding::Circle},
+		{"P1Button1", GenericInputBinding::LeftStickLeft},
+		{"P1Button2", GenericInputBinding::LeftStickRight},
+	};
+
+	static constexpr P1IOAutomaticBinding P1IO_AUTOMATIC_BINDINGS_POPN[] = {
+		{"P1Start", GenericInputBinding::Start},
+		{"P1Up", GenericInputBinding::Triangle},
+		{"P1Down", GenericInputBinding::Circle},
+		{"P1Left", GenericInputBinding::R1},
+		{"P1Right", GenericInputBinding::Cross},
+		{"P1Button1", GenericInputBinding::L1},
+		{"P2Up", GenericInputBinding::Square},
+		{"P2Down", GenericInputBinding::R2},
+		{"P2Left", GenericInputBinding::DPadUp},
+		{"P2Right", GenericInputBinding::L2},
+	};
 
 	bool IsPython1DogstationMode()
 	{
@@ -1263,28 +1320,84 @@ namespace
 
 	void CloseHddImageFile()
 	{
-		if (!s_hdd_image_file)
-			return;
+		if (s_hdd_raw_image_file)
+		{
+			std::fclose(s_hdd_raw_image_file);
+			s_hdd_raw_image_file = nullptr;
+		}
 
-		std::fclose(s_hdd_image_file);
-		s_hdd_image_file = nullptr;
+		s_hdd_chd_image.reset();
 		s_hdd_image_open_path.clear();
 		s_hdd_image_writable = false;
 	}
 
-	std::FILE* GetHddImageFile(const std::string& path, bool writable = false)
+	bool OpenHddImage(const std::string& path, bool writable = false)
 	{
-		if (s_hdd_image_file && s_hdd_image_open_path == path && (!writable || s_hdd_image_writable))
-			return s_hdd_image_file;
+		if (!path.empty() && s_hdd_image_open_path == path && (!writable || s_hdd_image_writable))
+			return s_hdd_raw_image_file || s_hdd_chd_image;
 
 		CloseHddImageFile();
-		s_hdd_image_file = std::fopen(path.c_str(), writable ? "rb+" : "rb");
-		if (s_hdd_image_file)
+		if (ChdHddImage::IsChdFileName(path))
+		{
+			s_hdd_chd_image = std::make_unique<ChdHddImage>();
+			if (!s_hdd_chd_image->Open(path))
+			{
+				s_hdd_chd_image.reset();
+				return false;
+			}
+
+			s_hdd_image_open_path = path;
+			s_hdd_image_writable = true;
+			return true;
+		}
+
+		s_hdd_raw_image_file = std::fopen(path.c_str(), writable ? "rb+" : "rb");
+		if (s_hdd_raw_image_file)
 		{
 			s_hdd_image_open_path = path;
 			s_hdd_image_writable = writable;
+			return true;
 		}
-		return s_hdd_image_file;
+
+		return false;
+	}
+
+	bool ReadHddImageBytes(const std::string& path, u64 offset, u8* dst, u32 size)
+	{
+		if (!OpenHddImage(path))
+			return false;
+
+		if (s_hdd_chd_image)
+			return s_hdd_chd_image->ReadBytes(offset, size, dst);
+
+		return FileSystem::FSeek64(s_hdd_raw_image_file, offset, SEEK_SET) == 0 && std::fread(dst, 1, size, s_hdd_raw_image_file) == size;
+	}
+
+	bool ReadHddImageSectors(const std::string& path, u32 sector, u32 count, u8* dst)
+	{
+		if (!OpenHddImage(path))
+			return false;
+
+		if (s_hdd_chd_image)
+			return s_hdd_chd_image->ReadSectors(sector, count, dst);
+
+		const u64 offset = static_cast<u64>(sector) * SECTOR_SIZE;
+		const u32 bytes = count * SECTOR_SIZE;
+		return FileSystem::FSeek64(s_hdd_raw_image_file, offset, SEEK_SET) == 0 && std::fread(dst, 1, bytes, s_hdd_raw_image_file) == bytes;
+	}
+
+	bool WriteHddImageSectors(const std::string& path, u32 sector, u32 count, const u8* src)
+	{
+		if (!OpenHddImage(path, true))
+			return false;
+
+		if (s_hdd_chd_image)
+			return s_hdd_chd_image->WriteSectors(sector, count, src);
+
+		const u64 offset = static_cast<u64>(sector) * SECTOR_SIZE;
+		const u32 bytes = count * SECTOR_SIZE;
+		return FileSystem::FSeek64(s_hdd_raw_image_file, offset, SEEK_SET) == 0 && std::fwrite(src, 1, bytes, s_hdd_raw_image_file) == bytes &&
+			std::fflush(s_hdd_raw_image_file) == 0;
 	}
 
 	u32 ByteSwap32(u32 value)
@@ -1384,26 +1497,11 @@ namespace
 			return false;
 		}
 
-		std::FILE* file = GetHddImageFile(path);
-		if (!file)
-		{
-			DevCon.WriteLn("FW HLE: failed to open %s for ADPCM sector=0x%x", path.c_str(), sector);
-			StopSubboardAdpcmPlayback();
-			return false;
-		}
-
 		const u64 offset = static_cast<u64>(sector) * SECTOR_SIZE;
-		if (std::fseek(file, static_cast<long>(offset), SEEK_SET) != 0)
-		{
-			DevCon.WriteLn("FW HLE: failed to seek %s to ADPCM sector=0x%x", path.c_str(), sector);
-			StopSubboardAdpcmPlayback();
-			return false;
-		}
-
 		std::array<u8, KONAMI_ADPCM_HEADER_SIZE> header;
-		if (std::fread(header.data(), 1, header.size(), file) != header.size())
+		if (!ReadHddImageBytes(path, offset, header.data(), static_cast<u32>(header.size())))
 		{
-			DevCon.WriteLn("FW HLE: short ADPCM header read sector=0x%x", sector);
+			DevCon.WriteLn("FW HLE: failed ADPCM header read %s sector=0x%x", path.c_str(), sector);
 			StopSubboardAdpcmPlayback();
 			return false;
 		}
@@ -1424,10 +1522,9 @@ namespace
 		}
 
 		std::vector<u8> encoded(encoded_size);
-		const size_t read = std::fread(encoded.data(), 1, encoded.size(), file);
-		if (read != encoded.size())
+		if (!ReadHddImageBytes(path, offset + KONAMI_ADPCM_HEADER_SIZE, encoded.data(), encoded_size))
 		{
-			DevCon.WriteLn("FW HLE: short ADPCM read sector=0x%x requested=0x%zx read=0x%zx", sector, encoded.size(), read);
+			DevCon.WriteLn("FW HLE: short ADPCM read %s sector=0x%x requested=0x%x", path.c_str(), sector, encoded_size);
 			StopSubboardAdpcmPlayback();
 			return false;
 		}
@@ -1747,24 +1844,10 @@ namespace
 		}
 
 		std::vector<u8> data(static_cast<size_t>(bytes64));
-		std::FILE* file = GetHddImageFile(path);
-		if (!file)
+		if (!ReadHddImageSectors(path, sector, count, data.data()))
 		{
-			DevCon.WriteLn("FW HLE: failed to open %s", path.c_str());
-			return false;
-		}
-
-		if (std::fseek(file, static_cast<long>(offset), SEEK_SET) != 0)
-		{
-			DevCon.WriteLn("FW HLE: failed to seek %s to 0x%llx", path.c_str(), static_cast<unsigned long long>(offset));
-			return false;
-		}
-
-		const size_t bytes = static_cast<size_t>(bytes64);
-		const size_t read = std::fread(data.data(), 1, bytes, file);
-		if (read != bytes)
-		{
-			DevCon.WriteLn("FW HLE: short read %s offset=0x%llx requested=0x%zx read=0x%zx", path.c_str(), static_cast<unsigned long long>(offset), bytes, read);
+			DevCon.WriteLn("FW HLE: failed sector read %s offset=0x%llx bytes=0x%llx", path.c_str(),
+				static_cast<unsigned long long>(offset), static_cast<unsigned long long>(bytes64));
 			return false;
 		}
 
@@ -1801,24 +1884,10 @@ namespace
 			return false;
 		}
 
-		std::FILE* file = GetHddImageFile(path, true);
-		if (!file)
+		if (!WriteHddImageSectors(path, sector, count, data.data()))
 		{
-			DevCon.WriteLn("FW HLE: failed to open %s writable", path.c_str());
-			return false;
-		}
-
-		if (std::fseek(file, static_cast<long>(offset), SEEK_SET) != 0)
-		{
-			DevCon.WriteLn("FW HLE: failed to seek %s to 0x%llx for write", path.c_str(), static_cast<unsigned long long>(offset));
-			return false;
-		}
-
-		const size_t bytes = static_cast<size_t>(bytes64);
-		const size_t written = std::fwrite(data.data(), 1, bytes, file);
-		if (written != bytes || std::fflush(file) != 0)
-		{
-			DevCon.WriteLn("FW HLE: short write %s offset=0x%llx requested=0x%zx wrote=0x%zx", path.c_str(), static_cast<unsigned long long>(offset), bytes, written);
+			DevCon.WriteLn("FW HLE: failed sector write %s offset=0x%llx bytes=0x%llx", path.c_str(),
+				static_cast<unsigned long long>(offset), static_cast<unsigned long long>(bytes64));
 			return false;
 		}
 
@@ -2886,7 +2955,7 @@ std::string FireWire::GetP1IOConfigSubKey(const SettingsInterface& si, std::stri
 	return GetP1IOConfigSubKey(GetPython1IOModeName(si), bind_name);
 }
 
-std::string FireWire::GetP1IOLegacyConfigSubKey(std::string_view bind_name)
+std::string FireWire::GetP1IOUniversalConfigSubKey(std::string_view bind_name)
 {
 	std::string key(P1IO_CONFIG_PREFIX);
 	key.append(bind_name);
@@ -2937,31 +3006,40 @@ namespace FireWire::Devices
 
 	std::string KonamiPython1DeviceProxy::BindingConfigKey(std::string_view bind_name) const
 	{
+		if (IsP1IOUniversalBinding(bind_name))
+			return FireWire::GetP1IOUniversalConfigSubKey(bind_name);
+
 		return FireWire::GetP1IOConfigSubKey(GetPython1IOModeName(), bind_name);
 	}
 
 	bool KonamiPython1DeviceProxy::MapAutomaticBindings(SettingsInterface& si, const std::vector<std::pair<GenericInputBinding, std::string>>& mapping) const
 	{
 		u32 num_mappings = 0;
-		for (const InputBindingInfo& bi : P1IO_BINDINGS)
-		{
-			if (bi.generic_mapping == GenericInputBinding::Unknown)
-				continue;
+		auto map_bindings = [&](std::span<const P1IOAutomaticBinding> bindings, const char* io_mode) {
+			for (const P1IOAutomaticBinding& bi : bindings)
+			{
+				const auto found = std::find_if(mapping.begin(), mapping.end(), [generic = bi.generic_mapping](const auto& entry) {
+					return entry.first == generic;
+				});
 
-			const auto found = std::find_if(mapping.begin(), mapping.end(), [generic = bi.generic_mapping](const auto& entry) {
-				return entry.first == generic;
-			});
-			const std::string key = FireWire::GetP1IOConfigSubKey(si, bi.name);
-			if (found != mapping.end())
-			{
-				si.SetStringValue(FireWire::GetConfigSection(), key.c_str(), found->second.c_str());
-				num_mappings++;
+				const std::string key = io_mode ? FireWire::GetP1IOConfigSubKey(io_mode, bi.name) :
+					FireWire::GetP1IOUniversalConfigSubKey(bi.name);
+				if (found != mapping.end())
+				{
+					si.SetStringValue(FireWire::GetConfigSection(), key.c_str(), found->second.c_str());
+					num_mappings++;
+				}
+				else
+				{
+					si.DeleteValue(FireWire::GetConfigSection(), key.c_str());
+				}
 			}
-			else
-			{
-				si.DeleteValue(FireWire::GetConfigSection(), key.c_str());
-			}
-		}
+		};
+
+		map_bindings(P1IO_AUTOMATIC_BINDINGS_UNIVERSAL, nullptr);
+		map_bindings(P1IO_AUTOMATIC_BINDINGS_JVS, PYTHON1_IO_MODE_JVS);
+		map_bindings(P1IO_AUTOMATIC_BINDINGS_EXTIO, PYTHON1_IO_MODE_EXTIO);
+		map_bindings(P1IO_AUTOMATIC_BINDINGS_POPN, PYTHON1_IO_MODE_POPN);
 
 		return num_mappings > 0;
 	}
@@ -2970,11 +3048,16 @@ namespace FireWire::Devices
 	{
 		for (const InputBindingInfo& bi : P1IO_BINDINGS)
 		{
+			if (IsP1IOUniversalBinding(bi.name))
+			{
+				si.DeleteValue(FireWire::GetConfigSection(), FireWire::GetP1IOUniversalConfigSubKey(bi.name).c_str());
+				continue;
+			}
+
 			si.DeleteValue(FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_JVS, bi.name).c_str());
 			si.DeleteValue(FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_EXTIO, bi.name).c_str());
 			si.DeleteValue(FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_POPN, bi.name).c_str());
 			si.DeleteValue(FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_DOGSTATION, bi.name).c_str());
-			si.DeleteValue(FireWire::GetConfigSection(), FireWire::GetP1IOLegacyConfigSubKey(bi.name).c_str());
 		}
 	}
 
@@ -2985,11 +3068,16 @@ namespace FireWire::Devices
 
 		for (const InputBindingInfo& bi : P1IO_BINDINGS)
 		{
+			if (IsP1IOUniversalBinding(bi.name))
+			{
+				dest_si->CopyStringValue(src_si, FireWire::GetConfigSection(), FireWire::GetP1IOUniversalConfigSubKey(bi.name).c_str());
+				continue;
+			}
+
 			dest_si->CopyStringValue(src_si, FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_JVS, bi.name).c_str());
 			dest_si->CopyStringValue(src_si, FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_EXTIO, bi.name).c_str());
 			dest_si->CopyStringValue(src_si, FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_POPN, bi.name).c_str());
 			dest_si->CopyStringValue(src_si, FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_DOGSTATION, bi.name).c_str());
-			dest_si->CopyStringValue(src_si, FireWire::GetConfigSection(), FireWire::GetP1IOLegacyConfigSubKey(bi.name).c_str());
 		}
 	}
 

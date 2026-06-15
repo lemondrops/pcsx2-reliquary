@@ -28,6 +28,7 @@ public:
 
 	bool ReadSectors(u64 sector, u32 count, void* dst);
 	bool WriteSectors(u64 sector, u32 count, const void* src);
+	bool ReadBytes(u64 offset, u32 size, u8* dst);
 
 	static std::optional<u64> GetChdLogicalSize(const std::string& path);
 	static bool IsChdFileName(const std::string& path);
@@ -59,7 +60,6 @@ private:
 	bool CreateOverlayFiles();
 	bool LoadOverlayMap();
 	bool InitializeOverlayFile();
-	bool ReadBytes(u64 offset, u32 size, u8* dst);
 	bool ReadBaseBytes(u64 offset, u32 size, u8* dst);
 	bool ReadOverlayBytes(u64 offset, u32 size, u8* dst);
 	bool WriteOverlayBytes(u64 offset, u32 size, const u8* src);

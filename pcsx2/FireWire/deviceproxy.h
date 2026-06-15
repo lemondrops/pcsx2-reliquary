@@ -90,7 +90,7 @@ namespace FireWire
 	std::span<const InputBindingInfo> GetP1IOBindings();
 	std::string GetP1IOConfigSubKey(std::string_view io_mode, std::string_view bind_name);
 	std::string GetP1IOConfigSubKey(const SettingsInterface& si, std::string_view bind_name);
-	std::string GetP1IOLegacyConfigSubKey(std::string_view bind_name);
+	std::string GetP1IOUniversalConfigSubKey(std::string_view bind_name);
 	float GetP1IOBindValue(u32 bind_index);
 	void SetP1IOBindValue(u32 bind_index, float value);
 	void ResetP1IOBindState();

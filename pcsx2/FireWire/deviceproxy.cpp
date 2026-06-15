@@ -8,7 +8,6 @@
 #include "Host.h"
 
 #include "common/SettingsInterface.h"
-#include "common/StringUtil.h"
 
 #include <algorithm>
 
@@ -25,6 +24,11 @@ namespace FireWire
 		const FireWireDeviceProxy* s_active_device_proxy = nullptr;
 		FireWireDevice* s_active_device = nullptr;
 		std::string s_config_device_override;
+
+		bool IsP1IOUniversalBinding(std::string_view bind_name)
+		{
+			return bind_name == "Test" || bind_name == "Service" || bind_name == "Coin1" || bind_name == "Coin2";
+		}
 	}
 
 	RegisterDevice* RegisterDevice::s_register_device = nullptr;
@@ -230,14 +234,10 @@ namespace FireWire
 		const FireWireDeviceProxy* proxy = GetConfiguredDeviceProxy(&si);
 		if (proxy && proxy->TypeName() == std::string_view(FIREWIRE_P1IO_DEVICE))
 		{
-			std::string key = GetP1IOConfigSubKey(si, bind_name);
-			const std::string legacy_key = GetP1IOLegacyConfigSubKey(bind_name);
-			const std::string io_mode = si.GetStringValue("Python1/Game", "IOMode", "JVS");
-			const bool is_jvs = !StringUtil::compareNoCase(io_mode, "EXTIO") && !StringUtil::compareNoCase(io_mode, "POPN") &&
-				!StringUtil::compareNoCase(io_mode, "DOGSTATION");
-			if (is_jvs && !si.ContainsValue(FIREWIRE_CONFIG_SECTION, key.c_str()) && si.ContainsValue(FIREWIRE_CONFIG_SECTION, legacy_key.c_str()))
-				key = legacy_key;
-			return key;
+			if (IsP1IOUniversalBinding(bind_name))
+				return GetP1IOUniversalConfigSubKey(bind_name);
+
+			return GetP1IOConfigSubKey(si, bind_name);
 		}
 
 		return proxy ? proxy->BindingConfigKey(bind_name) : std::string(bind_name);

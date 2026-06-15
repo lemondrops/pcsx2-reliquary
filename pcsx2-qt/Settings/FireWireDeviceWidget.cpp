@@ -30,7 +30,6 @@ FireWireDeviceWidget::FireWireDeviceWidget(QWidget* parent, ControllerSettingsWi
 	m_bindings_widget = m_ui.bindingsPage;
 	m_ui.stackedWidget->setCurrentWidget(m_bindings_widget);
 	initializeBindingWidgets();
-	updateBindingGroupStates();
 
 	connect(m_ui.bindings, &QPushButton::clicked, this, &FireWireDeviceWidget::onBindingsClicked);
 	connect(m_ui.automaticBinding, &QPushButton::clicked, this, &FireWireDeviceWidget::onAutomaticBindingClicked);
@@ -53,17 +52,6 @@ void FireWireDeviceWidget::updateHeaderToolButtons()
 	m_ui.bindings->setChecked(current_widget == m_bindings_widget);
 	m_ui.automaticBinding->setEnabled(current_widget == m_bindings_widget);
 	m_ui.clearBindings->setEnabled(current_widget == m_bindings_widget);
-}
-
-void FireWireDeviceWidget::updateBindingGroupStates()
-{
-	const QString io_mode = getCurrentIOMode();
-	m_ui.cabinetControlsGroupBox->setEnabled(io_mode != QLatin1String("DOGSTATION"));
-	m_ui.jvsPlayer1GroupBox->setEnabled(io_mode == QLatin1String("JVS"));
-	m_ui.jvsPlayer2GroupBox->setEnabled(io_mode == QLatin1String("JVS"));
-	m_ui.popnControlsGroupBox->setEnabled(io_mode == QLatin1String("POPN"));
-	m_ui.ddrPlayer1GroupBox->setEnabled(io_mode == QLatin1String("EXTIO"));
-	m_ui.ddrPlayer2GroupBox->setEnabled(io_mode == QLatin1String("EXTIO"));
 }
 
 void FireWireDeviceWidget::onBindingsClicked()
@@ -129,7 +117,6 @@ void FireWireDeviceWidget::onClearBindingsClicked()
 void FireWireDeviceWidget::initializeBindingWidgets()
 {
 	SettingsInterface* sif = m_dialog->getProfileSettingsInterface();
-	const QString current_io_mode = getCurrentIOMode();
 
 	for (InputBindingWidget* widget : m_bindings_widget->findChildren<InputBindingWidget*>())
 	{
@@ -138,11 +125,10 @@ void FireWireDeviceWidget::initializeBindingWidgets()
 			binding_name = widget->objectName();
 
 		QString io_mode = getBindingWidgetIOMode(widget);
-		if (io_mode.isEmpty())
-			io_mode = current_io_mode;
+		const std::string key = io_mode.isEmpty() ? FireWire::GetP1IOUniversalConfigSubKey(binding_name.toStdString()) :
+			FireWire::GetP1IOConfigSubKey(io_mode.toStdString(), binding_name.toStdString());
 
-		widget->initialize(sif, InputBindingInfo::Type::Button, getConfigSection(),
-			FireWire::GetP1IOConfigSubKey(io_mode.toStdString(), binding_name.toStdString()));
+		widget->initialize(sif, InputBindingInfo::Type::Button, getConfigSection(), key);
 	}
 }
 
