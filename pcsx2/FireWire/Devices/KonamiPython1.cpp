@@ -358,16 +358,29 @@ namespace
 		{"0", 0x45}, {"1", 0x16}, {"2", 0x1e}, {"3", 0x26}, {"4", 0x25}, {"5", 0x2e}, {"6", 0x36},
 		{"7", 0x3d}, {"8", 0x3e}, {"9", 0x46},
 		{"Return", 0x5a}, {"Escape", 0x76}, {"Backspace", 0x66}, {"Tab", 0x0d}, {"Space", 0x29},
-		{"Minus", 0x4e}, {"Equal", 0x55}, {"BracketLeft", 0x54}, {"BracketRight", 0x5b},
-		{"Backslash", 0x5d}, {"Semicolon", 0x4c}, {"Apostrophe", 0x52}, {"Agrave", 0x0e},
+		{"Minus", 0x4e}, {"Equal", 0x55}, {"At", 0x54}, {"BracketLeft", 0x5b},
+		{"BracketRight", 0x5d}, {"Semicolon", 0x4c}, {"Apostrophe", 0x52}, {"Agrave", 0x0e},
 		{"Comma", 0x41}, {"Period", 0x49}, {"Slash", 0x4a},
 		{"F1", 0x05}, {"F2", 0x06}, {"F3", 0x04}, {"F4", 0x0c}, {"F5", 0x03}, {"F6", 0x0b},
 		{"F7", 0x83}, {"F8", 0x0a}, {"F9", 0x01}, {"F10", 0x09}, {"F11", 0x78}, {"F12", 0x07},
 		{"Shift", 0x12}, {"Shift_r", 0x59}, {"Control", 0x14}, {"Alt", 0x11},
-		{"Henkan", 0x64}, {"Muhenkan", 0x67}, {"KatakanaHiragana", 0x13}, {"Yen", 0x6a}, {"Ro", 0x51},
+		{"Henkan", 0x64}, {"Muhenkan", 0x67}, {"Hiragana_Katakana", 0x13},
 		{"Up", 0xf5}, {"Down", 0xf2}, {"Left", 0xeb}, {"Right", 0xf4},
 		{"Insert", 0x70, true}, {"Delete", 0x71, true}, {"Home", 0x6c, true}, {"End", 0x69, true},
-		{"PageUp", 0x7d, true}, {"PageDown", 0x7a, true}, {"NumpadReturn", 0x5a, true},
+		{"PageUp", 0x7d, true}, {"PageDown", 0x7a, true},
+		// {"NumpadReturn", 0x5a, true},
+		{"CapsLock", 0x58}, {"Eisu_toggle", 0x58},
+		{"Numpad7", 0xec, true}, {"Numpad8", 0xf5, true}, {"Numpad9", 0xfd, true},
+		{"Numpad4", 0xeb, true}, {"Numpad5", 0xf3, true}, {"Numpad6", 0x74},
+		{"Numpad1", 0xe9, true}, {"Numpad2", 0xf2, true}, {"Numpad3", 0xfa, true},
+		{"Numpad0", 0x70}, {"NumpadEnter", 0xda},
+		{"Zenkaku_Hankaku", 0x8e, true},
+		{"AsciiCircum", 0x55},
+		{"Colon", 0x52},
+		{"yen", 0x6a},
+		{"Backslash", 0x51},
+		// {"Shift", 0xd9, true}, // right shift
+		// {"Control", 0x94}, // right control
 	};
 
 	// Captured from the WE2K3 Python1 IO board's config-ROM reads in python1-boot-ioerror.nosy.
