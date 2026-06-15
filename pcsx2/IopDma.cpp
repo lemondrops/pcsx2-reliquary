@@ -271,8 +271,9 @@ void psxDMA12Interrupt()
 	}
 }
 
-void psxDma13(u32 madr, u32 size, u32 chcr)
+void psxDma13(u32 madr, u32 bcr, u32 chcr)
 {
+	const int size = ((bcr >> 16) * (bcr & 0xffff)) * 4;
 	//Console.Warning("*** DMA 13 - FW0 *** %lx addr = %lx size = %lx", chcr, madr, size);
 	FWwriteDMA((u32*)iopPhysMem(madr), size);
 }

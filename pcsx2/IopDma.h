@@ -15,7 +15,7 @@ extern void psxDma9(u32 madr, u32 bcr, u32 chcr);
 extern void psxDma10(u32 madr, u32 bcr, u32 chcr);
 extern void psxDma11(u32 madr, u32 bcr, u32 chcr);
 extern void psxDma12(u32 madr, u32 bcr, u32 chcr);
-extern void psxDma13(u32 madr, u32 size, u32 chcr);
+extern void psxDma13(u32 madr, u32 bcr, u32 chcr);
 extern void psxDma14(u32 madr, u32 size, u32 chcr);
 extern void psxDma15(u32 madr, u32 size, u32 chcr);
 
