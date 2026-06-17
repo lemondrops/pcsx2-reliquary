@@ -26,6 +26,7 @@ extern "C" {
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -454,9 +455,10 @@ namespace
 	std::string s_hdd_image_open_path;
 	bool s_hdd_image_writable = false;
 	std::FILE* s_cf_image_file = nullptr;
+	std::unique_ptr<ChdHddImage> s_cf_chd_image;
 	std::string s_cf_image_open_path;
 	bool s_cf_image_writable = false;
-	s64 s_cf_image_size = 0;
+	u64 s_cf_image_size = 0;
 	FATFS s_cf_fatfs;
 	FIL s_cf_pythonfs_file;
 	bool s_cf_fatfs_mounted = false;
@@ -1533,6 +1535,28 @@ namespace
 		return FileSystem::FSeek64(file, offset, SEEK_SET) == 0 && std::fwrite(src, 1, size, file) == size && std::fflush(file) == 0;
 	}
 
+	bool IsCfImageOpen()
+	{
+		return s_cf_image_file || s_cf_chd_image;
+	}
+
+	bool ReadCfContainerBytes(u64 offset, void* dst, size_t size)
+	{
+		if (s_cf_chd_image)
+			return size <= std::numeric_limits<u32>::max() && s_cf_chd_image->ReadBytes(offset, static_cast<u32>(size), static_cast<u8*>(dst));
+
+		return s_cf_image_file && ReadFileBytes(s_cf_image_file, offset, dst, size);
+	}
+
+	bool WriteCfContainerBytes(u64 offset, const void* src, size_t size)
+	{
+		if (s_cf_chd_image)
+			return (offset % SECTOR_SIZE) == 0 && (size % SECTOR_SIZE) == 0 && s_cf_chd_image->WriteSectors(offset / SECTOR_SIZE,
+				static_cast<u32>(size / SECTOR_SIZE), src);
+
+		return s_cf_image_file && WriteFileBytes(s_cf_image_file, offset, src, size);
+	}
+
 	void CloseCfImageFile()
 	{
 		if (s_cf_pythonfs_file_open)
@@ -1552,6 +1576,7 @@ namespace
 			std::fclose(s_cf_image_file);
 			s_cf_image_file = nullptr;
 		}
+		s_cf_chd_image.reset();
 
 		s_cf_image_open_path.clear();
 		s_cf_image_writable = false;
@@ -1561,14 +1586,35 @@ namespace
 	bool OpenCfImage(const std::string& path, bool writable = false)
 	{
 		if (!path.empty() && s_cf_image_open_path == path && (!writable || s_cf_image_writable))
-			return s_cf_image_file != nullptr && s_cf_fatfs_mounted && s_cf_pythonfs_file_open;
+			return IsCfImageOpen() && s_cf_fatfs_mounted && s_cf_pythonfs_file_open;
 
 		CloseCfImageFile();
-		s_cf_image_file = std::fopen(path.c_str(), writable ? "rb+" : "rb");
-		if (!s_cf_image_file)
-			return false;
-		s_cf_image_size = FileSystem::GetPathFileSize(path.c_str());
-		if (s_cf_image_size <= 0)
+		if (ChdHddImage::IsChdFileName(path))
+		{
+			s_cf_chd_image = std::make_unique<ChdHddImage>();
+			if (!s_cf_chd_image->Open(path))
+			{
+				CloseCfImageFile();
+				return false;
+			}
+			s_cf_image_size = s_cf_chd_image->GetSize();
+		}
+		else
+		{
+			s_cf_image_file = std::fopen(path.c_str(), writable ? "rb+" : "rb");
+			if (!s_cf_image_file)
+				return false;
+
+			const s64 file_size = FileSystem::GetPathFileSize(path.c_str());
+			if (file_size <= 0)
+			{
+				CloseCfImageFile();
+				return false;
+			}
+			s_cf_image_size = static_cast<u64>(file_size);
+		}
+
+		if (s_cf_image_size == 0)
 		{
 			CloseCfImageFile();
 			return false;
@@ -1647,43 +1693,43 @@ namespace
 
 	extern "C" DSTATUS disk_initialize(BYTE pdrv)
 	{
-		return pdrv == 0 && s_cf_image_file ? 0 : STA_NOINIT;
+		return pdrv == 0 && IsCfImageOpen() ? 0 : STA_NOINIT;
 	}
 
 	extern "C" DSTATUS disk_status(BYTE pdrv)
 	{
-		return pdrv == 0 && s_cf_image_file ? 0 : STA_NOINIT;
+		return pdrv == 0 && IsCfImageOpen() ? 0 : STA_NOINIT;
 	}
 
 	extern "C" DRESULT disk_read(BYTE pdrv, BYTE* buff, LBA_t sector, UINT count)
 	{
-		if (pdrv != 0 || !s_cf_image_file || count == 0)
+		if (pdrv != 0 || !IsCfImageOpen() || count == 0)
 			return RES_PARERR;
 
 		const u64 offset = static_cast<u64>(sector) * SECTOR_SIZE;
 		const size_t bytes = static_cast<size_t>(count) * SECTOR_SIZE;
-		return ReadFileBytes(s_cf_image_file, offset, buff, bytes) ? RES_OK : RES_ERROR;
+		return ReadCfContainerBytes(offset, buff, bytes) ? RES_OK : RES_ERROR;
 	}
 
 	extern "C" DRESULT disk_write(BYTE pdrv, const BYTE* buff, LBA_t sector, UINT count)
 	{
-		if (pdrv != 0 || !s_cf_image_file || count == 0)
+		if (pdrv != 0 || !IsCfImageOpen() || count == 0)
 			return RES_PARERR;
 
 		const u64 offset = static_cast<u64>(sector) * SECTOR_SIZE;
 		const size_t bytes = static_cast<size_t>(count) * SECTOR_SIZE;
-		return WriteFileBytes(s_cf_image_file, offset, buff, bytes) ? RES_OK : RES_ERROR;
+		return WriteCfContainerBytes(offset, buff, bytes) ? RES_OK : RES_ERROR;
 	}
 
 	extern "C" DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void* buff)
 	{
-		if (pdrv != 0 || !s_cf_image_file)
+		if (pdrv != 0 || !IsCfImageOpen())
 			return RES_PARERR;
 
 		switch (cmd)
 		{
 			case CTRL_SYNC:
-				return std::fflush(s_cf_image_file) == 0 ? RES_OK : RES_ERROR;
+				return !s_cf_image_file || std::fflush(s_cf_image_file) == 0 ? RES_OK : RES_ERROR;
 			case GET_SECTOR_COUNT:
 				*static_cast<LBA_t*>(buff) = static_cast<LBA_t>(s_cf_image_size / SECTOR_SIZE);
 				return RES_OK;

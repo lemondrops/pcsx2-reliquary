@@ -79,7 +79,7 @@ void Python1SettingsWidget::onCfImageBrowseClicked()
 {
 	QString path =
 		QDir::toNativeSeparators(QFileDialog::getOpenFileName(QtUtils::GetRootWidget(this), tr("CF Image File"),
-			!m_ui.cfImagePath->text().isEmpty() ? m_ui.cfImagePath->text() : QString(), tr("CF Images (*.bin *.raw *.dsk);;All Files (*)"), nullptr,
+			!m_ui.cfImagePath->text().isEmpty() ? m_ui.cfImagePath->text() : QString(), tr("CF Images (*.bin *.raw *.chd *.dsk);;All Files (*)"), nullptr,
 			QFileDialog::DontConfirmOverwrite));
 
 	if (path.isEmpty())
