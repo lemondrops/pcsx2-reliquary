@@ -25,6 +25,7 @@
 #include <cstdio>
 #include <ctime>
 #include <fstream>
+#include <optional>
 #include <string_view>
 #include <utility>
 
@@ -37,7 +38,7 @@ namespace GameList
 	enum : u32
 	{
 		GAME_LIST_CACHE_SIGNATURE = 0x45434C47,
-		GAME_LIST_CACHE_VERSION = 36,
+		GAME_LIST_CACHE_VERSION = 38,
 
 
 		PLAYED_TIME_SERIAL_LENGTH = 32,
@@ -64,6 +65,9 @@ namespace GameList
 	static bool GetPython1ListEntry(const std::string& path, GameList::Entry* entry);
 	static bool GetPython2ListEntry(const std::string& path, GameList::Entry* entry);
 	static std::string GetRelativeGameIniPath(const std::string& path, const INISettingsInterface& ini, const char* key);
+	static std::string CleanPythonGameId(std::string_view game_id);
+	static std::string CleanPython1BootromGameIdField(const u8* data, u32 length);
+	static std::optional<std::string> GetPython1BootromGameId(const std::string& bootrom_path);
 	static u32 HashPathForUniqueId(const std::string_view path);
 
 	static bool GetGameListEntryFromCache(const std::string& path, GameList::Entry* entry);
@@ -323,6 +327,62 @@ u32 GameList::HashPathForUniqueId(const std::string_view path)
 	return hash ? hash : 1u;
 }
 
+std::string GameList::CleanPythonGameId(std::string_view game_id)
+{
+	std::string ret;
+	ret.reserve(game_id.length());
+	for (const char ch : game_id)
+	{
+		if (std::isalnum(static_cast<unsigned char>(ch)))
+			ret.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(ch))));
+	}
+	return ret;
+}
+
+std::optional<std::string> GameList::GetPython1BootromGameId(const std::string& bootrom_path)
+{
+	static constexpr u32 SECURITY_SLOT_START = 0xf020;
+	static constexpr u32 SECURITY_SLOT_END = 0xf100;
+	static constexpr u32 SECURITY_SLOT_SIZE = 0x20;
+	static constexpr u32 SECURITY_CODE_OFFSET = 0;
+	static constexpr u32 SECURITY_CODE_LENGTH = 8;
+	static constexpr u32 SECURITY_REGION_OFFSET = 0x0a;
+	static constexpr u32 SECURITY_REGION_LENGTH = 3;
+
+	if (bootrom_path.empty())
+		return std::nullopt;
+
+	std::FILE* file = FileSystem::OpenCFile(bootrom_path.c_str(), "rb");
+	if (!file)
+		return std::nullopt;
+
+	std::array<u8, SECURITY_SLOT_END - SECURITY_SLOT_START> security_data;
+	const bool read_ok = FileSystem::FSeek64(file, SECURITY_SLOT_START, SEEK_SET) == 0 &&
+		std::fread(security_data.data(), 1, security_data.size(), file) == security_data.size();
+	std::fclose(file);
+	if (!read_ok)
+		return std::nullopt;
+
+	for (u32 slot = SECURITY_SLOT_START; slot < SECURITY_SLOT_END; slot += SECURITY_SLOT_SIZE)
+	{
+		const u8* const slot_data = security_data.data() + (slot - SECURITY_SLOT_START);
+		if (std::all_of(slot_data, slot_data + 0x10, [](u8 value) { return value == 0xff; }))
+			continue;
+
+		const std::string code = CleanPython1BootromGameIdField(slot_data + SECURITY_CODE_OFFSET, SECURITY_CODE_LENGTH);
+		const std::string region = CleanPython1BootromGameIdField(slot_data + SECURITY_REGION_OFFSET, SECURITY_REGION_LENGTH);
+		if (code.length() >= 5 && region.length() == SECURITY_REGION_LENGTH)
+			return code + region;
+	}
+
+	return std::nullopt;
+}
+
+std::string GameList::CleanPython1BootromGameIdField(const u8* data, u32 length)
+{
+	return CleanPythonGameId(std::string_view(reinterpret_cast<const char*>(data), length));
+}
+
 bool GameList::GetIsoSerialAndCRC(const std::string& path, s32* disc_type, std::string* serial, u32* crc)
 {
 	Error error;
@@ -539,12 +599,18 @@ bool GameList::GetPython1ListEntry(const std::string& path, GameList::Entry* ent
 		io_mode = "JVS";
 
 	std::string game_title = new_interface->GetStringValue("Game", "Name", path.c_str());
-	u32 forced_crc = new_interface->GetUIntValue("Game", "UniqueId", HashPathForUniqueId(path));
-	std::string forced_serial = new_interface->GetStringValue("Game", "GameSerial", "PYTHON100001");
+	const std::optional<std::string> bootrom_game_id = GetPython1BootromGameId(io_bootrom_path);
+	std::string game_id = CleanPythonGameId(new_interface->GetStringValue("Game", "GameId"));
+	const bool has_explicit_game_id = !game_id.empty();
+	if (game_id.empty())
+		game_id = bootrom_game_id.value_or("PYTHON100001");
+	u32 forced_crc = 0;
+	if (!new_interface->GetUIntValue("Game", "UniqueId", &forced_crc))
+		forced_crc = (has_explicit_game_id || bootrom_game_id.has_value()) ? HashPathForUniqueId(game_id) : HashPathForUniqueId(path);
 	std::string region = new_interface->GetStringValue("Game", "Region", "NTSC-J");
 
 	entry->path = path;
-	entry->serial = forced_serial;
+	entry->serial = game_id;
 	entry->crc = forced_crc;
 	entry->title = game_title;
 	entry->type = EntryType::Python1;
@@ -623,12 +689,17 @@ bool GameList::GetPython2ListEntry(const std::string& path, GameList::Entry* ent
 	}
 
 	std::string game_title = new_interface->GetStringValue("Game", "Name", path.c_str());
-	uint32_t forced_crc = new_interface->GetUIntValue("Game", "UniqueId", rand());
-	std::string forced_serial = new_interface->GetStringValue("Game", "GameSerial", "KNAC00001");
+	std::string game_id = CleanPythonGameId(new_interface->GetStringValue("Game", "GameId"));
+	const bool has_explicit_game_id = !game_id.empty();
+	if (game_id.empty())
+		game_id = "KNAC00001";
+	u32 forced_crc = 0;
+	if (!new_interface->GetUIntValue("Game", "UniqueId", &forced_crc))
+		forced_crc = has_explicit_game_id ? HashPathForUniqueId(game_id) : HashPathForUniqueId(path);
 	std::string region = new_interface->GetStringValue("Game", "Region", "NTSC-J");
 
 	entry->path = path;
-	entry->serial = forced_serial;
+	entry->serial = game_id;
 	entry->crc = forced_crc;
 	entry->title = game_title;
 	entry->type = EntryType::Python2;

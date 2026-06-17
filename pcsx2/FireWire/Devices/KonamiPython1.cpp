@@ -2185,6 +2185,15 @@ namespace
 		return image_type == StorageImageType::CF ? "CF" : "HDD";
 	}
 
+	StorageImageType GetStorageImageTypeForCommand(u32 command_offset)
+	{
+		if (command_offset == KONAMI_ATA_COMMAND_OFFSET)
+			return StorageImageType::HDD;
+
+		// Still seeing hdd games making reads on CF offset
+		return GetCfImagePath().empty() ? StorageImageType::HDD : StorageImageType::CF;
+	}
+
 	bool ReadStorageImageSectors(StorageImageType image_type, const std::string& path, u32 sector, u32 count, u8* dst)
 	{
 		return image_type == StorageImageType::CF ? AccessCfImageSectors(path, sector, count, dst, false) :
@@ -3132,9 +3141,11 @@ namespace
 			DevCon.WriteLn("FW HLE: Konami command off=0x%x subop=0x%x w1=0x%x w2=0x%x w3=0x%x w4=0x%x w5=0x%x w6=0x%x w7=0x%x",
 				command_offset, subop, sector, count, dest, p4, p5, p6, p7);
 
-		if (command_offset == KONAMI_CF_COMMAND_OFFSET && subop == 0 && HleReadSectors(StorageImageType::CF, sector, count, dest, KONAMI_CF_STATUS_OFFSET))
+		const StorageImageType image_type = GetStorageImageTypeForCommand(command_offset);
+
+		if (command_offset == KONAMI_CF_COMMAND_OFFSET && subop == 0 && HleReadSectors(image_type, sector, count, dest, KONAMI_CF_STATUS_OFFSET))
 			return true;
-		if (command_offset == KONAMI_CF_COMMAND_OFFSET && subop == 2 && HleWriteSectors(StorageImageType::CF, sector, count, dest, KONAMI_CF_STATUS_OFFSET))
+		if (command_offset == KONAMI_CF_COMMAND_OFFSET && subop == 2 && HleWriteSectors(image_type, sector, count, dest, KONAMI_CF_STATUS_OFFSET))
 			return true;
 		if (command_offset == KONAMI_CF_COMMAND_OFFSET && subop == 4)
 		{
