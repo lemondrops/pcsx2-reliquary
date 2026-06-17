@@ -15,6 +15,11 @@
 #include "common/SettingsInterface.h"
 #include "common/StringUtil.h"
 
+extern "C" {
+#include "ff.h"
+#include "diskio.h"
+}
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -325,6 +330,12 @@ namespace
 		u32 checksum = 0;
 	};
 
+	enum class StorageImageType
+	{
+		CF,
+		HDD,
+	};
+
 	struct PendingNetPacket
 	{
 		std::vector<u8> data;
@@ -442,6 +453,14 @@ namespace
 	std::unique_ptr<ChdHddImage> s_hdd_chd_image;
 	std::string s_hdd_image_open_path;
 	bool s_hdd_image_writable = false;
+	std::FILE* s_cf_image_file = nullptr;
+	std::string s_cf_image_open_path;
+	bool s_cf_image_writable = false;
+	s64 s_cf_image_size = 0;
+	FATFS s_cf_fatfs;
+	FIL s_cf_pythonfs_file;
+	bool s_cf_fatfs_mounted = false;
+	bool s_cf_pythonfs_file_open = false;
 	bool s_pythonfs_formatted = false;
 	std::vector<PendingNetPacket> s_net_rx_packets[KONAMI_NET_CHANNEL_COUNT];
 	std::array<u8, 64> s_net_property_response;
@@ -476,6 +495,7 @@ namespace
 	void SaveBbsramIfDirty();
 	void SaveDallasDongleIfDirty();
 	void CloseHddImageFile();
+	void CloseCfImageFile();
 	void ResetSubboardAdpcmPlayback();
 	bool IsPython1B22Mode();
 	bool IsPython1DogStationDXMode();
@@ -968,6 +988,11 @@ namespace
 	std::string GetHddImagePath()
 	{
 		return GetPython1GamePath("HddImageFile", "PCSX2_FW_HDD_IMAGE_FILE");
+	}
+
+	std::string GetCfImagePath()
+	{
+		return GetPython1GamePath("CfImageFile", "PCSX2_FW_CF_IMAGE_FILE");
 	}
 
 	std::string GetBbsramPath()
@@ -1498,6 +1523,181 @@ namespace
 			std::fflush(s_hdd_raw_image_file) == 0;
 	}
 
+	bool ReadFileBytes(std::FILE* file, u64 offset, void* dst, size_t size)
+	{
+		return FileSystem::FSeek64(file, offset, SEEK_SET) == 0 && std::fread(dst, 1, size, file) == size;
+	}
+
+	bool WriteFileBytes(std::FILE* file, u64 offset, const void* src, size_t size)
+	{
+		return FileSystem::FSeek64(file, offset, SEEK_SET) == 0 && std::fwrite(src, 1, size, file) == size && std::fflush(file) == 0;
+	}
+
+	void CloseCfImageFile()
+	{
+		if (s_cf_pythonfs_file_open)
+		{
+			f_close(&s_cf_pythonfs_file);
+			s_cf_pythonfs_file_open = false;
+		}
+
+		if (s_cf_fatfs_mounted)
+		{
+			f_unmount("0:");
+			s_cf_fatfs_mounted = false;
+		}
+
+		if (s_cf_image_file)
+		{
+			std::fclose(s_cf_image_file);
+			s_cf_image_file = nullptr;
+		}
+
+		s_cf_image_open_path.clear();
+		s_cf_image_writable = false;
+		s_cf_image_size = 0;
+	}
+
+	bool OpenCfImage(const std::string& path, bool writable = false)
+	{
+		if (!path.empty() && s_cf_image_open_path == path && (!writable || s_cf_image_writable))
+			return s_cf_image_file != nullptr && s_cf_fatfs_mounted && s_cf_pythonfs_file_open;
+
+		CloseCfImageFile();
+		s_cf_image_file = std::fopen(path.c_str(), writable ? "rb+" : "rb");
+		if (!s_cf_image_file)
+			return false;
+		s_cf_image_size = FileSystem::GetPathFileSize(path.c_str());
+		if (s_cf_image_size <= 0)
+		{
+			CloseCfImageFile();
+			return false;
+		}
+
+		if (f_mount(&s_cf_fatfs, "0:", 1) != FR_OK)
+		{
+			CloseCfImageFile();
+			return false;
+		}
+		s_cf_fatfs_mounted = true;
+
+		DIR dir;
+		FILINFO file_info;
+		if (f_opendir(&dir, "0:/") != FR_OK)
+		{
+			CloseCfImageFile();
+			return false;
+		}
+
+		std::string pythonfs_path;
+		while (f_readdir(&dir, &file_info) == FR_OK && file_info.fname[0] != 0)
+		{
+			if ((file_info.fattrib & AM_DIR) == 0 && file_info.fsize != 0)
+			{
+				pythonfs_path = std::string("0:/") + file_info.fname;
+				break;
+			}
+		}
+		f_closedir(&dir);
+		if (pythonfs_path.empty() || f_open(&s_cf_pythonfs_file, pythonfs_path.c_str(), writable ? FA_READ | FA_WRITE : FA_READ) != FR_OK)
+		{
+			CloseCfImageFile();
+			return false;
+		}
+		s_cf_pythonfs_file_open = true;
+
+		s_cf_image_open_path = path;
+		s_cf_image_writable = writable;
+		return true;
+	}
+
+	bool AccessCfImageSectors(const std::string& path, u32 sector, u32 count, u8* data, bool write)
+	{
+		if (!OpenCfImage(path, write))
+			return false;
+
+		const u64 byte_offset = static_cast<u64>(sector) * SECTOR_SIZE;
+		const u64 byte_count = static_cast<u64>(count) * SECTOR_SIZE;
+		if (byte_offset > f_size(&s_cf_pythonfs_file) || byte_count > f_size(&s_cf_pythonfs_file) - byte_offset)
+			return false;
+
+		if (f_lseek(&s_cf_pythonfs_file, byte_offset) != FR_OK)
+			return false;
+
+		UINT processed = 0;
+		const FRESULT result = write ? f_write(&s_cf_pythonfs_file, data, static_cast<UINT>(byte_count), &processed) :
+			f_read(&s_cf_pythonfs_file, data, static_cast<UINT>(byte_count), &processed);
+		return result == FR_OK && processed == byte_count && (!write || f_sync(&s_cf_pythonfs_file) == FR_OK);
+	}
+
+	bool ReadCfImageBytes(const std::string& path, u64 offset, u8* dst, u32 size)
+	{
+		if (!OpenCfImage(path))
+			return false;
+
+		if (offset > f_size(&s_cf_pythonfs_file) || size > f_size(&s_cf_pythonfs_file) - offset)
+			return false;
+
+		if (f_lseek(&s_cf_pythonfs_file, offset) != FR_OK)
+			return false;
+
+		UINT read = 0;
+		return f_read(&s_cf_pythonfs_file, dst, size, &read) == FR_OK && read == size;
+	}
+
+	extern "C" DSTATUS disk_initialize(BYTE pdrv)
+	{
+		return pdrv == 0 && s_cf_image_file ? 0 : STA_NOINIT;
+	}
+
+	extern "C" DSTATUS disk_status(BYTE pdrv)
+	{
+		return pdrv == 0 && s_cf_image_file ? 0 : STA_NOINIT;
+	}
+
+	extern "C" DRESULT disk_read(BYTE pdrv, BYTE* buff, LBA_t sector, UINT count)
+	{
+		if (pdrv != 0 || !s_cf_image_file || count == 0)
+			return RES_PARERR;
+
+		const u64 offset = static_cast<u64>(sector) * SECTOR_SIZE;
+		const size_t bytes = static_cast<size_t>(count) * SECTOR_SIZE;
+		return ReadFileBytes(s_cf_image_file, offset, buff, bytes) ? RES_OK : RES_ERROR;
+	}
+
+	extern "C" DRESULT disk_write(BYTE pdrv, const BYTE* buff, LBA_t sector, UINT count)
+	{
+		if (pdrv != 0 || !s_cf_image_file || count == 0)
+			return RES_PARERR;
+
+		const u64 offset = static_cast<u64>(sector) * SECTOR_SIZE;
+		const size_t bytes = static_cast<size_t>(count) * SECTOR_SIZE;
+		return WriteFileBytes(s_cf_image_file, offset, buff, bytes) ? RES_OK : RES_ERROR;
+	}
+
+	extern "C" DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void* buff)
+	{
+		if (pdrv != 0 || !s_cf_image_file)
+			return RES_PARERR;
+
+		switch (cmd)
+		{
+			case CTRL_SYNC:
+				return std::fflush(s_cf_image_file) == 0 ? RES_OK : RES_ERROR;
+			case GET_SECTOR_COUNT:
+				*static_cast<LBA_t*>(buff) = static_cast<LBA_t>(s_cf_image_size / SECTOR_SIZE);
+				return RES_OK;
+			case GET_SECTOR_SIZE:
+				*static_cast<WORD*>(buff) = SECTOR_SIZE;
+				return RES_OK;
+			case GET_BLOCK_SIZE:
+				*static_cast<DWORD*>(buff) = 1;
+				return RES_OK;
+			default:
+				return RES_PARERR;
+		}
+	}
+
 	u32 ByteSwap32(u32 value)
 	{
 		return (value >> 24) | ((value >> 8) & 0x0000ff00) | ((value & 0x0000ff00) << 8) | (value << 24);
@@ -1587,17 +1787,24 @@ namespace
 
 	bool StartSubboardAdpcmPlayback(u32 sector)
 	{
-		const std::string path = GetHddImagePath();
+		std::string path = GetHddImagePath();
+		bool use_cf_image = false;
 		if (path.empty())
 		{
-			DevCon.WriteLn("FW HLE: no Python 1 HDD image configured for ADPCM sector=0x%x", sector);
-			StopSubboardAdpcmPlayback();
-			return false;
+			path = GetCfImagePath();
+			use_cf_image = true;
+			if (path.empty())
+			{
+				DevCon.WriteLn("FW HLE: no Python 1 storage image configured for ADPCM sector=0x%x", sector);
+				StopSubboardAdpcmPlayback();
+				return false;
+			}
 		}
 
 		const u64 offset = static_cast<u64>(sector) * SECTOR_SIZE;
 		std::array<u8, KONAMI_ADPCM_HEADER_SIZE> header;
-		if (!ReadHddImageBytes(path, offset, header.data(), static_cast<u32>(header.size())))
+		if (!(use_cf_image ? ReadCfImageBytes(path, offset, header.data(), static_cast<u32>(header.size())) :
+				ReadHddImageBytes(path, offset, header.data(), static_cast<u32>(header.size()))))
 		{
 			DevCon.WriteLn("FW HLE: failed ADPCM header read %s sector=0x%x", path.c_str(), sector);
 			StopSubboardAdpcmPlayback();
@@ -1620,7 +1827,8 @@ namespace
 		}
 
 		std::vector<u8> encoded(encoded_size);
-		if (!ReadHddImageBytes(path, offset + KONAMI_ADPCM_HEADER_SIZE, encoded.data(), encoded_size))
+		if (!(use_cf_image ? ReadCfImageBytes(path, offset + KONAMI_ADPCM_HEADER_SIZE, encoded.data(), encoded_size) :
+				ReadHddImageBytes(path, offset + KONAMI_ADPCM_HEADER_SIZE, encoded.data(), encoded_size)))
 		{
 			DevCon.WriteLn("FW HLE: short ADPCM read %s sector=0x%x requested=0x%x", path.c_str(), sector, encoded_size);
 			StopSubboardAdpcmPlayback();
@@ -1921,7 +2129,29 @@ namespace
 		return true;
 	}
 
-	bool HleReadSectors(u32 sector, u32 count, u32 dest, u32 status_offset)
+	std::string GetStorageImagePath(StorageImageType image_type)
+	{
+		return image_type == StorageImageType::CF ? GetCfImagePath() : GetHddImagePath();
+	}
+
+	const char* GetStorageImageName(StorageImageType image_type)
+	{
+		return image_type == StorageImageType::CF ? "CF" : "HDD";
+	}
+
+	bool ReadStorageImageSectors(StorageImageType image_type, const std::string& path, u32 sector, u32 count, u8* dst)
+	{
+		return image_type == StorageImageType::CF ? AccessCfImageSectors(path, sector, count, dst, false) :
+			ReadHddImageSectors(path, sector, count, dst);
+	}
+
+	bool WriteStorageImageSectors(StorageImageType image_type, const std::string& path, u32 sector, u32 count, u8* src)
+	{
+		return image_type == StorageImageType::CF ? AccessCfImageSectors(path, sector, count, src, true) :
+			WriteHddImageSectors(path, sector, count, src);
+	}
+
+	bool HleReadSectors(StorageImageType image_type, u32 sector, u32 count, u32 dest, u32 status_offset)
 	{
 		if (count == 0)
 			return true;
@@ -1930,28 +2160,28 @@ namespace
 		const u64 bytes64 = static_cast<u64>(count) * SECTOR_SIZE;
 		if (bytes64 > 16 * 1024 * 1024)
 		{
-			DevCon.WriteLn("FW HLE: refusing oversized sector read sector=0x%x count=0x%x dest=0x%x", sector, count, dest);
+			DevCon.WriteLn("FW HLE: refusing oversized %s sector read sector=0x%x count=0x%x dest=0x%x", GetStorageImageName(image_type), sector, count, dest);
 			return false;
 		}
 
-		const std::string path = GetHddImagePath();
+		const std::string path = GetStorageImagePath(image_type);
 		if (path.empty())
 		{
-			DevCon.WriteLn("FW HLE: no Python 1 HDD image configured");
+			DevCon.WriteLn("FW HLE: no Python 1 %s image configured", GetStorageImageName(image_type));
 			return false;
 		}
 
 		std::vector<u8> data(static_cast<size_t>(bytes64));
-		if (!ReadHddImageSectors(path, sector, count, data.data()))
+		if (!ReadStorageImageSectors(image_type, path, sector, count, data.data()))
 		{
-			DevCon.WriteLn("FW HLE: failed sector read %s offset=0x%llx bytes=0x%llx", path.c_str(),
+			DevCon.WriteLn("FW HLE: failed %s sector read %s offset=0x%llx bytes=0x%llx", GetStorageImageName(image_type), path.c_str(),
 				static_cast<unsigned long long>(offset), static_cast<unsigned long long>(bytes64));
 			return false;
 		}
 		return QueuePendingSectorAndStatusPackets(dest, data, status_offset, ShouldDeferSectorReadStatus(status_offset));
 	}
 
-	bool HleWriteSectors(u32 sector, u32 count, u32 source, u32 status_offset)
+	bool HleWriteSectors(StorageImageType image_type, u32 sector, u32 count, u32 source, u32 status_offset)
 	{
 		if (count == 0)
 		{
@@ -1963,14 +2193,14 @@ namespace
 		const u64 bytes64 = static_cast<u64>(count) * SECTOR_SIZE;
 		if (bytes64 > 16 * 1024 * 1024)
 		{
-			DevCon.WriteLn("FW HLE: refusing oversized sector write sector=0x%x count=0x%x source=0x%x", sector, count, source);
+			DevCon.WriteLn("FW HLE: refusing oversized %s sector write sector=0x%x count=0x%x source=0x%x", GetStorageImageName(image_type), sector, count, source);
 			return false;
 		}
 
-		const std::string path = GetHddImagePath();
+		const std::string path = GetStorageImagePath(image_type);
 		if (path.empty())
 		{
-			DevCon.WriteLn("FW HLE: no Python 1 HDD image configured");
+			DevCon.WriteLn("FW HLE: no Python 1 %s image configured", GetStorageImageName(image_type));
 			return false;
 		}
 
@@ -1981,9 +2211,9 @@ namespace
 			return false;
 		}
 
-		if (!WriteHddImageSectors(path, sector, count, data.data()))
+		if (!WriteStorageImageSectors(image_type, path, sector, count, data.data()))
 		{
-			DevCon.WriteLn("FW HLE: failed sector write %s offset=0x%llx bytes=0x%llx", path.c_str(),
+			DevCon.WriteLn("FW HLE: failed %s sector write %s offset=0x%llx bytes=0x%llx", GetStorageImageName(image_type), path.c_str(),
 				static_cast<unsigned long long>(offset), static_cast<unsigned long long>(bytes64));
 			return false;
 		}
@@ -2856,16 +3086,18 @@ namespace
 			DevCon.WriteLn("FW HLE: Konami command off=0x%x subop=0x%x w1=0x%x w2=0x%x w3=0x%x w4=0x%x w5=0x%x w6=0x%x w7=0x%x",
 				command_offset, subop, sector, count, dest, p4, p5, p6, p7);
 
-		if (command_offset == KONAMI_CF_COMMAND_OFFSET && subop == 0 && HleReadSectors(sector, count, dest, KONAMI_CF_STATUS_OFFSET))
+		if (command_offset == KONAMI_CF_COMMAND_OFFSET && subop == 0 && HleReadSectors(StorageImageType::CF, sector, count, dest, KONAMI_CF_STATUS_OFFSET))
+			return true;
+		if (command_offset == KONAMI_CF_COMMAND_OFFSET && subop == 2 && HleWriteSectors(StorageImageType::CF, sector, count, dest, KONAMI_CF_STATUS_OFFSET))
 			return true;
 		if (command_offset == KONAMI_CF_COMMAND_OFFSET && subop == 4)
 		{
 			QueuePendingDbufQuadWrite(0xfffe, KONAMI_CF_STATUS_OFFSET, 0);
 			return true;
 		}
-		if (command_offset == KONAMI_ATA_COMMAND_OFFSET && subop == 0 && HleReadSectors(sector, count, dest, KONAMI_ATA_STATUS_OFFSET))
+		if (command_offset == KONAMI_ATA_COMMAND_OFFSET && subop == 0 && HleReadSectors(StorageImageType::HDD, sector, count, dest, KONAMI_ATA_STATUS_OFFSET))
 			return true;
-		if (command_offset == KONAMI_ATA_COMMAND_OFFSET && subop == 2 && HleWriteSectors(sector, count, dest, KONAMI_ATA_STATUS_OFFSET))
+		if (command_offset == KONAMI_ATA_COMMAND_OFFSET && subop == 2 && HleWriteSectors(StorageImageType::HDD, sector, count, dest, KONAMI_ATA_STATUS_OFFSET))
 			return true;
 		if (command_offset == KONAMI_ATA_COMMAND_OFFSET && subop == 7)
 		{
@@ -2888,9 +3120,10 @@ namespace
 	bool KonamiPython1Device::Open(FireWire::FireWireDeviceHost& host)
 	{
 		s_host = &host;
-		s_device = this;
-		CloseHddImageFile();
-		s_pending_sector_status_writes.clear();
+	s_device = this;
+	CloseHddImageFile();
+	CloseCfImageFile();
+	s_pending_sector_status_writes.clear();
 		s_host->ClearEvent();
 		s_uart_rx_fifo.clear();
 		LoadBootrom();
@@ -2917,10 +3150,11 @@ namespace
 	void KonamiPython1Device::Close()
 	{
 		SaveBootromIfDirty();
-		SaveBbsramIfDirty();
-		SaveDallasDongleIfDirty();
-		CloseHddImageFile();
-		ResetSubboardAdpcmPlayback();
+	SaveBbsramIfDirty();
+	SaveDallasDongleIfDirty();
+	CloseHddImageFile();
+	CloseCfImageFile();
+	ResetSubboardAdpcmPlayback();
 		s_pending_sector_status_writes.clear();
 		if (s_host)
 			s_host->ClearEvent();

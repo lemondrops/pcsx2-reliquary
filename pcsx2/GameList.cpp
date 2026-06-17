@@ -517,7 +517,8 @@ bool GameList::GetPython1ListEntry(const std::string& path, GameList::Entry* ent
 		return false;
 	}
 
-	const std::string hdd_image_path = GetRelativeGameIniPath(path, *new_interface, "HddImagePath");
+	const std::string hdd_image_path = GetRelativeGameIniPath(path, *new_interface, "HDDImagePath");
+	const std::string cf_image_path = GetRelativeGameIniPath(path, *new_interface, "CFImagePath");
 	const std::string bbsram_path = GetRelativeGameIniPath(path, *new_interface, "BBSRamPath");
 	const std::string io_bootrom_path = GetRelativeGameIniPath(path, *new_interface, "IOBootRomPath");
 	const std::string io_config_rom_path = GetRelativeGameIniPath(path, *new_interface, "IOConfigRomPath");
@@ -556,6 +557,7 @@ bool GameList::GetPython1ListEntry(const std::string& path, GameList::Entry* ent
 		sif->Load();
 
 	sif->SetStringValue("Python1/Game", "HddImageFile", hdd_image_path.c_str());
+	sif->SetStringValue("Python1/Game", "CfImageFile", cf_image_path.c_str());
 	sif->SetStringValue("Python1/Game", "BBSRamFile", bbsram_path.c_str());
 	sif->SetStringValue("Python1/Game", "IOBootRomFile", io_bootrom_path.c_str());
 	sif->SetStringValue("Python1/Game", "IOConfigRomFile", io_config_rom_path.c_str());

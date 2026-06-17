@@ -35,6 +35,7 @@
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(DepsIncludeDir)\SDL3</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(DepsIncludeDir)\freetype2</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)3rdparty\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)3rdparty\fatfs\source</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)3rdparty\fmt\include</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)3rdparty\des</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)3rdparty\winwil\include</AdditionalIncludeDirectories>
@@ -1100,6 +1101,9 @@
     </ProjectReference>
     <ProjectReference Include="..\3rdparty\demangler\demangler.vcxproj">
       <Project>{d31a6dd1-99ca-41d8-a230-1fae913c8989}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\3rdparty\fatfs\fatfs.vcxproj">
+      <Project>{f45d0ff0-617c-4a12-b1c3-7d716ed8a315}</Project>
     </ProjectReference>
     <ProjectReference Include="..\3rdparty\ccc\ccc.vcxproj">
       <Project>{2589f8ce-ea77-4b73-911e-64074569795b}</Project>

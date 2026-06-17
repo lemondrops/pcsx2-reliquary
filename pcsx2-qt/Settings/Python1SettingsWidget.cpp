@@ -28,6 +28,10 @@ Python1SettingsWidget::Python1SettingsWidget(const GameList::Entry* entry, Setti
 	m_ui.hddImagePath->setEnabled(true);
 	connect(m_ui.hddImageBrowse, &QPushButton::clicked, this, &Python1SettingsWidget::onHddImageBrowseClicked);
 
+	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.cfImagePath, "Python1/Game", "CfImageFile", "");
+	m_ui.cfImagePath->setEnabled(true);
+	connect(m_ui.cfImageBrowse, &QPushButton::clicked, this, &Python1SettingsWidget::onCfImageBrowseClicked);
+
 	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.bbsramPath, "Python1/Game", "BBSRamFile", "");
 	m_ui.bbsramPath->setEnabled(true);
 	connect(m_ui.bbsramBrowse, &QPushButton::clicked, this, &Python1SettingsWidget::onBbsramBrowseClicked);
@@ -69,6 +73,20 @@ void Python1SettingsWidget::onHddImageBrowseClicked()
 
 	m_ui.hddImagePath->setText(path);
 	m_ui.hddImagePath->editingFinished();
+}
+
+void Python1SettingsWidget::onCfImageBrowseClicked()
+{
+	QString path =
+		QDir::toNativeSeparators(QFileDialog::getOpenFileName(QtUtils::GetRootWidget(this), tr("CF Image File"),
+			!m_ui.cfImagePath->text().isEmpty() ? m_ui.cfImagePath->text() : QString(), tr("CF Images (*.bin *.raw *.dsk);;All Files (*)"), nullptr,
+			QFileDialog::DontConfirmOverwrite));
+
+	if (path.isEmpty())
+		return;
+
+	m_ui.cfImagePath->setText(path);
+	m_ui.cfImagePath->editingFinished();
 }
 
 void Python1SettingsWidget::onBbsramBrowseClicked()

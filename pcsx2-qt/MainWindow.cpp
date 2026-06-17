@@ -3721,10 +3721,13 @@ bool MainWindow::verifyPython1Configuration(const GameList::Entry* entry)
 	si->Load();
 
 	const std::string hddImagePath = si->GetStringValue("Python1/Game", "HddImageFile", "");
-	if (hddImagePath.empty() || !FileSystem::FileExists(hddImagePath.c_str()))
+	const std::string cfImagePath = si->GetStringValue("Python1/Game", "CfImageFile", "");
+	const bool hddImageExists = !hddImagePath.empty() && FileSystem::FileExists(hddImagePath.c_str());
+	const bool cfImageExists = !cfImagePath.empty() && FileSystem::FileExists(cfImagePath.c_str());
+	if (!hddImageExists && !cfImageExists)
 	{
-		QMessageBox::critical(nullptr, tr("Error"), tr("Could not find required HDD image file: '%1'").arg(QString::fromStdString(hddImagePath)));
-		Console.Error("Could not find required Python 1 HDD image file: '%s'", hddImagePath.c_str());
+		QMessageBox::critical(nullptr, tr("Error"), tr("Could not find required HDD or CF image file."));
+		Console.Error("Could not find required Python 1 HDD or CF image file");
 		valid = false;
 	}
 

@@ -20,6 +20,7 @@ class Python1SettingsWidget : public QWidget
 
 private Q_SLOTS:
 	void onHddImageBrowseClicked();
+	void onCfImageBrowseClicked();
 	void onBbsramBrowseClicked();
 	void onIoBootRomBrowseClicked();
 	void onIoConfigRomBrowseClicked();

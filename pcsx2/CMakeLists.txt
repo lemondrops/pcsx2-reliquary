@@ -1204,6 +1204,7 @@ target_link_libraries(PCSX2_FLAGS INTERFACE
 	libzip::zip
 	cpuinfo
 	cubeb
+	fatfs
 	rcheevos
 	discord-rpc
 	simpleini
@@ -1263,7 +1264,6 @@ target_include_directories(PCSX2_FLAGS INTERFACE
 	"${CMAKE_BINARY_DIR}/pcsx2"
 	"${CMAKE_BINARY_DIR}/common/include"
 	"${FFMPEG_INCLUDE_DIRS}"
-	"${CMAKE_SOURCE_DIR}/3rdparty/des/"
 )
 
 set_source_files_properties(PrecompiledHeader.cpp PROPERTIES HEADER_FILE_ONLY TRUE)
