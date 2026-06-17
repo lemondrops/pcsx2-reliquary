@@ -33,4 +33,17 @@ namespace usb_hid
 		USBDevice* CreateDevice(SettingsInterface& si, u32 port, u32 subtype) const override;
 		bool Freeze(USBDevice* dev, StateWrapper& sw) const override;
 	};
+
+	class TrackballDevice final : public DeviceProxy
+	{
+	public:
+		const char* Name() const override;
+		const char* TypeName() const override;
+		const char* IconName() const override;
+		std::span<const InputBindingInfo> Bindings(u32 subtype) const override;
+		float GetBindingValue(const USBDevice* dev, u32 bind) const override;
+		void SetBindingValue(USBDevice* dev, u32 bind, float value) const override;
+		USBDevice* CreateDevice(SettingsInterface& si, u32 port, u32 subtype) const override;
+		bool Freeze(USBDevice* dev, StateWrapper& sw) const override;
+	};
 } // namespace usb_hid

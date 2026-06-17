@@ -387,6 +387,7 @@ set(pcsx2USBSources
 	USB/qemu-usb/input-keymap-qcode-to-qnum.cpp
 	USB/qemu-usb/usb-ohci.cpp
 	USB/shared/ringbuffer.cpp
+	USB/usb-perfect-pool-camera/perfect-pool-camera.cpp
     USB/usb-python2/usb-python2.cpp
     USB/usb-python2/devices/acio.cpp
     USB/usb-python2/devices/ddr_extio.cpp
@@ -428,6 +429,7 @@ set(pcsx2USBHeaders
 	USB/qemu-usb/queue.h
 	USB/qemu-usb/qusb.h
 	USB/shared/ringbuffer.h
+	USB/usb-perfect-pool-camera/perfect-pool-camera.h
     USB/usb-python2/usb-python2.h
     USB/usb-python2/devices/acio.h
     USB/usb-python2/devices/ddr_extio.h

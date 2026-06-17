@@ -460,6 +460,7 @@
     <ClCompile Include="USB\usb-mic\usb-headset.cpp" />
     <ClCompile Include="USB\usb-mic\usb-mic.cpp" />
     <ClCompile Include="USB\usb-msd\usb-msd.cpp" />
+    <ClCompile Include="USB\usb-perfect-pool-camera\perfect-pool-camera.cpp" />
     <ClCompile Include="USB\usb-pad\lg\lg_ff.cpp" />
     <ClCompile Include="USB\usb-pad\usb-buzz.cpp" />
     <ClCompile Include="USB\usb-pad\usb-gametrak.cpp" />
@@ -930,6 +931,7 @@
     <ClInclude Include="USB\usb-mic\usb-headset.h" />
     <ClInclude Include="USB\usb-mic\usb-mic.h" />
     <ClInclude Include="USB\usb-msd\usb-msd.h" />
+    <ClInclude Include="USB\usb-perfect-pool-camera\perfect-pool-camera.h" />
     <ClInclude Include="USB\usb-pad\lg\lg_ff.h" />
     <ClInclude Include="USB\usb-pad\usb-buzz.h" />
     <ClInclude Include="USB\usb-pad\usb-gametrak.h" />

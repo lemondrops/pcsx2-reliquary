@@ -54,10 +54,25 @@ private Q_SLOTS:
 
 private:
 	void updateCenterPos();
+	void updateWaylandRelativeMouseMode();
+	void destroyWaylandRelativeMouseObjects();
 
 	QPoint m_relative_mouse_start_pos{};
 	QPoint m_relative_mouse_center_pos{};
+	QPoint m_relative_mouse_last_pos{};
+	QPoint m_relative_mouse_pending_warp_delta{};
+	bool m_relative_mouse_ignore_warp_event = false;
+	bool m_relative_mouse_has_pending_warp_delta = false;
 	bool m_relative_mouse_enabled = false;
+	bool m_wayland_relative_mouse_enabled = false;
+	uint32_t m_wayland_pointer_serial = 0;
+	void* m_wayland_display = nullptr;
+	void* m_wayland_pointer = nullptr;
+	void* m_wayland_registry = nullptr;
+	void* m_wayland_relative_pointer_manager = nullptr;
+	void* m_wayland_pointer_constraints = nullptr;
+	void* m_wayland_relative_pointer = nullptr;
+	void* m_wayland_locked_pointer = nullptr;
 #ifdef _WIN32
 	bool m_clip_mouse_enabled = false;
 #endif

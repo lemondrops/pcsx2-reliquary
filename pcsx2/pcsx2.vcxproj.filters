@@ -247,6 +247,9 @@
     <Filter Include="System\Ps2\USB\usb-msd">
       <UniqueIdentifier>{20789ef3-7c0e-41ac-babd-03a9be9fe994}</UniqueIdentifier>
     </Filter>
+    <Filter Include="System\Ps2\USB\usb-perfect-pool-camera">
+      <UniqueIdentifier>{5b803aa1-7e2c-4d73-9aa4-04cf86cf41b5}</UniqueIdentifier>
+    </Filter>
     <Filter Include="System\Ps2\USB\usb-mic">
       <UniqueIdentifier>{c59653b3-87d6-4b11-b9e3-f0543117ca27}</UniqueIdentifier>
     </Filter>
@@ -1183,6 +1186,9 @@
     </ClCompile>
     <ClCompile Include="USB\usb-msd\usb-msd.cpp">
       <Filter>System\Ps2\USB\usb-msd</Filter>
+    </ClCompile>
+    <ClCompile Include="USB\usb-perfect-pool-camera\perfect-pool-camera.cpp">
+      <Filter>System\Ps2\USB\usb-perfect-pool-camera</Filter>
     </ClCompile>
     <ClCompile Include="USB\usb-mic\usb-headset.cpp">
       <Filter>System\Ps2\USB\usb-mic</Filter>
@@ -2159,6 +2165,9 @@
     </ClInclude>
     <ClInclude Include="USB\usb-msd\usb-msd.h">
       <Filter>System\Ps2\USB\usb-msd</Filter>
+    </ClInclude>
+    <ClInclude Include="USB\usb-perfect-pool-camera\perfect-pool-camera.h">
+      <Filter>System\Ps2\USB\usb-perfect-pool-camera</Filter>
     </ClInclude>
     <ClInclude Include="USB\usb-mic\audiodev-noop.h">
       <Filter>System\Ps2\USB\usb-mic</Filter>

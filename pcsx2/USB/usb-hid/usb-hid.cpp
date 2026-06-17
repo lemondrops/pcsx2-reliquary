@@ -35,6 +35,8 @@
 #include "IconsPromptFont.h"
 #include "common/Console.h"
 
+#include <algorithm>
+
 namespace usb_hid
 {
 	struct UsbHIDState
@@ -49,6 +51,8 @@ namespace usb_hid
 		HIDState hid{};
 
 		u32 port = 0;
+		float trackball_accum_x = 0.0f;
+		float trackball_accum_y = 0.0f;
 
 		std::map<u32, QKeyCode> keycode_mapping;
 
@@ -56,6 +60,7 @@ namespace usb_hid
 
 		void QueueKeyboardState(KeyValue keycode, bool pressed);
 		void QueueMouseAxisState(InputPointerAxis axis, float delta);
+		void QueueTrackballAxisState(InputPointerAxis axis, float delta);
 		void QueueMouseButtonState(InputButton button, bool pressed);
 	};
 
@@ -744,6 +749,41 @@ namespace usb_hid
 		}
 	}
 
+	void UsbHIDState::QueueTrackballAxisState(InputPointerAxis axis, float delta)
+	{
+		static constexpr float TRACKBALL_SCALE = 0.5f;
+
+		if (axis >= InputPointerAxis::WheelX)
+		{
+			QueueMouseAxisState(axis, delta);
+			return;
+		}
+
+		if (InputManager::IsPointerButtonPressed(0, INPUT_BUTTON_LEFT))
+		{
+			trackball_accum_x = 0.0f;
+			trackball_accum_y = 0.0f;
+			return;
+		}
+
+		float& accum = (axis == InputPointerAxis::X) ? trackball_accum_x : trackball_accum_y;
+		accum += delta * TRACKBALL_SCALE;
+
+		const s64 movement = static_cast<s64>(accum);
+		if (movement == 0)
+			return;
+
+		accum -= static_cast<float>(movement);
+		const s64 step = std::clamp<s64>(movement, -127, 127);
+
+		InputEvent evt;
+		evt.type = INPUT_EVENT_KIND_REL;
+		evt.u.rel.axis = static_cast<InputAxis>(axis);
+		evt.u.rel.value = step;
+		hid.ptr.eh_entry(&hid, &evt);
+		hid.ptr.eh_sync(&hid);
+	}
+
 	void UsbHIDState::SetKeycodeMapping()
 	{
 		for (const auto& [keycode, name] : s_qkeycode_names)
@@ -861,7 +901,7 @@ namespace usb_hid
 		return !sw.HasError();
 	}
 
-	USBDevice* HIDMouseDevice::CreateDevice(SettingsInterface& si, u32 port, u32 subtype) const
+	static USBDevice* CreateMouseLikeDevice(u32 port)
 	{
 		UsbHIDState* s = new UsbHIDState(port);
 
@@ -893,6 +933,11 @@ namespace usb_hid
 	fail:
 		usb_hid_unrealize(&s->dev);
 		return nullptr;
+	}
+
+	USBDevice* HIDMouseDevice::CreateDevice(SettingsInterface& si, u32 port, u32 subtype) const
+	{
+		return CreateMouseLikeDevice(port);
 	}
 
 	const char* HIDMouseDevice::Name() const
@@ -969,5 +1014,65 @@ namespace usb_hid
 			s->QueueMouseButtonState(static_cast<InputButton>(bind), (value >= 0.5f));
 		else
 			s->QueueMouseAxisState(static_cast<InputPointerAxis>(bind - INPUT_BUTTON__MAX), value);
+	}
+
+	USBDevice* TrackballDevice::CreateDevice(SettingsInterface& si, u32 port, u32 subtype) const
+	{
+		return CreateMouseLikeDevice(port);
+	}
+
+	const char* TrackballDevice::Name() const
+	{
+		return TRANSLATE_NOOP("USB", "Trackball");
+	}
+
+	const char* TrackballDevice::TypeName() const
+	{
+		return "trackball";
+	}
+
+	const char* TrackballDevice::IconName() const
+	{
+		return ICON_PF_MOUSE;
+	}
+
+	bool TrackballDevice::Freeze(USBDevice* dev, StateWrapper& sw) const
+	{
+		UsbHIDState* s = USB_CONTAINER_OF(dev, UsbHIDState, dev);
+
+		if (!sw.DoMarker("TrackballDevice"))
+			return false;
+
+		sw.DoPODArray(s->hid.ptr.queue, std::size(s->hid.ptr.queue));
+	sw.Do(&s->hid.ptr.mouse_grabbed);
+	sw.Do(&s->trackball_accum_x);
+	sw.Do(&s->trackball_accum_y);
+
+	sw.Do(&s->hid.head);
+		sw.Do(&s->hid.n);
+		sw.Do(&s->hid.protocol);
+		sw.Do(&s->hid.idle);
+
+		return !sw.HasError();
+	}
+
+	std::span<const InputBindingInfo> TrackballDevice::Bindings(u32 subtype) const
+	{
+		return HIDMouseDevice().Bindings(subtype);
+	}
+
+	float TrackballDevice::GetBindingValue(const USBDevice* dev, u32 bind) const
+	{
+		return HIDMouseDevice().GetBindingValue(dev, bind);
+	}
+
+	void TrackballDevice::SetBindingValue(USBDevice* dev, u32 bind, float value) const
+	{
+		UsbHIDState* s = USB_CONTAINER_OF(dev, UsbHIDState, dev);
+
+		if (bind < INPUT_BUTTON__MAX)
+			s->QueueMouseButtonState(static_cast<InputButton>(bind), (value >= 0.5f));
+		else
+			s->QueueTrackballAxisState(static_cast<InputPointerAxis>(bind - INPUT_BUTTON__MAX), value);
 	}
 } // namespace usb_hid

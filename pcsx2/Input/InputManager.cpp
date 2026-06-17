@@ -163,11 +163,13 @@ static constexpr const std::array<const char*, 3> s_pointer_button_names = {{"Le
 struct PointerAxisState
 {
 	std::atomic<s32> delta;
+	std::atomic<s32> raw_delta;
 	float last_value;
 };
 static std::array<std::array<float, static_cast<u8>(InputPointerAxis::Count)>, InputManager::MAX_POINTER_DEVICES> s_host_pointer_positions;
 static std::array<std::array<PointerAxisState, static_cast<u8>(InputPointerAxis::Count)>, InputManager::MAX_POINTER_DEVICES>
 	s_pointer_state;
+static std::array<std::atomic<u32>, InputManager::MAX_POINTER_DEVICES> s_pointer_button_state;
 static std::array<float, 2> s_pointer_axis_speed;
 static std::array<float, 2> s_pointer_axis_dead_zone;
 static std::array<float, 2> s_pointer_axis_range;
@@ -1075,12 +1077,30 @@ bool InputManager::IsAxisHandler(const InputEventHandler& handler)
 
 bool InputManager::InvokeEvents(InputBindingKey key, float value, GenericInputBinding generic_key)
 {
+	if (key.source_type == InputSourceType::Pointer && key.source_subtype == InputSubclass::PointerButton &&
+		key.source_index < MAX_POINTER_DEVICES && key.data < 32)
+	{
+		const u32 mask = 1u << key.data;
+		if (value > 0.0f)
+			s_pointer_button_state[key.source_index].fetch_or(mask, std::memory_order_release);
+		else
+			s_pointer_button_state[key.source_index].fetch_and(~mask, std::memory_order_release);
+	}
+
 	if (DoEventHook(key, value))
 		return true;
 
 	// If imgui ate the event, don't fire our handlers.
 	const bool skip_button_handlers = PreprocessEvent(key, value, generic_key);
 	return ProcessEvent(key, value, skip_button_handlers);
+}
+
+bool InputManager::IsPointerButtonPressed(u32 index, u32 button_index)
+{
+	if (index >= MAX_POINTER_DEVICES || button_index >= 32)
+		return false;
+
+	return (s_pointer_button_state[index].load(std::memory_order_acquire) & (1u << button_index)) != 0;
 }
 
 bool InputManager::ProcessEvent(InputBindingKey key, float value, bool skip_button_handlers)
@@ -1296,6 +1316,7 @@ void InputManager::GenerateRelativeMouseEvents()
 
 			PointerAxisState& state = s_pointer_state[device][axis];
 			const float delta = static_cast<float>(state.delta.exchange(0, std::memory_order_acquire)) / 65536.0f;
+			const float raw_delta = static_cast<float>(state.raw_delta.exchange(0, std::memory_order_acquire)) / 65536.0f;
 			float value = 0.0f;
 
 			if (axis <= static_cast<u32>(InputPointerAxis::Y))
@@ -1326,12 +1347,13 @@ void InputManager::GenerateRelativeMouseEvents()
 				ProcessEvent(key, value, false);
 			}
 
-			if (delta != 0.0f)
+			const float callback_delta = (axis <= static_cast<u32>(InputPointerAxis::Y)) ? raw_delta : delta;
+			if (callback_delta != 0.0f)
 			{
 				for (const std::pair<u32, PointerMoveCallback>& pmc : s_pointer_move_callbacks)
 				{
 					if (pmc.first == device)
-						pmc.second(key, delta);
+						pmc.second(key, callback_delta);
 				}
 			}
 		}
@@ -1364,6 +1386,8 @@ void InputManager::UpdatePointerRelativeDelta(u32 index, InputPointerAxis axis, 
 {
 	s_host_pointer_positions[index][static_cast<u8>(axis)] += d;
 	s_pointer_state[index][static_cast<u8>(axis)].delta.fetch_add(static_cast<s32>(d * 65536.0f), std::memory_order_release);
+	if (raw_input)
+		s_pointer_state[index][static_cast<u8>(axis)].raw_delta.fetch_add(static_cast<s32>(d * 65536.0f), std::memory_order_release);
 
 	if (index == 0 && axis <= InputPointerAxis::Y)
 		ImGuiManager::UpdateMousePosition(s_host_pointer_positions[0][0], s_host_pointer_positions[0][1]);

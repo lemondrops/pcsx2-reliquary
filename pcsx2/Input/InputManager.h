@@ -304,6 +304,9 @@ namespace InputManager
 	/// Updates relative pointer position. Can call from the UI thread, use when host supports relative coordinate reporting.
 	void UpdatePointerRelativeDelta(u32 index, InputPointerAxis axis, float d, bool raw_input = false);
 
+	/// Returns true if a host pointer button is currently held.
+	bool IsPointerButtonPressed(u32 index, u32 button_index);
+
 	/// Updates host mouse mode (relative/cursor hiding).
 	void UpdateHostMouseMode();
 
