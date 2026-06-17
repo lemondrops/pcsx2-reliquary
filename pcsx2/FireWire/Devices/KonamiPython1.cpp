@@ -88,7 +88,8 @@ namespace
 	constexpr u32 P1IO_SOURCE_SERVICE = 1u << 14;
 	constexpr u32 SECTOR_SIZE = 0x200;
 	constexpr u32 KONAMI_DBUF_WRITEB_MAX_PAYLOAD = 0x200;
-	constexpr u32 BOOTROM_SIZE = 0x10000;
+	constexpr u32 LEGACY_BOOTROM_SIZE = 0x10000;
+	constexpr u32 BOOTROM_SIZE = 0x80000;
 	constexpr u32 BBSRAM_SIZE = 0x2000;
 	constexpr u32 KONAMI_BBSRAM_VOLATILE_TEST_BYTES = 0x1d00;
 	constexpr u32 DALLAS_DONGLE_SLOT_COUNT = 2;
@@ -1266,6 +1267,21 @@ namespace
 		std::memcpy(s_bootrom + 0xf030, KONAMI_WE2K3_DALLAS_BOOTROM_RECORD, sizeof(KONAMI_WE2K3_DALLAS_BOOTROM_RECORD));
 	}
 
+	std::optional<u32> GetBootromFileSize(std::FILE* file)
+	{
+		const long current = std::ftell(file);
+		if (current < 0 || std::fseek(file, 0, SEEK_END) != 0)
+			return std::nullopt;
+
+		const long size = std::ftell(file);
+		if (size < 0 || std::fseek(file, current, SEEK_SET) != 0)
+			return std::nullopt;
+
+		return static_cast<u32>(size);
+	}
+
+	void SaveBootromIfDirty();
+
 	void LoadBootrom()
 	{
 		s_bootrom_dirty = false;
@@ -1285,12 +1301,34 @@ namespace
 		{
 			UpdateFactoryMacFromBootrom();
 			UpdateDallasKeyResponseFromBootrom();
-			(void)WriteBinaryFile(path, s_bootrom, sizeof(s_bootrom));
+			(void)WriteBinaryFile(path, s_bootrom, BOOTROM_SIZE);
 			return;
 		}
 
-		(void)std::fread(s_bootrom, 1, sizeof(s_bootrom), file);
+		const std::optional<u32> file_size = GetBootromFileSize(file);
+		if (!file_size.has_value() || (file_size.value() != LEGACY_BOOTROM_SIZE && file_size.value() != BOOTROM_SIZE))
+		{
+			DevCon.WriteLn("FW HLE: unsupported BootROM size path=%s bytes=0x%x expected=0x%x or 0x%x",
+				path.c_str(), file_size.value_or(0), LEGACY_BOOTROM_SIZE, BOOTROM_SIZE);
+			std::fclose(file);
+			UpdateFactoryMacFromBootrom();
+			UpdateDallasKeyResponseFromBootrom();
+			return;
+		}
+
+		const u32 read_size = file_size.value();
+		const size_t read = std::fread(s_bootrom, 1, read_size, file);
 		std::fclose(file);
+		if (read != read_size)
+		{
+			DevCon.WriteLn("FW HLE: failed BootROM read path=%s bytes=0x%zx expected=0x%x", path.c_str(), read, read_size);
+			BuildGeneratedBootrom();
+		}
+		else if (read_size == LEGACY_BOOTROM_SIZE)
+		{
+			s_bootrom_dirty = true;
+			SaveBootromIfDirty();
+		}
 		UpdateFactoryMacFromBootrom();
 		UpdateDallasKeyResponseFromBootrom();
 	}
@@ -1328,9 +1366,9 @@ namespace
 		if (!file)
 			return;
 
-		const size_t written = std::fwrite(s_bootrom, 1, sizeof(s_bootrom), file);
+		const size_t written = std::fwrite(s_bootrom, 1, BOOTROM_SIZE, file);
 		std::fclose(file);
-		if (written == sizeof(s_bootrom))
+		if (written == BOOTROM_SIZE)
 			s_bootrom_dirty = false;
 	}
 
