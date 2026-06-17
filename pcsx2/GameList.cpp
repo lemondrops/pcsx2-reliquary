@@ -37,7 +37,7 @@ namespace GameList
 	enum : u32
 	{
 		GAME_LIST_CACHE_SIGNATURE = 0x45434C47,
-		GAME_LIST_CACHE_VERSION = 35,
+		GAME_LIST_CACHE_VERSION = 36,
 
 
 		PLAYED_TIME_SERIAL_LENGTH = 32,
@@ -517,16 +517,16 @@ bool GameList::GetPython1ListEntry(const std::string& path, GameList::Entry* ent
 		return false;
 	}
 
-	const std::string hdd_image_path = GetRelativeGameIniPath(path, *new_interface, "HDDImagePath");
-	const std::string cf_image_path = GetRelativeGameIniPath(path, *new_interface, "CFImagePath");
-	const std::string bbsram_path = GetRelativeGameIniPath(path, *new_interface, "BBSRamPath");
-	const std::string io_bootrom_path = GetRelativeGameIniPath(path, *new_interface, "IOBootRomPath");
-	const std::string io_config_rom_path = GetRelativeGameIniPath(path, *new_interface, "IOConfigRomPath");
+	const std::string hdd_image_path = GetRelativeGameIniPath(path, *new_interface, "HddImagePath");
+	const std::string cf_image_path = GetRelativeGameIniPath(path, *new_interface, "CfImagePath");
+	const std::string bbsram_path = GetRelativeGameIniPath(path, *new_interface, "BbsRamPath");
+	const std::string io_bootrom_path = GetRelativeGameIniPath(path, *new_interface, "IoBootRomPath");
+	const std::string io_config_rom_path = GetRelativeGameIniPath(path, *new_interface, "IoConfigRomPath");
 	const std::string internal_dongle_path = GetRelativeGameIniPath(path, *new_interface, "InternalDonglePath");
 	const std::string external_dongle_path = GetRelativeGameIniPath(path, *new_interface, "ExternalDonglePath");
 	const std::string memory_card_dongle_path = GetRelativeGameIniPath(path, *new_interface, "MemoryCardDonglePath");
 	const std::string memory_card_id_path = GetRelativeGameIniPath(path, *new_interface, "MemoryCardIdPath");
-	std::string io_mode = new_interface->GetStringValue("Game", "IOMode", "JVS");
+	std::string io_mode = new_interface->GetStringValue("Game", "IoMode", "JVS");
 	if (StringUtil::Strcasecmp(io_mode.c_str(), "EXTIO") == 0)
 		io_mode = "EXTIO";
 	else if (StringUtil::Strcasecmp(io_mode.c_str(), "POPN") == 0)
@@ -558,14 +558,14 @@ bool GameList::GetPython1ListEntry(const std::string& path, GameList::Entry* ent
 
 	sif->SetStringValue("Python1/Game", "HddImageFile", hdd_image_path.c_str());
 	sif->SetStringValue("Python1/Game", "CfImageFile", cf_image_path.c_str());
-	sif->SetStringValue("Python1/Game", "BBSRamFile", bbsram_path.c_str());
-	sif->SetStringValue("Python1/Game", "IOBootRomFile", io_bootrom_path.c_str());
-	sif->SetStringValue("Python1/Game", "IOConfigRomFile", io_config_rom_path.c_str());
+	sif->SetStringValue("Python1/Game", "BbsRamFile", bbsram_path.c_str());
+	sif->SetStringValue("Python1/Game", "IoBootRomFile", io_bootrom_path.c_str());
+	sif->SetStringValue("Python1/Game", "IoConfigRomFile", io_config_rom_path.c_str());
 	sif->SetStringValue("Python1/Game", "InternalDongleFile", internal_dongle_path.c_str());
 	sif->SetStringValue("Python1/Game", "ExternalDongleFile", external_dongle_path.c_str());
 	sif->SetStringValue("Python1/Game", "MemoryCardDongleFile", memory_card_dongle_path.c_str());
 	sif->SetStringValue("Python1/Game", "MemoryCardIdFile", memory_card_id_path.c_str());
-	sif->SetStringValue("Python1/Game", "IOMode", io_mode.c_str());
+	sif->SetStringValue("Python1/Game", "IoMode", io_mode.c_str());
 	sif->SetBoolValue("DEV9/Hdd", "HddEnable", false);
 	sif->SetStringValue("DEV9/Hdd", "HddFile", "");
 	sif->SetStringValue("Security", "MgKeyStoreMode", Pcsx2Config::GetSecurityKeyStoreModeName(SecurityKeyStoreMode::Arcade));

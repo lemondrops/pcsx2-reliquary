@@ -135,7 +135,7 @@ void FireWireDeviceWidget::initializeBindingWidgets()
 QString FireWireDeviceWidget::getCurrentIOMode() const
 {
 	SettingsInterface* sif = m_dialog->getProfileSettingsInterface();
-	std::string mode = sif ? sif->GetStringValue("Python1/Game", "IOMode", "JVS") : "JVS";
+	std::string mode = sif ? sif->GetStringValue("Python1/Game", "IoMode", "JVS") : "JVS";
 	if (QString::fromStdString(mode).compare(QStringLiteral("EXTIO"), Qt::CaseInsensitive) == 0)
 		return QStringLiteral("EXTIO");
 	if (QString::fromStdString(mode).compare(QStringLiteral("POPN"), Qt::CaseInsensitive) == 0)

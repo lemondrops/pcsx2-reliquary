@@ -681,7 +681,7 @@ namespace
 
 	Python1IOMode GetPython1IOMode()
 	{
-		const std::string mode = Host::GetStringSettingValue(PYTHON1_GAME_CONFIG_SECTION, "IOMode", PYTHON1_IO_MODE_JVS);
+		const std::string mode = Host::GetStringSettingValue(PYTHON1_GAME_CONFIG_SECTION, "IoMode", PYTHON1_IO_MODE_JVS);
 		if (StringUtil::Strcasecmp(mode.c_str(), PYTHON1_IO_MODE_EXTIO) == 0)
 			return Python1IOMode::EXTIO;
 		if (StringUtil::Strcasecmp(mode.c_str(), PYTHON1_IO_MODE_POPN) == 0)
@@ -722,12 +722,12 @@ namespace
 
 	std::string GetPython1IOModeName(const SettingsInterface& si)
 	{
-		return si.GetStringValue(PYTHON1_GAME_CONFIG_SECTION, "IOMode", PYTHON1_IO_MODE_JVS);
+		return si.GetStringValue(PYTHON1_GAME_CONFIG_SECTION, "IoMode", PYTHON1_IO_MODE_JVS);
 	}
 
 	std::string GetPython1IOModeName()
 	{
-		return Host::GetStringSettingValue(PYTHON1_GAME_CONFIG_SECTION, "IOMode", PYTHON1_IO_MODE_JVS);
+		return Host::GetStringSettingValue(PYTHON1_GAME_CONFIG_SECTION, "IoMode", PYTHON1_IO_MODE_JVS);
 	}
 
 	bool IsP1IOUniversalBinding(std::string_view bind_name)
@@ -997,17 +997,17 @@ namespace
 
 	std::string GetBbsramPath()
 	{
-		return GetPython1GamePath("BBSRamFile", "PCSX2_FW_BBSRAM_FILE");
+		return GetPython1GamePath("BbsRamFile", "PCSX2_FW_BBSRAM_FILE");
 	}
 
 	std::string GetBootromPath()
 	{
-		return GetPython1GamePath("IOBootRomFile", "PCSX2_FW_BOOTROM_FILE");
+		return GetPython1GamePath("IoBootRomFile", "PCSX2_FW_BOOTROM_FILE");
 	}
 
 	std::string GetConfigRomPath()
 	{
-		return GetPython1GamePath("IOConfigRomFile", "PCSX2_FW_CROM_FILE");
+		return GetPython1GamePath("IoConfigRomFile", "PCSX2_FW_CROM_FILE");
 	}
 
 	std::string GetDallasDonglePath(u32 slot)

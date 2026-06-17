@@ -22,7 +22,7 @@ Python1SettingsWidget::Python1SettingsWidget(const GameList::Entry* entry, Setti
 	m_ui.ioMode->addItem(tr("Pop'n"), QStringLiteral("POPN"));
 	m_ui.ioMode->addItem(tr("B22"), QStringLiteral("B22"));
 	m_ui.ioMode->addItem(tr("DogStation DX"), QStringLiteral("DOGSTATIONDX"));
-	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.ioMode, "Python1/Game", "IOMode", "JVS");
+	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.ioMode, "Python1/Game", "IoMode", "JVS");
 
 	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.hddImagePath, "Python1/Game", "HddImageFile", "");
 	m_ui.hddImagePath->setEnabled(true);
@@ -32,15 +32,15 @@ Python1SettingsWidget::Python1SettingsWidget(const GameList::Entry* entry, Setti
 	m_ui.cfImagePath->setEnabled(true);
 	connect(m_ui.cfImageBrowse, &QPushButton::clicked, this, &Python1SettingsWidget::onCfImageBrowseClicked);
 
-	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.bbsramPath, "Python1/Game", "BBSRamFile", "");
+	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.bbsramPath, "Python1/Game", "BbsRamFile", "");
 	m_ui.bbsramPath->setEnabled(true);
 	connect(m_ui.bbsramBrowse, &QPushButton::clicked, this, &Python1SettingsWidget::onBbsramBrowseClicked);
 
-	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.ioBootRomPath, "Python1/Game", "IOBootRomFile", "");
+	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.ioBootRomPath, "Python1/Game", "IoBootRomFile", "");
 	m_ui.ioBootRomPath->setEnabled(true);
 	connect(m_ui.ioBootRomBrowse, &QPushButton::clicked, this, &Python1SettingsWidget::onIoBootRomBrowseClicked);
 
-	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.ioConfigRomPath, "Python1/Game", "IOConfigRomFile", "");
+	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.ioConfigRomPath, "Python1/Game", "IoConfigRomFile", "");
 	m_ui.ioConfigRomPath->setEnabled(true);
 	connect(m_ui.ioConfigRomBrowse, &QPushButton::clicked, this, &Python1SettingsWidget::onIoConfigRomBrowseClicked);
 

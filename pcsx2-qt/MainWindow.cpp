@@ -3731,7 +3731,7 @@ bool MainWindow::verifyPython1Configuration(const GameList::Entry* entry)
 		valid = false;
 	}
 
-	const std::string bbsramPath = si->GetStringValue("Python1/Game", "BBSRamFile", "");
+	const std::string bbsramPath = si->GetStringValue("Python1/Game", "BbsRamFile", "");
 	if (bbsramPath.empty())
 	{
 		QMessageBox::critical(nullptr, tr("Error"), tr("Python 1 BBSRAM path is not configured."));
@@ -3739,7 +3739,7 @@ bool MainWindow::verifyPython1Configuration(const GameList::Entry* entry)
 		valid = false;
 	}
 
-	const std::string ioBootRomPath = si->GetStringValue("Python1/Game", "IOBootRomFile", "");
+	const std::string ioBootRomPath = si->GetStringValue("Python1/Game", "IoBootRomFile", "");
 	if (ioBootRomPath.empty())
 	{
 		QMessageBox::critical(nullptr, tr("Error"), tr("Python 1 I/O boot ROM path is not configured."));
@@ -3747,7 +3747,7 @@ bool MainWindow::verifyPython1Configuration(const GameList::Entry* entry)
 		valid = false;
 	}
 
-	const std::string ioConfigRomPath = si->GetStringValue("Python1/Game", "IOConfigRomFile", "");
+	const std::string ioConfigRomPath = si->GetStringValue("Python1/Game", "IoConfigRomFile", "");
 	if (!ioConfigRomPath.empty() && !FileSystem::FileExists(ioConfigRomPath.c_str()))
 		Console.Error("Could not find Python 1 I/O config ROM file: '%s'", ioConfigRomPath.c_str());
 
