@@ -100,12 +100,14 @@ namespace
 	constexpr const char* PYTHON1_IO_MODE_JVS = "JVS";
 	constexpr const char* PYTHON1_IO_MODE_EXTIO = "EXTIO";
 	constexpr const char* PYTHON1_IO_MODE_POPN = "POPN";
-	constexpr const char* PYTHON1_IO_MODE_DOGSTATION = "DOGSTATION";
+	constexpr const char* PYTHON1_IO_MODE_B22 = "B22";
+	constexpr const char* PYTHON1_IO_MODE_DOGSTATIONDX = "DOGSTATIONDX";
 	constexpr const char* P1IO_CONFIG_PREFIX = "P1IO_";
 	constexpr const char* P1IO_CONFIG_PREFIX_JVS = "P1IO_JVS_";
 	constexpr const char* P1IO_CONFIG_PREFIX_EXTIO = "P1IO_EXTIO_";
 	constexpr const char* P1IO_CONFIG_PREFIX_POPN = "P1IO_POPN_";
-	constexpr const char* P1IO_CONFIG_PREFIX_DOGSTATION = "P1IO_DOGSTATION_";
+	constexpr const char* P1IO_CONFIG_PREFIX_B22 = "P1IO_B22_";
+	constexpr const char* P1IO_CONFIG_PREFIX_DOGSTATIONDX = "P1IO_DOGSTATIONDX_";
 	constexpr u32 P1IO_KEYBOARD_BIND_BASE = 0x1000;
 	// EE byte-swaps the JAMMA word, then maps source bit 8 to P1 bit 0x200.
 	constexpr u32 JAMMA_P1_JVS_PRESENT = 0x00010000;
@@ -149,7 +151,8 @@ namespace
 		JVS,
 		EXTIO,
 		POPN,
-		DOGSTATION,
+		B22,
+		DOGSTATIONDX,
 	};
 
 	struct P1IOJammaMapping
@@ -253,13 +256,23 @@ namespace
 	constexpr u8 KONAMI_EXTERNAL_IO_SYNC_RESPONSE[] = {
 		0xaa, 0xaa, 0xaa, 0x55,
 	};
+	constexpr u8 KONAMI_B22_EXTERNAL_IO_SYNC_RESPONSE[] = {
+		0xaa, 0xaa, 0xaa, 0x55,
+	};
+	constexpr u8 KONAMI_DOGSTATIONDX_EXTERNAL_IO_SYNC_RESPONSE[] = {
+		0xaa, 0xaa, 0x55, 0x55,
+	};
 	constexpr u8 KONAMI_EXTERNAL_IO_RESET_RESPONSE[] = {
 		0xaa, 0xaa, 0x00, 0x00,
 	};
 	constexpr u8 KONAMI_EXTERNAL_IO_COUNT_RESPONSE[] = {
 		0xaa, 0xaa, 0x00, 0x01, 0x01, 0x01, 0xad,
 	};
-	constexpr u8 KONAMI_DOGSTATION_EXTERNAL_IO_COUNT_RESPONSE[] = {
+	constexpr u8 KONAMI_B22_EXTERNAL_IO_COUNT_RESPONSE[] = {
+		0xaa, 0xaa, 0x00, 0x01, 0x01, 0x00, 0xac,
+		0xaa, 0xaa, 0x00, 0x01, 0x01, 0x01, 0xad,
+	};
+	constexpr u8 KONAMI_DOGSTATIONDX_EXTERNAL_IO_COUNT_RESPONSE[] = {
 		0xaa, 0xaa, 0x00, 0x01, 0x01, 0x02, 0xae,
 	};
 	constexpr u8 KONAMI_EXTERNAL_IO_PRODUCT_RESPONSE[] = {
@@ -463,7 +476,9 @@ namespace
 	void SaveDallasDongleIfDirty();
 	void CloseHddImageFile();
 	void ResetSubboardAdpcmPlayback();
-	bool IsPython1DogstationMode();
+	bool IsPython1B22Mode();
+	bool IsPython1DogStationDXMode();
+	bool IsPython1P1IOSerialMode();
 
 	bool ReadIopMemory(u32 address, void* data, u32 size)
 	{
@@ -514,7 +529,7 @@ namespace
 
 	std::array<u8, 28> BuildExternalIoProductResponse(u8 device_id)
 	{
-		// Dogstation's EE parser treats bytes 15..26 as a flags byte plus the B22C.zin version stamp.
+		// B22's EE parser treats bytes 15..26 as a flags byte plus the B22C.zin version stamp.
 		std::array<u8, 28> response = {
 			0xaa, 0xaa, device_id, 0x02, 0x00, 0x00,
 			0xaa, 0xa5, device_id, 0x02, 0x05,
@@ -582,7 +597,7 @@ namespace
 	{
 		std::vector<u8> packet(request);
 		packet.push_back(0xaa);
-		packet.push_back(IsPython1DogstationMode() ? 0x01 : 0x00);
+		packet.push_back(IsPython1P1IOSerialMode() ? 0x01 : 0x00);
 		packet.push_back(request[2]);
 		packet.push_back(request[3]);
 		packet.insert(packet.end(), response, response + response_bytes);
@@ -620,9 +635,27 @@ namespace
 	std::array<u8, 9> BuildExternalIoStatusPayload(u8 device_id, u8 command)
 	{
 		std::array<u8, 9> status = {0x04};
-		if (IsPython1DogstationMode() && device_id == 0x01 && command == 0x26 && s_device)
+		if (IsPython1P1IOSerialMode() && device_id == 0x01 && command == 0x26 && s_device)
 			(void)s_device->PopKeyboard1Events(status.data() + 1, 8);
 		return status;
+	}
+
+	std::array<u8, 0x4c> BuildB22BulkAck(u8 node_id)
+	{
+		std::array<u8, 0x4c> response = {};
+		response[0] = 0xaa;
+		response[1] = 0xff;
+		response[2] = node_id;
+		response[3] = 0x02;
+		response[4] = 0x00;
+		response[5] = static_cast<u8>(node_id + 1);
+		response[6] = 0xaa;
+		response[7] = 0xf0;
+		response[8] = node_id;
+		response[9] = 0x02;
+		response[10] = 0x07;
+		std::fill(response.begin() + 11, response.begin() + 18, 0xff);
+		return response;
 	}
 
 	Python1IOMode GetPython1IOMode()
@@ -632,8 +665,10 @@ namespace
 			return Python1IOMode::EXTIO;
 		if (StringUtil::Strcasecmp(mode.c_str(), PYTHON1_IO_MODE_POPN) == 0)
 			return Python1IOMode::POPN;
-		if (StringUtil::Strcasecmp(mode.c_str(), PYTHON1_IO_MODE_DOGSTATION) == 0)
-			return Python1IOMode::DOGSTATION;
+		if (StringUtil::Strcasecmp(mode.c_str(), PYTHON1_IO_MODE_B22) == 0)
+			return Python1IOMode::B22;
+		if (StringUtil::Strcasecmp(mode.c_str(), PYTHON1_IO_MODE_DOGSTATIONDX) == 0)
+			return Python1IOMode::DOGSTATIONDX;
 		return Python1IOMode::JVS;
 	}
 
@@ -643,8 +678,10 @@ namespace
 			return PYTHON1_IO_MODE_EXTIO;
 		if (StringUtil::compareNoCase(mode, PYTHON1_IO_MODE_POPN))
 			return PYTHON1_IO_MODE_POPN;
-		if (StringUtil::compareNoCase(mode, PYTHON1_IO_MODE_DOGSTATION))
-			return PYTHON1_IO_MODE_DOGSTATION;
+		if (StringUtil::compareNoCase(mode, PYTHON1_IO_MODE_B22))
+			return PYTHON1_IO_MODE_B22;
+		if (StringUtil::compareNoCase(mode, PYTHON1_IO_MODE_DOGSTATIONDX))
+			return PYTHON1_IO_MODE_DOGSTATIONDX;
 		return PYTHON1_IO_MODE_JVS;
 	}
 
@@ -655,8 +692,10 @@ namespace
 			return P1IO_CONFIG_PREFIX_EXTIO;
 		if (mode == PYTHON1_IO_MODE_POPN)
 			return P1IO_CONFIG_PREFIX_POPN;
-		if (mode == PYTHON1_IO_MODE_DOGSTATION)
-			return P1IO_CONFIG_PREFIX_DOGSTATION;
+		if (mode == PYTHON1_IO_MODE_B22)
+			return P1IO_CONFIG_PREFIX_B22;
+		if (mode == PYTHON1_IO_MODE_DOGSTATIONDX)
+			return P1IO_CONFIG_PREFIX_DOGSTATIONDX;
 		return P1IO_CONFIG_PREFIX_JVS;
 	}
 
@@ -725,9 +764,19 @@ namespace
 		{"P2Right", GenericInputBinding::L2},
 	};
 
-	bool IsPython1DogstationMode()
+	bool IsPython1B22Mode()
 	{
-		return GetPython1IOMode() == Python1IOMode::DOGSTATION;
+		return GetPython1IOMode() == Python1IOMode::B22;
+	}
+
+	bool IsPython1DogStationDXMode()
+	{
+		return GetPython1IOMode() == Python1IOMode::DOGSTATIONDX;
+	}
+
+	bool IsPython1P1IOSerialMode()
+	{
+		return IsPython1B22Mode() || IsPython1DogStationDXMode();
 	}
 
 	bool IsPython1ExtioMode()
@@ -768,10 +817,14 @@ namespace
 				bytes[offset] = static_cast<u8>(word >> (24 - ((offset & 3) * 8)));
 			}
 		}
-
 		if (bytes.size() >= 4 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] == 0xaa && bytes[3] == 0x55)
 		{
-			QueueUartBytes(KONAMI_EXTERNAL_IO_SYNC_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_SYNC_RESPONSE));
+			if (IsPython1B22Mode())
+				QueueUartBytes(KONAMI_B22_EXTERNAL_IO_SYNC_RESPONSE, sizeof(KONAMI_B22_EXTERNAL_IO_SYNC_RESPONSE));
+			else if (IsPython1DogStationDXMode())
+				QueueUartBytes(KONAMI_DOGSTATIONDX_EXTERNAL_IO_SYNC_RESPONSE, sizeof(KONAMI_DOGSTATIONDX_EXTERNAL_IO_SYNC_RESPONSE));
+			else
+				QueueUartBytes(KONAMI_EXTERNAL_IO_SYNC_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_SYNC_RESPONSE));
 		}
 		else if (bytes.size() >= 4 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] == 0x00 && bytes[3] == 0x00)
 		{
@@ -779,31 +832,33 @@ namespace
 		}
 		else if (bytes.size() >= 4 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] == 0x00 && bytes[3] == 0x01)
 		{
-			if (IsPython1DogstationMode())
-				QueueUartBytes(KONAMI_DOGSTATION_EXTERNAL_IO_COUNT_RESPONSE, sizeof(KONAMI_DOGSTATION_EXTERNAL_IO_COUNT_RESPONSE));
+			if (IsPython1B22Mode())
+				QueueUartBytes(KONAMI_B22_EXTERNAL_IO_COUNT_RESPONSE, sizeof(KONAMI_B22_EXTERNAL_IO_COUNT_RESPONSE));
+			else if (IsPython1DogStationDXMode())
+				QueueUartBytes(KONAMI_DOGSTATIONDX_EXTERNAL_IO_COUNT_RESPONSE, sizeof(KONAMI_DOGSTATIONDX_EXTERNAL_IO_COUNT_RESPONSE));
 			else
 				QueueUartBytes(KONAMI_EXTERNAL_IO_COUNT_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_COUNT_RESPONSE));
 		}
-		else if (IsPython1DogstationMode() && bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] >= 0x01 && bytes[2] <= 0x02 && bytes[3] == 0x02)
+		else if (IsPython1P1IOSerialMode() && bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] >= 0x01 && bytes[2] <= 0x02 && bytes[3] == 0x02)
 		{
 			const auto response = BuildExternalIoProductResponse(bytes[2]);
 			QueueUartBytes(response.data(), static_cast<u32>(response.size()));
 		}
-		else if (IsPython1DogstationMode() && bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] >= 0x01 && bytes[2] <= 0x02 && bytes[3] == 0x03)
+		else if (IsPython1P1IOSerialMode() && bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] >= 0x01 && bytes[2] <= 0x02 && bytes[3] == 0x03)
 		{
 			const auto response = BuildExternalIoCommandAck(bytes[2], bytes[3]);
 			QueueUartBytes(response.data(), static_cast<u32>(response.size()));
 		}
-		else if (IsPython1DogstationMode() && bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] >= 0x01 && bytes[2] <= 0x02 && bytes[3] == 0x04)
+		else if (IsPython1P1IOSerialMode() && bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] >= 0x01 && bytes[2] <= 0x02 && bytes[3] == 0x04)
 		{
 			const auto response = BuildExternalIoCommandAck(bytes[2], bytes[3]);
 			QueueUartBytes(response.data(), static_cast<u32>(response.size()));
 		}
-		else if (!IsPython1DogstationMode() && bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] == 0x01 && bytes[3] == 0x02)
+		else if (!IsPython1P1IOSerialMode() && bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] == 0x01 && bytes[3] == 0x02)
 		{
 			QueueUartBytes(KONAMI_EXTERNAL_IO_PRODUCT_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_PRODUCT_RESPONSE));
 		}
-		else if (!IsPython1DogstationMode() && bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] == 0x01 && bytes[3] == 0x03)
+		else if (!IsPython1P1IOSerialMode() && bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xaa && bytes[2] == 0x01 && bytes[3] == 0x03)
 		{
 			QueueUartBytes(KONAMI_EXTERNAL_IO_STARTUP_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_STARTUP_RESPONSE));
 		}
@@ -826,6 +881,11 @@ namespace
 			constexpr u8 DDR_EXTERNAL_IO_ACK[] = {0x11};
 			QueueUartBytes(DDR_EXTERNAL_IO_ACK, sizeof(DDR_EXTERNAL_IO_ACK));
 		}
+		else if (IsPython1B22Mode() && bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0xff)
+		{
+			const auto response = BuildB22BulkAck(bytes[2]);
+			QueueUartBytes(response.data(), static_cast<u32>(response.size()));
+		}
 		else if (bytes.size() >= 6 && bytes[0] == 0xaa && bytes[1] == 0x00)
 		{
 			const u32 packet_size = FindChecksummedUartPacketSize(bytes);
@@ -833,11 +893,11 @@ namespace
 				return;
 
 			std::vector<u8> request(bytes.begin(), bytes.begin() + packet_size);
-			const bool dogstation_mode = IsPython1DogstationMode();
-			const u8 command = dogstation_mode ? (request[3] & ~0x40) : request[3];
+			const bool p1io_serial_mode = IsPython1P1IOSerialMode();
+			const u8 command = p1io_serial_mode ? (request[3] & ~0x40) : request[3];
 			const u8 ok_response[] = {
-				static_cast<u8>(dogstation_mode ? 0x01 : 0x00),
-				static_cast<u8>(dogstation_mode && request[2] != 0x01 ? 0x01 : 0x00),
+				static_cast<u8>(p1io_serial_mode ? 0x01 : 0x00),
+				static_cast<u8>(p1io_serial_mode && request[2] != 0x01 ? 0x01 : 0x00),
 			};
 			switch (command)
 			{
@@ -862,7 +922,7 @@ namespace
 				case 0x26:
 				case 0x36:
 				{
-					if (!dogstation_mode)
+					if (!p1io_serial_mode)
 						break;
 					const std::array<u8, 9> status = BuildExternalIoStatusPayload(request[2], command);
 					QueueExternalIoWrappedResponse(request, status.data(), static_cast<u32>(status.size()));
@@ -1850,7 +1910,6 @@ namespace
 				static_cast<unsigned long long>(offset), static_cast<unsigned long long>(bytes64));
 			return false;
 		}
-
 		return QueuePendingSectorAndStatusPackets(dest, data, status_offset, ShouldDeferSectorReadStatus(status_offset));
 	}
 
@@ -2178,6 +2237,7 @@ namespace
 				{
 					s_bootrom_dirty = true;
 					SaveBootromIfDirty();
+					UpdateDallasKeyResponseFromBootrom();
 				}
 				else
 				{
@@ -2711,7 +2771,7 @@ namespace
 
 			if (command_offset == KONAMI_JAMMA_OUTPUT_COMMAND_OFFSET && payload_quads >= 8)
 			{
-				if (IsPython1DogstationMode())
+				if (IsPython1P1IOSerialMode())
 				{
 					const u32 previous_latch = s_p1io_output_latch_byte;
 					s_p1io_output_latch_byte = payload[4] & 0xff;
@@ -2855,7 +2915,7 @@ namespace
 	{
 		if (bind_index >= P1IO_BIND_COUNT)
 		{
-			if (!IsPython1DogstationMode())
+			if (!IsPython1P1IOSerialMode())
 				return 0.0f;
 
 			if (bind_index < P1IO_KEYBOARD_BIND_BASE)
@@ -2872,7 +2932,7 @@ namespace
 	{
 		if (bind_index >= P1IO_KEYBOARD_BIND_BASE)
 		{
-			if (!IsPython1DogstationMode())
+			if (!IsPython1P1IOSerialMode())
 				return;
 
 			const Python1KeyboardKey key = GetPython1KeyboardKeyForHostKey(bind_index - P1IO_KEYBOARD_BIND_BASE);
@@ -2964,17 +3024,17 @@ std::string FireWire::GetP1IOUniversalConfigSubKey(std::string_view bind_name)
 
 u32 FireWire::Devices::GetKonamiPython1P1IOLatchByte()
 {
-	return IsPython1DogstationMode() ? s_p1io_output_latch_byte : 0;
+	return IsPython1P1IOSerialMode() ? s_p1io_output_latch_byte : 0;
 }
 
 u32 FireWire::Devices::GetKonamiPython1P1IOMemcardSlot()
 {
-	return IsPython1DogstationMode() ? s_p1io_memcard_slot : 0;
+	return IsPython1P1IOSerialMode() ? s_p1io_memcard_slot : 0;
 }
 
-bool FireWire::Devices::IsKonamiPython1DogstationMode()
+bool FireWire::Devices::IsKonamiPython1P1IOSerialMode()
 {
-	return IsPython1DogstationMode();
+	return IsPython1P1IOSerialMode();
 }
 
 namespace FireWire::Devices
@@ -3057,7 +3117,8 @@ namespace FireWire::Devices
 			si.DeleteValue(FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_JVS, bi.name).c_str());
 			si.DeleteValue(FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_EXTIO, bi.name).c_str());
 			si.DeleteValue(FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_POPN, bi.name).c_str());
-			si.DeleteValue(FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_DOGSTATION, bi.name).c_str());
+			si.DeleteValue(FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_B22, bi.name).c_str());
+			si.DeleteValue(FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_DOGSTATIONDX, bi.name).c_str());
 		}
 	}
 
@@ -3077,7 +3138,8 @@ namespace FireWire::Devices
 			dest_si->CopyStringValue(src_si, FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_JVS, bi.name).c_str());
 			dest_si->CopyStringValue(src_si, FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_EXTIO, bi.name).c_str());
 			dest_si->CopyStringValue(src_si, FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_POPN, bi.name).c_str());
-			dest_si->CopyStringValue(src_si, FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_DOGSTATION, bi.name).c_str());
+			dest_si->CopyStringValue(src_si, FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_B22, bi.name).c_str());
+			dest_si->CopyStringValue(src_si, FireWire::GetConfigSection(), FireWire::GetP1IOConfigSubKey(PYTHON1_IO_MODE_DOGSTATIONDX, bi.name).c_str());
 		}
 	}
 

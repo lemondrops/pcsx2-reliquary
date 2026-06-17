@@ -140,8 +140,10 @@ QString FireWireDeviceWidget::getCurrentIOMode() const
 		return QStringLiteral("EXTIO");
 	if (QString::fromStdString(mode).compare(QStringLiteral("POPN"), Qt::CaseInsensitive) == 0)
 		return QStringLiteral("POPN");
-	if (QString::fromStdString(mode).compare(QStringLiteral("DOGSTATION"), Qt::CaseInsensitive) == 0)
-		return QStringLiteral("DOGSTATION");
+	if (QString::fromStdString(mode).compare(QStringLiteral("B22"), Qt::CaseInsensitive) == 0)
+		return QStringLiteral("B22");
+	if (QString::fromStdString(mode).compare(QStringLiteral("DOGSTATIONDX"), Qt::CaseInsensitive) == 0)
+		return QStringLiteral("DOGSTATIONDX");
 	return QStringLiteral("JVS");
 }
 

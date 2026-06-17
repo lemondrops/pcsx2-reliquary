@@ -20,7 +20,8 @@ Python1SettingsWidget::Python1SettingsWidget(const GameList::Entry* entry, Setti
 	m_ui.ioMode->addItem(tr("JVS"), QStringLiteral("JVS"));
 	m_ui.ioMode->addItem(tr("EXTIO"), QStringLiteral("EXTIO"));
 	m_ui.ioMode->addItem(tr("Pop'n"), QStringLiteral("POPN"));
-	m_ui.ioMode->addItem(tr("Dogstation"), QStringLiteral("DOGSTATION"));
+	m_ui.ioMode->addItem(tr("B22"), QStringLiteral("B22"));
+	m_ui.ioMode->addItem(tr("DogStation DX"), QStringLiteral("DOGSTATIONDX"));
 	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.ioMode, "Python1/Game", "IOMode", "JVS");
 
 	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.hddImagePath, "Python1/Game", "HddImageFile", "");
@@ -60,7 +61,7 @@ void Python1SettingsWidget::onHddImageBrowseClicked()
 {
 	QString path =
 		QDir::toNativeSeparators(QFileDialog::getOpenFileName(QtUtils::GetRootWidget(this), tr("HDD Image File"),
-			!m_ui.hddImagePath->text().isEmpty() ? m_ui.hddImagePath->text() : QString(), tr("HDD Images (*.bin *.raw *.chd);;All Files (*)"), nullptr,
+			!m_ui.hddImagePath->text().isEmpty() ? m_ui.hddImagePath->text() : QString(), tr("HDD Images (*.bin *.raw *.chd *.dsk);;All Files (*)"), nullptr,
 			QFileDialog::DontConfirmOverwrite));
 
 	if (path.isEmpty())

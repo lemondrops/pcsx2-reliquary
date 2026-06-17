@@ -9,7 +9,7 @@ namespace FireWire::Devices
 {
 	u32 GetKonamiPython1P1IOLatchByte();
 	u32 GetKonamiPython1P1IOMemcardSlot();
-	bool IsKonamiPython1DogstationMode();
+	bool IsKonamiPython1P1IOSerialMode();
 
 	class KonamiPython1DeviceProxy final : public FireWireDeviceProxy
 	{

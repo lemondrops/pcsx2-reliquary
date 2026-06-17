@@ -27,9 +27,9 @@ namespace
 	static constexpr u32 PYTHON1_SIO2_LOG_LIMIT = 8192;
 	u32 s_python1_sio2_log_count = 0;
 
-	bool IsPython1DogstationMode()
+	bool IsPython1P1IOSerialMode()
 	{
-		return FireWire::Devices::IsKonamiPython1DogstationMode();
+		return FireWire::Devices::IsKonamiPython1P1IOSerialMode();
 	}
 
 	bool ShouldLogPython1Sio2Port2()
@@ -37,7 +37,7 @@ namespace
 		if (s_python1_sio2_log_count >= PYTHON1_SIO2_LOG_LIMIT)
 			return false;
 
-		if (!IsPython1DogstationMode())
+		if (!IsPython1P1IOSerialMode())
 			return false;
 
 		s_python1_sio2_log_count++;
@@ -278,7 +278,7 @@ void Sio2::Memcard()
 	MultitapProtocol& mtap = g_MultitapArr.at(this->port);
 	const u8 commandByte = g_Sio2FifoIn.empty() ? 0xff : g_Sio2FifoIn.front();
 	const u32 python1_p1io_latch = this->port == 1 ? FireWire::Devices::GetKonamiPython1P1IOLatchByte() : 0;
-	const bool python1_memcard = this->port == 1 && IsPython1DogstationMode();
+	const bool python1_memcard = this->port == 1 && IsPython1P1IOSerialMode();
 	const u8 memcard_slot = python1_memcard ? static_cast<u8>(FireWire::Devices::GetKonamiPython1P1IOMemcardSlot()) : mtap.GetMemcardSlot();
 	const bool python1_unimplemented_reader = python1_memcard && memcard_slot != 0;
 	if (this->port == 1 && ShouldLogPython1Sio2Port2())
