@@ -12,7 +12,7 @@
 #include "IopBios.h"
 #include "IopHw.h"
 #include "IopDma.h"
-#include "FW.h"
+#include "FireWire/FireWire.h"
 #include "CDVD/Ps1CD.h"
 #include "CDVD/CDVD.h"
 

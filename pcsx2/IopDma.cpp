@@ -11,7 +11,7 @@
 
 #include "Sif.h"
 #include "DEV9/DEV9.h"
-#include "FW.h"
+#include "FireWire/FireWire.h"
 
 using namespace R3000A;
 

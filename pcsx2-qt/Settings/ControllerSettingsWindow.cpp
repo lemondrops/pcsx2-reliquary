@@ -8,7 +8,7 @@
 #include "Settings/FireWireDeviceWidget.h"
 #include "Settings/HotkeySettingsWidget.h"
 
-#include "pcsx2/FW.h"
+#include "pcsx2/FireWire/FireWire.h"
 #include "pcsx2/INISettingsInterface.h"
 #include "pcsx2/SIO/Pad/Pad.h"
 #include "pcsx2/SIO/Sio.h"

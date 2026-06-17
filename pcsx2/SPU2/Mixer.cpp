@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "Host/AudioStream.h"
-#include "FW.h"
+#include "FireWire/FireWire.h"
 #include "SPU2/Debug.h"
 #include "SPU2/defs.h"
 #include "SPU2/spu2.h"

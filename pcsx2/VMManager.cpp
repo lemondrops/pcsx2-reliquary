@@ -10,7 +10,7 @@
 #include "DebugTools/DebugInterface.h"
 #include "DebugTools/SymbolImporter.h"
 #include "Elfheader.h"
-#include "FW.h"
+#include "FireWire/FireWire.h"
 #include "GS.h"
 #include "GS/Renderers/HW/GSTextureReplacements.h"
 #include "GSDumpReplayer.h"

@@ -344,7 +344,7 @@
     <ClCompile Include="PINE.cpp" />
     <ClCompile Include="FireWire\deviceproxy.cpp" />
     <ClCompile Include="FireWire\Devices\KonamiPython1.cpp" />
-    <ClCompile Include="FW.cpp" />
+    <ClCompile Include="FireWire\FireWire.cpp" />
     <ClCompile Include="PerformanceMetrics.cpp" />
     <ClCompile Include="Recording\InputRecording.cpp" />
     <ClCompile Include="Recording\InputRecordingControls.cpp" />
@@ -803,7 +803,7 @@
     <ClInclude Include="FireWire\FireWireDevice.h" />
     <ClInclude Include="FireWire\deviceproxy.h" />
     <ClInclude Include="FireWire\Devices\KonamiPython1.h" />
-    <ClInclude Include="FW.h" />
+    <ClInclude Include="FireWire\FireWire.h" />
     <ClInclude Include="PerformanceMetrics.h" />
     <ClInclude Include="Recording\InputRecording.h" />
     <ClInclude Include="Recording\InputRecordingControls.h" />

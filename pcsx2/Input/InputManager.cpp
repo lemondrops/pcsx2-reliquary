@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "ImGui/ImGuiManager.h"
-#include "FW.h"
+#include "FireWire/FireWire.h"
 #include "Input/InputManager.h"
 #include "Input/InputSource.h"
 #include "SIO/Pad/Pad.h"

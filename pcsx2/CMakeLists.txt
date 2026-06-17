@@ -66,9 +66,9 @@ set(pcsx2Sources
 	Dmac.cpp
 	GameDatabase.cpp
 	Elfheader.cpp
+	FireWire/FireWire.cpp
 	FireWire/deviceproxy.cpp
 	FireWire/Devices/KonamiPython1.cpp
-	FW.cpp
 	FiFo.cpp
 	FPU.cpp
 	GameList.cpp
@@ -154,12 +154,12 @@ set(pcsx2Headers
 	COP0.h
 	Counters.h
 	Dmac.h
+	FireWire/FireWire.h
 	FireWire/FireWireDevice.h
 	FireWire/deviceproxy.h
 	FireWire/Devices/KonamiPython1.h
 	GameDatabase.h
 	Elfheader.h
-	FW.h
 	GameList.h
 	Gif.h
 	Gif_Unit.h

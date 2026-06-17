@@ -5,7 +5,7 @@
 
 #include "common/SettingsInterface.h"
 
-#include "pcsx2/FW.h"
+#include "pcsx2/FireWire/FireWire.h"
 #include "pcsx2/Host.h"
 #include "pcsx2/Input/InputManager.h"
 

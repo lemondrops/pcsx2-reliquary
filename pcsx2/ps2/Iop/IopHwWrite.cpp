@@ -5,7 +5,7 @@
 #include "Sif.h"
 #include "SIO/Sio2.h"
 #include "SIO/Sio0.h"
-#include "FW.h"
+#include "FireWire/FireWire.h"
 #include "CDVD/Ps1CD.h"
 #include "SPU2/spu2.h"
 #include "DEV9/DEV9.h"

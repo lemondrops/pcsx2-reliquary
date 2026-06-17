@@ -6,7 +6,7 @@
 #include "GS/GSUtil.h"
 #include "Achievements.h"
 #include "GameList.h"
-#include "FW.h"
+#include "FireWire/FireWire.h"
 #include "Host.h"
 #include "Host/AudioStream.h"
 #include "INISettingsInterface.h"

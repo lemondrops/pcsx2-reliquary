@@ -803,7 +803,7 @@
     <ClCompile Include="PINE.cpp">
       <Filter>System</Filter>
     </ClCompile>
-    <ClCompile Include="FW.cpp">
+    <ClCompile Include="FireWire\FireWire.cpp">
       <Filter>System\Ps2\Iop\FW</Filter>
     </ClCompile>
     <ClCompile Include="FireWire\deviceproxy.cpp">
@@ -1751,7 +1751,7 @@
     <ClInclude Include="PINE.h">
       <Filter>System\Include</Filter>
     </ClInclude>
-    <ClInclude Include="FW.h">
+    <ClInclude Include="FireWire\FireWire.h">
       <Filter>System\Ps2\Iop\FW</Filter>
     </ClInclude>
     <ClInclude Include="FireWire\FireWireDevice.h">
