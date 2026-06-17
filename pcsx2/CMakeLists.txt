@@ -60,6 +60,7 @@ set(pcsx2Sources
 	Achievements.cpp
 	BuildVersion.cpp
 	Cache.cpp
+	ChdHddImage.cpp
 	COP0.cpp
 	COP2.cpp
 	Counters.cpp
@@ -149,6 +150,7 @@ set(pcsx2Headers
 	Achievements.h
 	BuildVersion.h
 	Cache.h
+	ChdHddImage.h
 	Common.h
 	Config.h
 	COP0.h
@@ -294,7 +296,6 @@ set(pcsx2DEV9Sources
 	DEV9/ATA/ATA_Info.cpp
 	DEV9/ATA/ATA_State.cpp
 	DEV9/ATA/ATA_Transfer.cpp
-	DEV9/ATA/HddChdImage.cpp
 	DEV9/ATA/HddCreate.cpp
 	DEV9/InternalServers/DHCP_Logger.cpp
 	DEV9/InternalServers/DHCP_Server.cpp
@@ -334,7 +335,6 @@ set(pcsx2DEV9Sources
 set(pcsx2DEV9Headers
 	DEV9/AdapterUtils.h
 	DEV9/ATA/ATA.h
-	DEV9/ATA/HddChdImage.h
 	DEV9/ATA/HddCreate.h
 	DEV9/DEV9.h
 	DEV9/InternalServers/DHCP_Logger.h

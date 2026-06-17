@@ -19,7 +19,7 @@
 #include "USB/USB.h"
 #include "VMManager.h"
 #include "ps2/BiosTools.h"
-#include "DEV9/ATA/HddChdImage.h"
+#include "ChdHddImage.h"
 #include "DEV9/ATA/HddCreate.h"
 #include "DEV9/pcap_io.h"
 #include "DEV9/sockets.h"

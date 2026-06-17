@@ -452,6 +452,9 @@
     <ClCompile Include="Cache.cpp">
       <Filter>System\Ps2\EmotionEngine\Memory</Filter>
     </ClCompile>
+    <ClCompile Include="ChdHddImage.cpp">
+      <Filter>Misc</Filter>
+    </ClCompile>
     <ClCompile Include="Memory.cpp">
       <Filter>System\Ps2\EmotionEngine\Memory</Filter>
     </ClCompile>
@@ -870,9 +873,6 @@
       <Filter>System\Ps2\DEV9\ATA</Filter>
     </ClCompile>
     <ClCompile Include="DEV9\ATA\ATA_Transfer.cpp">
-      <Filter>System\Ps2\DEV9\ATA</Filter>
-    </ClCompile>
-    <ClCompile Include="DEV9\ATA\HddChdImage.cpp">
       <Filter>System\Ps2\DEV9\ATA</Filter>
     </ClCompile>
     <ClCompile Include="DEV9\ATA\HddCreate.cpp">
@@ -1487,6 +1487,9 @@
     <ClInclude Include="Common.h">
       <Filter>System\Include</Filter>
     </ClInclude>
+    <ClInclude Include="ChdHddImage.h">
+      <Filter>System\Include</Filter>
+    </ClInclude>
     <ClInclude Include="Config.h">
       <Filter>System\Include</Filter>
     </ClInclude>
@@ -1782,9 +1785,6 @@
       <Filter>System\Ps2\DEV9</Filter>
     </ClInclude>
     <ClInclude Include="DEV9\ATA\ATA.h">
-      <Filter>System\Ps2\DEV9\ATA</Filter>
-    </ClInclude>
-    <ClInclude Include="DEV9\ATA\HddChdImage.h">
       <Filter>System\Ps2\DEV9\ATA</Filter>
     </ClInclude>
     <ClInclude Include="DEV9\ATA\HddCreate.h">

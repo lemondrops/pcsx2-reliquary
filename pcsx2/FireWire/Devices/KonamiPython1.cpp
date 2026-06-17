@@ -4,7 +4,7 @@
 #include "FireWire/Devices/KonamiPython1.h"
 
 #include "Common.h"
-#include "DEV9/ATA/HddChdImage.h"
+#include "ChdHddImage.h"
 #include "Host.h"
 
 #include "Input/InputManager.h"
@@ -451,11 +451,11 @@ namespace
 	KonamiPython1Device* s_device = nullptr;
 	std::vector<PendingSectorStatusWrite> s_pending_sector_status_writes;
 	std::FILE* s_hdd_raw_image_file = nullptr;
-	std::unique_ptr<ChdHddImage> s_hdd_chd_image;
+	std::unique_ptr<ChdHddImage> s_hdd_chd_hdd_image;
 	std::string s_hdd_image_open_path;
 	bool s_hdd_image_writable = false;
 	std::FILE* s_cf_image_file = nullptr;
-	std::unique_ptr<ChdHddImage> s_cf_chd_image;
+	std::unique_ptr<ChdHddImage> s_cf_chd_hdd_image;
 	std::string s_cf_image_open_path;
 	bool s_cf_image_writable = false;
 	u64 s_cf_image_size = 0;
@@ -1451,7 +1451,7 @@ namespace
 			s_hdd_raw_image_file = nullptr;
 		}
 
-		s_hdd_chd_image.reset();
+		s_hdd_chd_hdd_image.reset();
 		s_hdd_image_open_path.clear();
 		s_hdd_image_writable = false;
 	}
@@ -1459,15 +1459,15 @@ namespace
 	bool OpenHddImage(const std::string& path, bool writable = false)
 	{
 		if (!path.empty() && s_hdd_image_open_path == path && (!writable || s_hdd_image_writable))
-			return s_hdd_raw_image_file || s_hdd_chd_image;
+			return s_hdd_raw_image_file || s_hdd_chd_hdd_image;
 
 		CloseHddImageFile();
 		if (ChdHddImage::IsChdFileName(path))
 		{
-			s_hdd_chd_image = std::make_unique<ChdHddImage>();
-			if (!s_hdd_chd_image->Open(path))
+			s_hdd_chd_hdd_image = std::make_unique<ChdHddImage>();
+			if (!s_hdd_chd_hdd_image->Open(path))
 			{
-				s_hdd_chd_image.reset();
+				s_hdd_chd_hdd_image.reset();
 				return false;
 			}
 
@@ -1492,8 +1492,8 @@ namespace
 		if (!OpenHddImage(path))
 			return false;
 
-		if (s_hdd_chd_image)
-			return s_hdd_chd_image->ReadBytes(offset, size, dst);
+		if (s_hdd_chd_hdd_image)
+			return s_hdd_chd_hdd_image->ReadBytes(offset, size, dst);
 
 		return FileSystem::FSeek64(s_hdd_raw_image_file, offset, SEEK_SET) == 0 && std::fread(dst, 1, size, s_hdd_raw_image_file) == size;
 	}
@@ -1503,8 +1503,8 @@ namespace
 		if (!OpenHddImage(path))
 			return false;
 
-		if (s_hdd_chd_image)
-			return s_hdd_chd_image->ReadSectors(sector, count, dst);
+		if (s_hdd_chd_hdd_image)
+			return s_hdd_chd_hdd_image->ReadSectors(sector, count, dst);
 
 		const u64 offset = static_cast<u64>(sector) * SECTOR_SIZE;
 		const u32 bytes = count * SECTOR_SIZE;
@@ -1516,8 +1516,8 @@ namespace
 		if (!OpenHddImage(path, true))
 			return false;
 
-		if (s_hdd_chd_image)
-			return s_hdd_chd_image->WriteSectors(sector, count, src);
+		if (s_hdd_chd_hdd_image)
+			return s_hdd_chd_hdd_image->WriteSectors(sector, count, src);
 
 		const u64 offset = static_cast<u64>(sector) * SECTOR_SIZE;
 		const u32 bytes = count * SECTOR_SIZE;
@@ -1537,21 +1537,21 @@ namespace
 
 	bool IsCfImageOpen()
 	{
-		return s_cf_image_file || s_cf_chd_image;
+		return s_cf_image_file || s_cf_chd_hdd_image;
 	}
 
 	bool ReadCfContainerBytes(u64 offset, void* dst, size_t size)
 	{
-		if (s_cf_chd_image)
-			return size <= std::numeric_limits<u32>::max() && s_cf_chd_image->ReadBytes(offset, static_cast<u32>(size), static_cast<u8*>(dst));
+		if (s_cf_chd_hdd_image)
+			return size <= std::numeric_limits<u32>::max() && s_cf_chd_hdd_image->ReadBytes(offset, static_cast<u32>(size), static_cast<u8*>(dst));
 
 		return s_cf_image_file && ReadFileBytes(s_cf_image_file, offset, dst, size);
 	}
 
 	bool WriteCfContainerBytes(u64 offset, const void* src, size_t size)
 	{
-		if (s_cf_chd_image)
-			return (offset % SECTOR_SIZE) == 0 && (size % SECTOR_SIZE) == 0 && s_cf_chd_image->WriteSectors(offset / SECTOR_SIZE,
+		if (s_cf_chd_hdd_image)
+			return (offset % SECTOR_SIZE) == 0 && (size % SECTOR_SIZE) == 0 && s_cf_chd_hdd_image->WriteSectors(offset / SECTOR_SIZE,
 				static_cast<u32>(size / SECTOR_SIZE), src);
 
 		return s_cf_image_file && WriteFileBytes(s_cf_image_file, offset, src, size);
@@ -1576,7 +1576,7 @@ namespace
 			std::fclose(s_cf_image_file);
 			s_cf_image_file = nullptr;
 		}
-		s_cf_chd_image.reset();
+		s_cf_chd_hdd_image.reset();
 
 		s_cf_image_open_path.clear();
 		s_cf_image_writable = false;
@@ -1591,13 +1591,13 @@ namespace
 		CloseCfImageFile();
 		if (ChdHddImage::IsChdFileName(path))
 		{
-			s_cf_chd_image = std::make_unique<ChdHddImage>();
-			if (!s_cf_chd_image->Open(path))
+			s_cf_chd_hdd_image = std::make_unique<ChdHddImage>();
+			if (!s_cf_chd_hdd_image->Open(path))
 			{
 				CloseCfImageFile();
 				return false;
 			}
-			s_cf_image_size = s_cf_chd_image->GetSize();
+			s_cf_image_size = s_cf_chd_hdd_image->GetSize();
 		}
 		else
 		{

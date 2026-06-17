@@ -28,7 +28,7 @@ private:
 	bool lba48Supported = false;
 
 	std::FILE* hddImage = nullptr;
-	std::unique_ptr<ChdHddImage> hddChdImage;
+	std::unique_ptr<ChdHddImage> chdHddImage;
 	u64 hddImageSize;
 
 	bool hddSparse = false;

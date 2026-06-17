@@ -53,15 +53,16 @@ private:
 		u32 block_size;
 		u64 logical_size;
 		u64 block_count;
+		u32 written_block_count;
+		u32 reserved;
 	};
 
 	bool OpenChd(const std::string& path);
 	bool OpenOverlay(const std::string& path);
 	bool CreateOverlayFiles();
 	bool LoadOverlayMap();
-	bool InitializeOverlayFile();
 	bool ReadBaseBytes(u64 offset, u32 size, u8* dst);
-	bool ReadOverlayBytes(u64 offset, u32 size, u8* dst);
+	bool ReadOverlayBytes(u64 block_index, u32 block_offset, u32 size, u8* dst);
 	bool WriteOverlayBytes(u64 offset, u32 size, const u8* src);
 	bool ReadOverlayBlock(u64 block_index, u8* dst, u32 block_size);
 	bool WriteOverlayBlock(u64 block_index, const u8* src, u32 block_size);
@@ -85,6 +86,7 @@ private:
 	FileSystem::ManagedCFilePtr m_overlay_file;
 	FileSystem::ManagedCFilePtr m_overlay_map_file;
 	u64 m_overlay_block_count = 0;
-	std::vector<u8> m_overlay_map;
+	u32 m_overlay_written_block_count = 0;
+	std::vector<u32> m_overlay_map;
 	std::vector<u8> m_overlay_block_buffer;
 };

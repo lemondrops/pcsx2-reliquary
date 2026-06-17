@@ -5,7 +5,7 @@
 #include "common/FileSystem.h"
 
 #include "ATA.h"
-#include "HddChdImage.h"
+#include "ChdHddImage.h"
 #include "DEV9/DEV9.h"
 
 #if _WIN32
@@ -49,14 +49,14 @@ int ATA::Open(const std::string& hddPath)
 	const bool use_chd = ChdHddImage::IsChdFileName(hddPath);
 	if (use_chd)
 	{
-		hddChdImage = std::make_unique<ChdHddImage>();
-		if (!hddChdImage->Open(hddPath))
+		chdHddImage = std::make_unique<ChdHddImage>();
+		if (!chdHddImage->Open(hddPath))
 		{
 			Console.Error("DEV9: ATA: Failed to open CHD HDD image '%s'", hddPath.c_str());
-			hddChdImage.reset();
+			chdHddImage.reset();
 			return -1;
 		}
-		hddImageSize = hddChdImage->GetSize();
+		hddImageSize = chdHddImage->GetSize();
 	}
 	else
 	{
@@ -303,7 +303,7 @@ void ATA::Close()
 		std::fclose(hddImage);
 		hddImage = nullptr;
 	}
-	hddChdImage.reset();
+	chdHddImage.reset();
 
 	delete[] readBuffer;
 	readBuffer = nullptr;
@@ -531,7 +531,7 @@ void ATA::Write(u32 addr, u16 value, int width)
 
 void ATA::Async(uint cycles)
 {
-	if (!hddImage && !hddChdImage)
+	if (!hddImage && !chdHddImage)
 		return;
 
 	if ((regStatus & (ATA_STAT_BUSY | ATA_STAT_DRQ)) == 0 ||
