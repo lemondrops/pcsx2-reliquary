@@ -2108,6 +2108,7 @@ void QtHost::PrintCommandLineHelp(const std::string_view progname)
 #ifdef ENABLE_RAINTEGRATION
 	std::fprintf(stderr, "  -raintegration: Use RAIntegration instead of built-in achievement support.\n");
 #endif
+	std::fprintf(stderr, "  .py1 and .py2 Python arcade game entry files can be booted directly.\n");
 	std::fprintf(stderr, "  --: Signals that no more arguments will follow and the remaining\n"
 						 "    parameters make up the filename. Use when the filename contains\n"
 						 "    spaces or starts with a dash.\n");

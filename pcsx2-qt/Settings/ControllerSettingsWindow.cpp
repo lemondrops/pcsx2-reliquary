@@ -5,8 +5,10 @@
 #include "Settings/ControllerSettingsWindow.h"
 #include "Settings/ControllerGlobalSettingsWidget.h"
 #include "Settings/ControllerBindingWidget.h"
+#include "Settings/FireWireDeviceWidget.h"
 #include "Settings/HotkeySettingsWidget.h"
 
+#include "pcsx2/FireWire/FireWire.h"
 #include "pcsx2/INISettingsInterface.h"
 #include "pcsx2/SIO/Pad/Pad.h"
 #include "pcsx2/SIO/Sio.h"
@@ -69,7 +71,7 @@ void ControllerSettingsWindow::setCategory(Category category)
 			break;
 
 		case Category::HotkeySettings:
-			m_ui.settingsCategory->setCurrentRow(5);
+			m_ui.settingsCategory->setCurrentRow(6);
 			break;
 
 		default:
@@ -130,6 +132,7 @@ void ControllerSettingsWindow::onNewProfileClicked()
 			auto lock = Host::GetSettingsLock();
 			Pad::CopyConfiguration(&temp_si, *Host::Internal::GetBaseSettingsLayer(), true, true, copy_hotkey_bindings);
 			USB::CopyConfiguration(&temp_si, *Host::Internal::GetBaseSettingsLayer(), true, true);
+			FireWire::CopyConfiguration(&temp_si, *Host::Internal::GetBaseSettingsLayer(), true);
 		}
 		else
 		{
@@ -138,6 +141,7 @@ void ControllerSettingsWindow::onNewProfileClicked()
 			temp_si.SetBoolValue("Pad", "UseProfileHotkeyBindings", copy_hotkey_bindings);
 			Pad::CopyConfiguration(&temp_si, *m_profile_interface, true, true, copy_hotkey_bindings);
 			USB::CopyConfiguration(&temp_si, *m_profile_interface, true, true);
+			FireWire::CopyConfiguration(&temp_si, *m_profile_interface, true);
 		}
 	}
 
@@ -168,6 +172,7 @@ void ControllerSettingsWindow::onApplyProfileClicked()
 		auto lock = Host::GetSettingsLock();
 		Pad::CopyConfiguration(Host::Internal::GetBaseSettingsLayer(), *m_profile_interface, true, true, copy_hotkey_bindings);
 		USB::CopyConfiguration(Host::Internal::GetBaseSettingsLayer(), *m_profile_interface, true, true);
+		FireWire::CopyConfiguration(Host::Internal::GetBaseSettingsLayer(), *m_profile_interface, true);
 	}
 	Host::CommitBaseSettingChanges();
 
@@ -420,6 +425,7 @@ void ControllerSettingsWindow::createWidgets()
 	m_ui.settingsCategory->clear();
 
 	m_global_settings = nullptr;
+	m_firewire_binding = nullptr;
 	m_hotkey_settings = nullptr;
 
 	{
@@ -485,6 +491,18 @@ void ControllerSettingsWindow::createWidgets()
 		item->setText(tr("USB Port %1\n%2").arg(port + 1).arg(display_name));
 		item->setIcon(m_usb_bindings[port]->getIcon());
 		item->setData(Qt::UserRole, QVariant(MAX_PORTS + port));
+		m_ui.settingsCategory->addItem(item);
+	}
+
+	// FireWire devices
+	{
+		m_firewire_binding = new FireWireDeviceWidget(m_ui.settingsContainer, this);
+		m_ui.settingsContainer->addWidget(m_firewire_binding);
+
+		QListWidgetItem* item = new QListWidgetItem();
+		item->setText(tr("FireWire\nP1IO (Python 1 IO)"));
+		item->setIcon(m_firewire_binding->getIcon());
+		item->setData(Qt::UserRole, QVariant(static_cast<u32>(MAX_PORTS) + static_cast<u32>(USB::NUM_PORTS)));
 		m_ui.settingsCategory->addItem(item);
 	}
 

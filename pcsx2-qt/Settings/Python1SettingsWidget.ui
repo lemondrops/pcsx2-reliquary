@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Python1SettingsWidget</class>
+ <widget class="QWidget" name="Python1SettingsWidget">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>692</width>
+    <height>370</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Form</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout" stretch="0,1">
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <widget class="QGroupBox" name="gameFileSettings">
+      <property name="title">
+       <string>Game File Settings</string>
+      </property>
+      <layout class="QGridLayout" name="gridLayout">
+       <item row="0" column="0">
+        <widget class="QLabel" name="hddImageLabel">
+         <property name="text">
+          <string>HDD Image Path:</string>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="1">
+        <widget class="QLineEdit" name="hddImagePath"/>
+       </item>
+       <item row="0" column="2">
+        <widget class="QPushButton" name="hddImageBrowse">
+         <property name="text">
+          <string>Browse</string>
+         </property>
+        </widget>
+       </item>
+        <item row="1" column="0">
+         <widget class="QLabel" name="cfImageLabel">
+          <property name="text">
+           <string>CF Image Path:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="1">
+         <widget class="QLineEdit" name="cfImagePath"/>
+        </item>
+        <item row="1" column="2">
+         <widget class="QPushButton" name="cfImageBrowse">
+          <property name="text">
+           <string>Browse</string>
+          </property>
+         </widget>
+        </item>
+         <item row="2" column="0">
+          <widget class="QLabel" name="bbsramLabel">
+         <property name="text">
+          <string>BBSRAM Path:</string>
+        </property>
+       </widget>
+      </item>
+        <item row="2" column="1">
+         <widget class="QLineEdit" name="bbsramPath"/>
+        </item>
+        <item row="2" column="2">
+         <widget class="QPushButton" name="bbsramBrowse">
+        <property name="text">
+         <string>Browse</string>
+        </property>
+       </widget>
+      </item>
+        <item row="3" column="0">
+       <widget class="QLabel" name="ioBootRomLabel">
+        <property name="text">
+         <string>I/O Boot ROM Path:</string>
+        </property>
+       </widget>
+      </item>
+        <item row="3" column="1">
+       <widget class="QLineEdit" name="ioBootRomPath"/>
+      </item>
+        <item row="3" column="2">
+       <widget class="QPushButton" name="ioBootRomBrowse">
+        <property name="text">
+         <string>Browse</string>
+        </property>
+       </widget>
+      </item>
+        <item row="4" column="0">
+       <widget class="QLabel" name="ioConfigRomLabel">
+        <property name="text">
+         <string>I/O Config ROM Path:</string>
+        </property>
+       </widget>
+      </item>
+        <item row="4" column="1">
+       <widget class="QLineEdit" name="ioConfigRomPath"/>
+      </item>
+        <item row="4" column="2">
+       <widget class="QPushButton" name="ioConfigRomBrowse">
+        <property name="text">
+         <string>Browse</string>
+        </property>
+       </widget>
+      </item>
+        <item row="5" column="0">
+       <widget class="QLabel" name="internalDongleLabel">
+        <property name="text">
+         <string>Internal Dongle Path:</string>
+        </property>
+       </widget>
+      </item>
+        <item row="5" column="1">
+       <widget class="QLineEdit" name="internalDonglePath"/>
+      </item>
+        <item row="5" column="2">
+       <widget class="QPushButton" name="internalDongleBrowse">
+        <property name="text">
+         <string>Browse</string>
+        </property>
+       </widget>
+      </item>
+        <item row="6" column="0">
+       <widget class="QLabel" name="externalDongleLabel">
+        <property name="text">
+         <string>External Dongle Path:</string>
+        </property>
+       </widget>
+      </item>
+        <item row="6" column="1">
+       <widget class="QLineEdit" name="externalDonglePath"/>
+      </item>
+        <item row="6" column="2">
+       <widget class="QPushButton" name="externalDongleBrowse">
+        <property name="text">
+         <string>Browse</string>
+        </property>
+       </widget>
+      </item>
+        <item row="7" column="0">
+       <widget class="QLabel" name="memoryCardDongleLabel">
+        <property name="text">
+         <string>Memory Card Dongle Path:</string>
+        </property>
+       </widget>
+      </item>
+        <item row="7" column="1">
+       <widget class="QLineEdit" name="memoryCardDonglePath"/>
+      </item>
+        <item row="7" column="2">
+       <widget class="QPushButton" name="memoryCardDongleBrowse">
+        <property name="text">
+         <string>Browse</string>
+        </property>
+       </widget>
+      </item>
+        <item row="8" column="0">
+       <widget class="QLabel" name="memoryCardIdLabel">
+        <property name="text">
+         <string>Memory Card ID Path:</string>
+        </property>
+       </widget>
+      </item>
+        <item row="8" column="1">
+       <widget class="QLineEdit" name="memoryCardIdPath"/>
+      </item>
+        <item row="8" column="2">
+       <widget class="QPushButton" name="memoryCardIdBrowse">
+        <property name="text">
+         <string>Browse</string>
+        </property>
+       </widget>
+      </item>
+        <item row="9" column="0">
+       <widget class="QLabel" name="ioModeLabel">
+        <property name="text">
+         <string>I/O Mode:</string>
+        </property>
+       </widget>
+      </item>
+        <item row="9" column="1">
+       <widget class="QComboBox" name="ioMode"/>
+      </item>
+      </layout>
+     </widget>
+   </item>
+   <item>
+    <spacer name="verticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>40</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

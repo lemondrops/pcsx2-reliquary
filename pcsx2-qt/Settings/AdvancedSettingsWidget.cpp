@@ -82,6 +82,12 @@ AdvancedSettingsWidget::AdvancedSettingsWidget(SettingsWindow* settings_dialog, 
 	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.mgChallengeIvFile, "Security", "MgChallengeIvFile", "");
 	connect(m_ui.mgChallengeIvFileBrowse, &QPushButton::clicked, this, &AdvancedSettingsWidget::onBrowseClickedChallengeIvFile);
 
+	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.arcadeKelfOverrideKbitFile, "Security", "ArcadeKelfOverrideKbitFile", "");
+	connect(m_ui.arcadeKelfOverrideKbitBrowse, &QPushButton::clicked, this, &AdvancedSettingsWidget::onBrowseClickedArcadeKelfOverrideKbitFile);
+
+	SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.arcadeKelfOverrideKcFile, "Security", "ArcadeKelfOverrideKcFile", "");
+	connect(m_ui.arcadeKelfOverrideKcBrowse, &QPushButton::clicked, this, &AdvancedSettingsWidget::onBrowseClickedArcadeKelfOverrideKcFile);
+
 	SettingWidgetBinder::BindWidgetToEnumSetting(sif, m_ui.mgKeyStoreMode, "Security", "MgKeyStoreMode", &Pcsx2Config::ParseSecurityKeyStoreMode, &Pcsx2Config::GetSecurityKeyStoreModeName, SecurityKeyStoreMode::Retail);
 
 	dialog()->registerWidgetHelp(m_ui.eeClampMode, tr("Clamping Mode"), tr("Normal (Default)"),
@@ -158,6 +164,15 @@ AdvancedSettingsWidget::AdvancedSettingsWidget(SettingsWindow* settings_dialog, 
 	dialog()->registerWidgetHelp(m_ui.saveStateOnShutdown, tr("Save State On Shutdown"), tr("Unchecked"),
 		tr("Automatically saves the emulator state when powering down or exiting. You can then "
 		   "resume directly from where you left off next time."));
+
+	dialog()->registerWidgetHelp(m_ui.mgChallengeIvFile, tr("MagicGate Challenge IV File"), tr("civ.bin"), nullptr);
+	dialog()->registerWidgetHelp(m_ui.mgChallengeIvFileBrowse, tr("MagicGate Challenge IV File"), tr("civ.bin"), nullptr);
+	dialog()->registerWidgetHelp(m_ui.mgCardKeyStoreFile, tr("MagicGate Card Key Store File"), tr("cks.bin"), nullptr);
+	dialog()->registerWidgetHelp(m_ui.mgCardKeyStoreBrowse, tr("MagicGate Card Key Store File"), tr("cks.bin"), nullptr);
+	dialog()->registerWidgetHelp(m_ui.mgKeyStoreKeyFile, tr("MagicGate Key Store Key File"), tr("kek.bin"), nullptr);
+	dialog()->registerWidgetHelp(m_ui.mgKeyStoreKeyBrowse, tr("MagicGate Key Store Key File"), tr("kek.bin"), nullptr);
+	dialog()->registerWidgetHelp(m_ui.mgEncryptedKeyStoreFile, tr("MagicGate Encrypted Key Store File"), tr("eks.bin"), nullptr);
+	dialog()->registerWidgetHelp(m_ui.mgEncryptedKeyStoreBrowse, tr("MagicGate Encrypted Key Store File"), tr("eks.bin"), nullptr);
 
 	dialog()->registerWidgetHelp(m_ui.backupSaveStates, tr("Create Save State Backups"), tr("Checked"),
 		//: Do not translate the ".backup" extension.
@@ -254,6 +269,16 @@ void AdvancedSettingsWidget::onBrowseClickedCardKeyStoreFile()
 void AdvancedSettingsWidget::onBrowseClickedKeyStoreKeyFile()
 {
 	onBrowseClicked(m_ui.mgKeyStoreKeyFile);
+}
+
+void AdvancedSettingsWidget::onBrowseClickedArcadeKelfOverrideKbitFile()
+{
+	onBrowseClicked(m_ui.arcadeKelfOverrideKbitFile);
+}
+
+void AdvancedSettingsWidget::onBrowseClickedArcadeKelfOverrideKcFile()
+{
+	onBrowseClicked(m_ui.arcadeKelfOverrideKcFile);
 }
 
 void AdvancedSettingsWidget::onBrowseClicked(QLineEdit* pathElement)

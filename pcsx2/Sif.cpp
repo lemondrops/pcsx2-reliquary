@@ -5,7 +5,10 @@
 
 #include "R3000A.h"
 #include "Common.h"
+#include "IopHw.h"
 #include "Sif.h"
+
+#include <cstring>
 
 void sifReset()
 {

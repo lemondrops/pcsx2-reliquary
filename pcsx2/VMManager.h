@@ -38,7 +38,11 @@ struct VMBootParameters
 	std::optional<bool> fast_boot;
 	std::optional<bool> fullscreen;
 
-	// For Python 2
+	// For Python 1/2
+	std::optional<bool> is_python1;
+	std::optional<u32> python1_crc;
+	std::optional<std::string> python1_serial;
+
 	std::optional<bool> is_python2;
 	std::optional<u32> python2_crc;
 	std::optional<std::string> python2_serial;

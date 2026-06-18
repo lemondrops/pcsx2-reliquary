@@ -58,8 +58,10 @@ static __fi bool WriteFifoToIOP()
 
 	SIF_LOG("Sif 1 IOP doing transfer %04X to %08X", readSize, HW_DMA10_MADR);
 
-	sif1.fifo.read((u32*)iopPhysMem(hw_dma10.madr), readSize);
-	psxCpu->Clear(hw_dma10.madr, readSize);
+	const u32 dest = hw_dma10.madr;
+	u32* dest_ptr = reinterpret_cast<u32*>(iopPhysMem(dest));
+	sif1.fifo.read(dest_ptr, readSize);
+	psxCpu->Clear(dest, readSize);
 	hw_dma10.madr += readSize << 2;
 	sif1.iop.cycles += readSize >> 2;		// fixme: should be >> 4
 	sif1.iop.counter -= readSize;

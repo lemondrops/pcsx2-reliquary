@@ -64,7 +64,7 @@
 #endif
 
 const char* MainWindow::OPEN_FILE_FILTER =
-	QT_TRANSLATE_NOOP("MainWindow", "All File Types (*.bin *.iso *.cue *.mdf *.chd *.cso *.zso *.gz *.elf *.irx *.gs *.gs.xz *.gs.zst *.dump);;"
+	QT_TRANSLATE_NOOP("MainWindow", "All File Types (*.bin *.iso *.cue *.mdf *.chd *.cso *.zso *.gz *.py1 *.py2 *.elf *.irx *.gs *.gs.xz *.gs.zst *.dump);;"
 									"Single-Track Raw Images (*.bin *.iso);;"
 									"Cue Sheets (*.cue);;"
 									"Media Descriptor File (*.mdf);;"
@@ -72,6 +72,7 @@ const char* MainWindow::OPEN_FILE_FILTER =
 									"CSO Images (*.cso);;"
 									"ZSO Images (*.zso);;"
 									"GZ Images (*.gz);;"
+									"Python Arcade Entries (*.py1 *.py2);;"
 									"ELF Executables (*.elf);;"
 									"IRX Executables (*.irx);;"
 									"GS Dumps (*.gs *.gs.xz *.gs.zst);;"
@@ -3026,7 +3027,12 @@ void MainWindow::startGameListEntry(const GameList::Entry& entry, std::optional<
 		params->save_state = std::move(state_filename);
 	}
 
-	if (entry.type == GameList::EntryType::Python2)
+	if (entry.type == GameList::EntryType::Python1)
+	{
+		if (!verifyPython1Configuration(&entry)) return;
+		params->is_python1 = true;
+	}
+	else if (entry.type == GameList::EntryType::Python2)
 	{
 		if (!verifyPython2Configuration(&entry)) return;
 		params->is_python2 = true;
@@ -3696,6 +3702,74 @@ bool MainWindow::verifyPython2Configuration(const GameList::Entry* entry)
 	{
 		Console.Error("Could not find white dongle file: '%s'", dongleWhitePath.c_str());
 	}
+
+	return valid;
+}
+
+bool MainWindow::verifyPython1Configuration(const GameList::Entry* entry)
+{
+	bool valid = true;
+	std::string filename(VMManager::GetGameSettingsPath(entry->serial, entry->crc));
+	std::unique_ptr<INISettingsInterface> si = std::make_unique<INISettingsInterface>(std::move(filename));
+
+	if (!FileSystem::FileExists(si->GetFileName().c_str()))
+	{
+		QMessageBox::critical(nullptr, tr("Error"), tr("Could not find required file: '%1'").arg(QString::fromStdString(si->GetFileName())));
+		return false;
+	}
+
+	si->Load();
+
+	const std::string hddImagePath = si->GetStringValue("Python1/Game", "HddImageFile", "");
+	const std::string cfImagePath = si->GetStringValue("Python1/Game", "CfImageFile", "");
+	const bool hddImageExists = !hddImagePath.empty() && FileSystem::FileExists(hddImagePath.c_str());
+	const bool cfImageExists = !cfImagePath.empty() && FileSystem::FileExists(cfImagePath.c_str());
+	if (!hddImageExists && !cfImageExists)
+	{
+		QMessageBox::critical(nullptr, tr("Error"), tr("Could not find required HDD or CF image file."));
+		Console.Error("Could not find required Python 1 HDD or CF image file");
+		valid = false;
+	}
+
+	const std::string bbsramPath = si->GetStringValue("Python1/Game", "BbsRamFile", "");
+	if (bbsramPath.empty())
+	{
+		QMessageBox::critical(nullptr, tr("Error"), tr("Python 1 BBSRAM path is not configured."));
+		Console.Error("Python 1 BBSRAM path is not configured");
+		valid = false;
+	}
+
+	const std::string ioBootRomPath = si->GetStringValue("Python1/Game", "IoBootRomFile", "");
+	if (ioBootRomPath.empty())
+	{
+		QMessageBox::critical(nullptr, tr("Error"), tr("Python 1 I/O boot ROM path is not configured."));
+		Console.Error("Python 1 I/O boot ROM path is not configured");
+		valid = false;
+	}
+
+	const std::string ioConfigRomPath = si->GetStringValue("Python1/Game", "IoConfigRomFile", "");
+	if (!ioConfigRomPath.empty() && !FileSystem::FileExists(ioConfigRomPath.c_str()))
+		Console.Error("Could not find Python 1 I/O config ROM file: '%s'", ioConfigRomPath.c_str());
+
+	const std::string memoryCardDonglePath = si->GetStringValue("Python1/Game", "MemoryCardDongleFile", "");
+	if (memoryCardDonglePath.empty() || !FileSystem::FileExists(memoryCardDonglePath.c_str()))
+	{
+		QMessageBox::critical(nullptr, tr("Error"), tr("Could not find required memory card dongle file: '%1'").arg(QString::fromStdString(memoryCardDonglePath)));
+		Console.Error("Could not find required Python 1 memory card dongle file: '%s'", memoryCardDonglePath.c_str());
+		valid = false;
+	}
+
+	const std::string memoryCardIdPath = si->GetStringValue("Python1/Game", "MemoryCardIdFile", "");
+	if (!memoryCardIdPath.empty() && !FileSystem::FileExists(memoryCardIdPath.c_str()))
+		Console.Error("Could not find Python 1 memory card ID file: '%s'", memoryCardIdPath.c_str());
+
+	const std::string internalDonglePath = si->GetStringValue("Python1/Game", "InternalDongleFile", "");
+	if (!internalDonglePath.empty() && !FileSystem::FileExists(internalDonglePath.c_str()))
+		Console.Error("Could not find internal Python 1 dongle file: '%s'", internalDonglePath.c_str());
+
+	const std::string externalDonglePath = si->GetStringValue("Python1/Game", "ExternalDongleFile", "");
+	if (!externalDonglePath.empty() && !FileSystem::FileExists(externalDonglePath.c_str()))
+		Console.Error("Could not find external Python 1 dongle file: '%s'", externalDonglePath.c_str());
 
 	return valid;
 }

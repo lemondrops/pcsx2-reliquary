@@ -247,6 +247,9 @@
     <Filter Include="System\Ps2\USB\usb-msd">
       <UniqueIdentifier>{20789ef3-7c0e-41ac-babd-03a9be9fe994}</UniqueIdentifier>
     </Filter>
+    <Filter Include="System\Ps2\USB\usb-perfect-pool-camera">
+      <UniqueIdentifier>{5b803aa1-7e2c-4d73-9aa4-04cf86cf41b5}</UniqueIdentifier>
+    </Filter>
     <Filter Include="System\Ps2\USB\usb-mic">
       <UniqueIdentifier>{c59653b3-87d6-4b11-b9e3-f0543117ca27}</UniqueIdentifier>
     </Filter>
@@ -448,6 +451,9 @@
     </ClCompile>
     <ClCompile Include="Cache.cpp">
       <Filter>System\Ps2\EmotionEngine\Memory</Filter>
+    </ClCompile>
+    <ClCompile Include="ChdHddImage.cpp">
+      <Filter>Misc</Filter>
     </ClCompile>
     <ClCompile Include="Memory.cpp">
       <Filter>System\Ps2\EmotionEngine\Memory</Filter>
@@ -800,7 +806,13 @@
     <ClCompile Include="PINE.cpp">
       <Filter>System</Filter>
     </ClCompile>
-    <ClCompile Include="FW.cpp">
+    <ClCompile Include="FireWire\FireWire.cpp">
+      <Filter>System\Ps2\Iop\FW</Filter>
+    </ClCompile>
+    <ClCompile Include="FireWire\deviceproxy.cpp">
+      <Filter>System\Ps2\Iop\FW</Filter>
+    </ClCompile>
+    <ClCompile Include="FireWire\Devices\KonamiPython1.cpp">
       <Filter>System\Ps2\Iop\FW</Filter>
     </ClCompile>
     <ClCompile Include="SPU2\spu2.cpp">
@@ -861,9 +873,6 @@
       <Filter>System\Ps2\DEV9\ATA</Filter>
     </ClCompile>
     <ClCompile Include="DEV9\ATA\ATA_Transfer.cpp">
-      <Filter>System\Ps2\DEV9\ATA</Filter>
-    </ClCompile>
-    <ClCompile Include="DEV9\ATA\HddChdImage.cpp">
       <Filter>System\Ps2\DEV9\ATA</Filter>
     </ClCompile>
     <ClCompile Include="DEV9\ATA\HddCreate.cpp">
@@ -1178,6 +1187,9 @@
     <ClCompile Include="USB\usb-msd\usb-msd.cpp">
       <Filter>System\Ps2\USB\usb-msd</Filter>
     </ClCompile>
+    <ClCompile Include="USB\usb-perfect-pool-camera\perfect-pool-camera.cpp">
+      <Filter>System\Ps2\USB\usb-perfect-pool-camera</Filter>
+    </ClCompile>
     <ClCompile Include="USB\usb-mic\usb-headset.cpp">
       <Filter>System\Ps2\USB\usb-mic</Filter>
     </ClCompile>
@@ -1475,6 +1487,9 @@
     <ClInclude Include="Common.h">
       <Filter>System\Include</Filter>
     </ClInclude>
+    <ClInclude Include="ChdHddImage.h">
+      <Filter>System\Include</Filter>
+    </ClInclude>
     <ClInclude Include="Config.h">
       <Filter>System\Include</Filter>
     </ClInclude>
@@ -1739,7 +1754,16 @@
     <ClInclude Include="PINE.h">
       <Filter>System\Include</Filter>
     </ClInclude>
-    <ClInclude Include="FW.h">
+    <ClInclude Include="FireWire\FireWire.h">
+      <Filter>System\Ps2\Iop\FW</Filter>
+    </ClInclude>
+    <ClInclude Include="FireWire\FireWireDevice.h">
+      <Filter>System\Ps2\Iop\FW</Filter>
+    </ClInclude>
+    <ClInclude Include="FireWire\deviceproxy.h">
+      <Filter>System\Ps2\Iop\FW</Filter>
+    </ClInclude>
+    <ClInclude Include="FireWire\Devices\KonamiPython1.h">
       <Filter>System\Ps2\Iop\FW</Filter>
     </ClInclude>
     <ClInclude Include="SPU2\spu2.h">
@@ -1761,9 +1785,6 @@
       <Filter>System\Ps2\DEV9</Filter>
     </ClInclude>
     <ClInclude Include="DEV9\ATA\ATA.h">
-      <Filter>System\Ps2\DEV9\ATA</Filter>
-    </ClInclude>
-    <ClInclude Include="DEV9\ATA\HddChdImage.h">
       <Filter>System\Ps2\DEV9\ATA</Filter>
     </ClInclude>
     <ClInclude Include="DEV9\ATA\HddCreate.h">
@@ -2144,6 +2165,9 @@
     </ClInclude>
     <ClInclude Include="USB\usb-msd\usb-msd.h">
       <Filter>System\Ps2\USB\usb-msd</Filter>
+    </ClInclude>
+    <ClInclude Include="USB\usb-perfect-pool-camera\perfect-pool-camera.h">
+      <Filter>System\Ps2\USB\usb-perfect-pool-camera</Filter>
     </ClInclude>
     <ClInclude Include="USB\usb-mic\audiodev-noop.h">
       <Filter>System\Ps2\USB\usb-mic</Filter>

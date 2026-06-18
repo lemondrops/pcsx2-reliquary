@@ -16,6 +16,7 @@
 #include "usb-pad/usb-turntable.h"
 #include "usb-printer/usb-printer.h"
 #include "usb-lightgun/guncon2.h"
+#include "usb-perfect-pool-camera/perfect-pool-camera.h"
 #include "usb-python2/usb-python2.h"
 
 RegisterDevice* RegisterDevice::registerDevice = nullptr;
@@ -79,6 +80,7 @@ void RegisterDevice::Register()
 	inst.Add(DEVTYPE_LOGITECH_HEADSET, new usb_mic::HeadsetDevice());
 	inst.Add(DEVTYPE_HIDKEYBOARD, new usb_hid::HIDKbdDevice());
 	inst.Add(DEVTYPE_HIDMOUSE, new usb_hid::HIDMouseDevice());
+	inst.Add(DEVTYPE_TRACKBALL, new usb_hid::TrackballDevice());
 	inst.Add(DEVTYPE_RBKIT, new usb_pad::RBDrumKitDevice());
 	inst.Add(DEVTYPE_DJ, new usb_pad::DJTurntableDevice());
 	inst.Add(DEVTYPE_BUZZ, new usb_pad::BuzzDevice());
@@ -92,6 +94,7 @@ void RegisterDevice::Register()
 	inst.Add(DEVTYPE_REALPLAY, new usb_pad::RealPlayDevice());
 	inst.Add(DEVTYPE_TRAIN, new usb_pad::TrainDevice());
 	inst.Add(DEVTYPE_PYTHON2, new usb_python2::Python2Device());
+	inst.Add(DEVTYPE_PERFECT_POOL_CAMERA, new usb_perfect_pool_camera::PerfectPoolCameraDevice());
 }
 
 void RegisterDevice::Unregister()

@@ -73,6 +73,9 @@ target_sources(pcsx2-qt PRIVATE
 	Settings/ControllerBindingWidget.cpp
 	Settings/ControllerBindingWidget.h
 	Settings/ControllerBindingWidget.ui
+	Settings/FireWireDeviceWidget.cpp
+	Settings/FireWireDeviceWidget.h
+	Settings/FireWireDeviceWidget.ui
 	Settings/ControllerLEDSettingsDialog.ui
 	Settings/ControllerGlobalSettingsWidget.cpp
 	Settings/ControllerGlobalSettingsWidget.h
@@ -165,6 +168,9 @@ target_sources(pcsx2-qt PRIVATE
 	Settings/DEV9UiCommon.h
 	Settings/HddCreateQt.cpp
 	Settings/HddCreateQt.h
+	Settings/Python1SettingsWidget.cpp
+	Settings/Python1SettingsWidget.h
+	Settings/Python1SettingsWidget.ui
     Settings/Python2SettingsWidget.cpp
     Settings/Python2SettingsWidget.h
     Settings/Python2SettingsWidget.ui
@@ -290,6 +296,7 @@ set_source_files_properties(PrecompiledHeader.cpp PROPERTIES HEADER_FILE_ONLY TR
 target_include_directories(pcsx2-qt PRIVATE
 	${Qt6Gui_PRIVATE_INCLUDE_DIRS}
 	"${CMAKE_BINARY_DIR}/common/include"
+	"${CMAKE_CURRENT_BINARY_DIR}"
 	"${CMAKE_SOURCE_DIR}/pcsx2"
 	"${CMAKE_SOURCE_DIR}/pcsx2-qt"
 )
@@ -305,6 +312,34 @@ target_link_libraries(pcsx2-qt PRIVATE
 
 if(NOT WIN32 AND NOT APPLE)
 	target_link_libraries(pcsx2-qt PRIVATE Qt6::GuiPrivate)
+	find_program(WAYLAND_SCANNER wayland-scanner)
+	if(WAYLAND_API AND WAYLAND_SCANNER)
+		set(WAYLAND_PROTOCOL_DIR "${CMAKE_SOURCE_DIR}/pcsx2/GS/parallel-gs/Granite/third_party/sdl3/wayland-protocols")
+		set(WAYLAND_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/wayland-generated-protocols")
+		file(MAKE_DIRECTORY "${WAYLAND_GENERATED_DIR}")
+
+		foreach(PROTOCOL relative-pointer-unstable-v1 pointer-constraints-unstable-v1)
+			set(PROTOCOL_XML "${WAYLAND_PROTOCOL_DIR}/${PROTOCOL}.xml")
+			set(PROTOCOL_HEADER "${WAYLAND_GENERATED_DIR}/${PROTOCOL}-client-protocol.h")
+			set(PROTOCOL_SOURCE "${WAYLAND_GENERATED_DIR}/${PROTOCOL}-protocol.c")
+			add_custom_command(
+				OUTPUT "${PROTOCOL_HEADER}"
+				COMMAND "${WAYLAND_SCANNER}" client-header "${PROTOCOL_XML}" "${PROTOCOL_HEADER}"
+				DEPENDS "${PROTOCOL_XML}"
+				VERBATIM)
+			add_custom_command(
+				OUTPUT "${PROTOCOL_SOURCE}"
+				COMMAND "${WAYLAND_SCANNER}" private-code "${PROTOCOL_XML}" "${PROTOCOL_SOURCE}"
+				DEPENDS "${PROTOCOL_XML}"
+				VERBATIM)
+			target_sources(pcsx2-qt PRIVATE "${PROTOCOL_HEADER}" "${PROTOCOL_SOURCE}")
+			set_source_files_properties("${PROTOCOL_HEADER}" "${PROTOCOL_SOURCE}" PROPERTIES GENERATED TRUE SKIP_PRECOMPILE_HEADERS TRUE)
+		endforeach()
+
+		target_include_directories(pcsx2-qt PRIVATE "${WAYLAND_GENERATED_DIR}")
+		target_link_libraries(pcsx2-qt PRIVATE wayland-client)
+		target_compile_definitions(pcsx2-qt PRIVATE PCSX2_QT_HAS_WAYLAND_RELATIVE_POINTER=1)
+	endif()
 endif()
 
 if(UNIX AND NOT APPLE)

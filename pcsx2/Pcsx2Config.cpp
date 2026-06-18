@@ -1781,6 +1781,8 @@ Pcsx2Config::SecurityOptions::SecurityOptions()
 	MgCardKeyStoreFile = "";
 	MgEncryptedKeyStoreFile = "";
 	MgKeyStoreKeyFile = "";
+	ArcadeKelfOverrideKbitFile = "";
+	ArcadeKelfOverrideKcFile = "";
 	NvRamFile = "";
 	ILinkIdFile = "";
 	MgKeyStoreMode = SecurityKeyStoreMode::Retail;
@@ -1810,6 +1812,8 @@ void Pcsx2Config::SecurityOptions::LoadSave(SettingsWrapper& wrap)
 	SettingsWrapEntry(MgCardKeyStoreFile);
 	SettingsWrapEntry(MgEncryptedKeyStoreFile);
 	SettingsWrapEntry(MgKeyStoreKeyFile);
+	SettingsWrapEntry(ArcadeKelfOverrideKbitFile);
+	SettingsWrapEntry(ArcadeKelfOverrideKcFile);
 
 	SettingsWrapEntry(NvRamFile);
 	SettingsWrapEntry(ILinkIdFile);
@@ -1824,7 +1828,8 @@ bool Pcsx2Config::SecurityOptions::operator!=(const SecurityOptions& right) cons
 
 bool Pcsx2Config::SecurityOptions::operator==(const SecurityOptions& right) const
 {
-	return OpEqu(MgChallengeIvFile) && OpEqu(MgCardKeyStoreFile) && OpEqu(MgEncryptedKeyStoreFile) && OpEqu(MgKeyStoreKeyFile) && OpEqu(NvRamFile) && OpEqu(ILinkIdFile) && OpEqu(MgKeyStoreMode);
+	return OpEqu(MgChallengeIvFile) && OpEqu(MgCardKeyStoreFile) && OpEqu(MgEncryptedKeyStoreFile) && OpEqu(MgKeyStoreKeyFile) &&
+		OpEqu(ArcadeKelfOverrideKbitFile) && OpEqu(ArcadeKelfOverrideKcFile) && OpEqu(NvRamFile) && OpEqu(ILinkIdFile) && OpEqu(MgKeyStoreMode);
 }
 
 Pcsx2Config::FilenameOptions::FilenameOptions()
@@ -2227,6 +2232,8 @@ std::string Pcsx2Config::FullpathToBios() const
 
 std::string Pcsx2Config::FullpathToMcd(uint slot) const
 {
+	if (Path::IsAbsolute(Mcd[slot].Filename))
+		return Mcd[slot].Filename;
 	return Path::Combine(EmuFolders::MemoryCards, Mcd[slot].Filename);
 }
 

@@ -12,7 +12,7 @@
 #include "pcsx2/Host.h"
 #include "pcsx2/INISettingsInterface.h"
 
-#include "DEV9/ATA/HddChdImage.h"
+#include "ChdHddImage.h"
 #include "DEV9SettingsWidget.h"
 #include "QtHost.h"
 #include "QtUtils.h"

@@ -7,6 +7,7 @@
 #include "IopMem.h"
 #include "R3000A.h"
 #include "R5900.h"
+#include "Sif.h"
 #include "ps2/BiosTools.h"
 #include "VMManager.h"
 
@@ -929,7 +930,6 @@ namespace R3000A
 	{
 		int Kprintf_HLE()
 		{
-
 			// Emulate the expected Kprintf functionality:
 			iopMemWrite32(sp, a0);
 			iopMemWrite32(sp + 4, a1);

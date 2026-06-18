@@ -8,6 +8,7 @@
 
 #include "pcsx2/ImGui/FullscreenUI.h"
 #include "pcsx2/ImGui/ImGuiManager.h"
+#include "Input/InputManager.h"
 
 #include "common/Assertions.h"
 #include "common/Console.h"
@@ -24,6 +25,18 @@
 #include <bit>
 #include <cmath>
 
+#if defined(PCSX2_QT_HAS_WAYLAND_RELATIVE_POINTER)
+#include <QtGui/QGuiApplication>
+#include <QtGui/qpa/qplatformnativeinterface.h>
+#include <QtGui/qguiapplication_platform.h>
+#include <wayland-client-core.h>
+#include <wayland-client-protocol.h>
+extern "C" {
+#include "wayland-generated-protocols/pointer-constraints-unstable-v1-client-protocol.h"
+#include "wayland-generated-protocols/relative-pointer-unstable-v1-client-protocol.h"
+}
+#endif
+
 #if defined(_WIN32)
 #include "common/RedtapeWindows.h"
 #endif
@@ -39,6 +52,7 @@ DisplaySurface::DisplaySurface()
 
 DisplaySurface::~DisplaySurface()
 {
+	destroyWaylandRelativeMouseObjects();
 #ifdef _WIN32
 	if (m_clip_mouse_enabled)
 		ClipCursor(nullptr);
@@ -82,7 +96,20 @@ void DisplaySurface::updateRelativeMode(bool enabled)
 	}
 #else
 	if (m_relative_mouse_enabled == enabled)
+	{
+#if defined(PCSX2_QT_HAS_WAYLAND_RELATIVE_POINTER)
+		if (enabled && QGuiApplication::platformName().toLower() == "wayland" && !m_wayland_relative_mouse_enabled)
+		{
+			updateWaylandRelativeMouseMode();
+			if (m_wayland_relative_mouse_enabled)
+			{
+				m_relative_mouse_last_pos = QCursor::pos();
+				setMouseGrabEnabled(true);
+			}
+		}
+#endif
 		return;
+	}
 
 	DevCon.WriteLn("updateRelativeMode(): relative=%s", enabled ? "yes" : "no");
 #endif
@@ -97,10 +124,12 @@ void DisplaySurface::updateRelativeMode(bool enabled)
 #endif
 		m_relative_mouse_start_pos = QCursor::pos();
 		updateCenterPos();
+		m_relative_mouse_last_pos = QCursor::pos();
 		setMouseGrabEnabled(true);
 	}
 	else if (m_relative_mouse_enabled)
 	{
+		destroyWaylandRelativeMouseObjects();
 		m_relative_mouse_enabled = false;
 		QCursor::setPos(m_relative_mouse_start_pos);
 		setMouseGrabEnabled(false);
@@ -123,6 +152,160 @@ void DisplaySurface::updateCursor(bool hidden)
 		DevCon.WriteLn("updateCursor(): Cursor is now shown");
 		unsetCursor();
 	}
+}
+
+void DisplaySurface::destroyWaylandRelativeMouseObjects()
+{
+#if defined(PCSX2_QT_HAS_WAYLAND_RELATIVE_POINTER)
+	if (m_wayland_relative_pointer)
+	{
+		zwp_relative_pointer_v1_destroy(static_cast<zwp_relative_pointer_v1*>(m_wayland_relative_pointer));
+		m_wayland_relative_pointer = nullptr;
+	}
+	if (m_wayland_locked_pointer)
+	{
+		zwp_locked_pointer_v1_destroy(static_cast<zwp_locked_pointer_v1*>(m_wayland_locked_pointer));
+		m_wayland_locked_pointer = nullptr;
+	}
+	if (m_wayland_relative_pointer_manager)
+	{
+		zwp_relative_pointer_manager_v1_destroy(static_cast<zwp_relative_pointer_manager_v1*>(m_wayland_relative_pointer_manager));
+		m_wayland_relative_pointer_manager = nullptr;
+	}
+	if (m_wayland_pointer_constraints)
+	{
+		zwp_pointer_constraints_v1_destroy(static_cast<zwp_pointer_constraints_v1*>(m_wayland_pointer_constraints));
+		m_wayland_pointer_constraints = nullptr;
+	}
+	if (m_wayland_registry)
+	{
+		wl_registry_destroy(static_cast<wl_registry*>(m_wayland_registry));
+		m_wayland_registry = nullptr;
+	}
+#endif
+	m_wayland_relative_mouse_enabled = false;
+	m_wayland_pointer_serial = 0;
+	m_wayland_display = nullptr;
+	m_wayland_pointer = nullptr;
+	if (!m_cursor_hidden)
+	{
+		unsetCursor();
+		if (m_container)
+			m_container->unsetCursor();
+	}
+}
+
+void DisplaySurface::updateWaylandRelativeMouseMode()
+{
+#if defined(PCSX2_QT_HAS_WAYLAND_RELATIVE_POINTER)
+	if (QGuiApplication::platformName().toLower() != "wayland")
+		return;
+	if (m_wayland_relative_pointer || m_wayland_locked_pointer)
+		return;
+
+	destroyWaylandRelativeMouseObjects();
+
+	QNativeInterface::QWaylandApplication* wayland = qGuiApp->nativeInterface<QNativeInterface::QWaylandApplication>();
+	QPlatformNativeInterface* native_interface = QGuiApplication::platformNativeInterface();
+	if (!wayland || !native_interface)
+		return;
+
+	wl_display* display = wayland->display();
+	wl_pointer* pointer = wayland->pointer();
+	m_wayland_display = display;
+	m_wayland_pointer = pointer;
+	m_wayland_pointer_serial = wayland->lastInputSerial();
+	QWindow* constraint_window = this;
+	if (m_container && m_container->window() && m_container->window()->windowHandle())
+		constraint_window = m_container->window()->windowHandle();
+	wl_surface* surface = static_cast<wl_surface*>(native_interface->nativeResourceForWindow("surface", constraint_window));
+	if (!surface && constraint_window != this)
+	{
+		constraint_window = this;
+		surface = static_cast<wl_surface*>(native_interface->nativeResourceForWindow("surface", constraint_window));
+	}
+	if (!display || !pointer || !surface)
+		return;
+
+	struct RegistryState
+	{
+		DisplaySurface* self;
+		wl_display* display;
+	};
+
+	static constexpr wl_registry_listener registry_listener = {
+		[](void* data, wl_registry* registry, uint32_t id, const char* interface, uint32_t version) {
+			RegistryState* state = static_cast<RegistryState*>(data);
+			if (std::strcmp(interface, zwp_relative_pointer_manager_v1_interface.name) == 0)
+			{
+				state->self->m_wayland_relative_pointer_manager = wl_registry_bind(
+					registry, id, &zwp_relative_pointer_manager_v1_interface, std::min<uint32_t>(version, 1));
+			}
+			else if (std::strcmp(interface, zwp_pointer_constraints_v1_interface.name) == 0)
+			{
+				state->self->m_wayland_pointer_constraints = wl_registry_bind(
+					registry, id, &zwp_pointer_constraints_v1_interface, std::min<uint32_t>(version, 1));
+			}
+		},
+		[](void*, wl_registry*, uint32_t) {}};
+
+	m_wayland_registry = wl_display_get_registry(display);
+	RegistryState registry_state = {this, display};
+	wl_registry_add_listener(static_cast<wl_registry*>(m_wayland_registry), &registry_listener, &registry_state);
+	wl_display_roundtrip(display);
+
+	if (!m_wayland_relative_pointer_manager || !m_wayland_pointer_constraints)
+	{
+		destroyWaylandRelativeMouseObjects();
+		return;
+	}
+
+	m_wayland_relative_pointer = zwp_relative_pointer_manager_v1_get_relative_pointer(
+		static_cast<zwp_relative_pointer_manager_v1*>(m_wayland_relative_pointer_manager), pointer);
+	m_wayland_locked_pointer = zwp_pointer_constraints_v1_lock_pointer(
+		static_cast<zwp_pointer_constraints_v1*>(m_wayland_pointer_constraints), surface, pointer, nullptr,
+		ZWP_POINTER_CONSTRAINTS_V1_LIFETIME_PERSISTENT);
+	static constexpr zwp_locked_pointer_v1_listener locked_pointer_listener = {
+		[](void* data, zwp_locked_pointer_v1*) {
+			DisplaySurface* surface = static_cast<DisplaySurface*>(data);
+			surface->m_wayland_relative_mouse_enabled = true;
+			if (surface->m_wayland_pointer && surface->m_wayland_pointer_serial != 0)
+			{
+				wl_pointer_set_cursor(static_cast<wl_pointer*>(surface->m_wayland_pointer), surface->m_wayland_pointer_serial, nullptr, 0, 0);
+				if (surface->m_wayland_display)
+					wl_display_flush(static_cast<wl_display*>(surface->m_wayland_display));
+			}
+			surface->setCursor(Qt::BlankCursor);
+			if (surface->m_container)
+				surface->m_container->setCursor(Qt::BlankCursor);
+		},
+		[](void* data, zwp_locked_pointer_v1*) {
+			DisplaySurface* surface = static_cast<DisplaySurface*>(data);
+			surface->m_wayland_relative_mouse_enabled = false;
+			if (!surface->m_cursor_hidden)
+			{
+				surface->unsetCursor();
+				if (surface->m_container)
+					surface->m_container->unsetCursor();
+			}
+		}};
+	zwp_locked_pointer_v1_add_listener(static_cast<zwp_locked_pointer_v1*>(m_wayland_locked_pointer), &locked_pointer_listener, this);
+	zwp_locked_pointer_v1_set_cursor_position_hint(static_cast<zwp_locked_pointer_v1*>(m_wayland_locked_pointer),
+		wl_fixed_from_int(constraint_window->width() / 2), wl_fixed_from_int(constraint_window->height() / 2));
+	wl_surface_commit(surface);
+	wl_display_flush(display);
+
+	static constexpr zwp_relative_pointer_v1_listener relative_pointer_listener = {
+		[](void*, zwp_relative_pointer_v1*, uint32_t, uint32_t, wl_fixed_t, wl_fixed_t, wl_fixed_t dx_unaccel, wl_fixed_t dy_unaccel) {
+			const float dx = static_cast<float>(wl_fixed_to_double(dx_unaccel));
+			const float dy = static_cast<float>(wl_fixed_to_double(dy_unaccel));
+			if (dx != 0.0f)
+				InputManager::UpdatePointerRelativeDelta(0, InputPointerAxis::X, dx, true);
+			if (dy != 0.0f)
+				InputManager::UpdatePointerRelativeDelta(0, InputPointerAxis::Y, dy, true);
+		}};
+	zwp_relative_pointer_v1_add_listener(static_cast<zwp_relative_pointer_v1*>(m_wayland_relative_pointer), &relative_pointer_listener, this);
+#endif
 }
 
 void DisplaySurface::handleCloseEvent(QCloseEvent* event)
@@ -207,10 +390,25 @@ void DisplaySurface::updateCenterPos()
 #else
 	if (m_relative_mouse_enabled)
 	{
+#if defined(PCSX2_QT_HAS_WAYLAND_RELATIVE_POINTER)
+		if (QGuiApplication::platformName().toLower() == "wayland")
+		{
+			if (!m_wayland_relative_mouse_enabled)
+				updateWaylandRelativeMouseMode();
+			m_relative_mouse_last_pos = QCursor::pos();
+			m_relative_mouse_ignore_warp_event = false;
+			m_relative_mouse_has_pending_warp_delta = false;
+			return;
+		}
+#endif
+
 		// we do a round trip here because these coordinates are dpi-unscaled
 		m_relative_mouse_center_pos = mapToGlobal(QPoint((width() + 1) / 2, (height() + 1) / 2));
 		QCursor::setPos(m_relative_mouse_center_pos);
 		m_relative_mouse_center_pos = QCursor::pos();
+		m_relative_mouse_last_pos = m_relative_mouse_center_pos;
+		m_relative_mouse_ignore_warp_event = true;
+		m_relative_mouse_has_pending_warp_delta = false;
 	}
 #endif
 }
@@ -313,32 +511,71 @@ bool DisplaySurface::event(QEvent* event)
 			}
 			else
 			{
+				if (m_wayland_relative_mouse_enabled)
+					return true;
+
+				const QPoint mouse_pos = mouse_event->globalPosition().toPoint();
+				const QPoint event_delta = mouse_pos - m_relative_mouse_last_pos;
+				if (mouse_event->source() == Qt::MouseEventSynthesizedByApplication ||
+					(m_relative_mouse_has_pending_warp_delta && event_delta == m_relative_mouse_pending_warp_delta) ||
+					(mouse_pos == m_relative_mouse_center_pos &&
+						(m_relative_mouse_ignore_warp_event || mouse_pos != m_relative_mouse_last_pos)))
+				{
+					m_relative_mouse_last_pos = mouse_pos;
+					m_relative_mouse_ignore_warp_event = false;
+					m_relative_mouse_has_pending_warp_delta = false;
+					return true;
+				}
+				m_relative_mouse_ignore_warp_event = false;
+				m_relative_mouse_has_pending_warp_delta = false;
+
 				// On windows, we use winapi here. The reason being that the coordinates in QCursor
 				// are un-dpi-scaled, so we lose precision at higher desktop scalings.
 				float dx = 0.0f, dy = 0.0f;
 
 #ifndef _WIN32
-				const QPoint mouse_pos = QCursor::pos();
-				if (mouse_pos != m_relative_mouse_center_pos)
+				if (mouse_pos != m_relative_mouse_last_pos)
 				{
-					dx = static_cast<float>(mouse_pos.x() - m_relative_mouse_center_pos.x());
-					dy = static_cast<float>(mouse_pos.y() - m_relative_mouse_center_pos.y());
+					dx = static_cast<float>(event_delta.x());
+					dy = static_cast<float>(event_delta.y());
 					QCursor::setPos(m_relative_mouse_center_pos);
+					const QPoint warped_pos = QCursor::pos();
+					if (warped_pos == m_relative_mouse_center_pos)
+					{
+						m_relative_mouse_last_pos = warped_pos;
+						m_relative_mouse_ignore_warp_event = true;
+					}
+					else
+					{
+						m_relative_mouse_last_pos = mouse_pos;
+						m_relative_mouse_pending_warp_delta = m_relative_mouse_center_pos - mouse_pos;
+						m_relative_mouse_has_pending_warp_delta = true;
+					}
 				}
 #else
-				POINT mouse_pos;
-				if (GetCursorPos(&mouse_pos))
+				POINT native_mouse_pos;
+				if (GetCursorPos(&native_mouse_pos))
 				{
-					dx = static_cast<float>(mouse_pos.x - m_relative_mouse_center_pos.x());
-					dy = static_cast<float>(mouse_pos.y - m_relative_mouse_center_pos.y());
+					dx = static_cast<float>(native_mouse_pos.x - m_relative_mouse_last_pos.x());
+					dy = static_cast<float>(native_mouse_pos.y - m_relative_mouse_last_pos.y());
 					SetCursorPos(m_relative_mouse_center_pos.x(), m_relative_mouse_center_pos.y());
+					POINT warped_pos;
+					if (GetCursorPos(&warped_pos) && warped_pos.x == m_relative_mouse_center_pos.x() && warped_pos.y == m_relative_mouse_center_pos.y())
+					{
+						m_relative_mouse_last_pos = m_relative_mouse_center_pos;
+						m_relative_mouse_ignore_warp_event = true;
+					}
+					else
+					{
+						m_relative_mouse_last_pos = QPoint(native_mouse_pos.x, native_mouse_pos.y);
+					}
 				}
 #endif
 
 				if (dx != 0.0f)
-					InputManager::UpdatePointerRelativeDelta(0, InputPointerAxis::X, dx);
+					InputManager::UpdatePointerRelativeDelta(0, InputPointerAxis::X, dx, true);
 				if (dy != 0.0f)
-					InputManager::UpdatePointerRelativeDelta(0, InputPointerAxis::Y, dy);
+					InputManager::UpdatePointerRelativeDelta(0, InputPointerAxis::Y, dy, true);
 			}
 
 			return true;
@@ -351,7 +588,7 @@ bool DisplaySurface::event(QEvent* event)
 			if (const u32 button_mask = static_cast<u32>(static_cast<const QMouseEvent*>(event)->button()))
 			{
 				Host::RunOnCPUThread([button_index = std::countr_zero(button_mask),
-										 pressed = (event->type() != QEvent::MouseButtonRelease)]() {
+									 pressed = (event->type() != QEvent::MouseButtonRelease)]() {
 					InputManager::InvokeEvents(
 						InputManager::MakePointerButtonKey(0, button_index), static_cast<float>(pressed));
 				});
@@ -466,6 +703,22 @@ bool DisplaySurface::eventFilter(QObject* object, QEvent* event)
 			if (static_cast<QWindowStateChangeEvent*>(event)->oldState() & Qt::WindowMinimized)
 				emit windowRestoredEvent();
 			return false;
+
+		case QEvent::MouseButtonPress:
+		case QEvent::MouseButtonDblClick:
+		case QEvent::MouseButtonRelease:
+		{
+			if (const u32 button_mask = static_cast<u32>(static_cast<const QMouseEvent*>(event)->button()))
+			{
+				Host::RunOnCPUThread([button_index = std::countr_zero(button_mask),
+									 pressed = (event->type() != QEvent::MouseButtonRelease)]() {
+					InputManager::InvokeEvents(
+						InputManager::MakePointerButtonKey(0, button_index), static_cast<float>(pressed));
+				});
+			}
+
+			return true;
+		}
 
 		case QEvent::ChildWindowRemoved:
 			if (static_cast<QChildWindowEvent*>(event)->child() == this)

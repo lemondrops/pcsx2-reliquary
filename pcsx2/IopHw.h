@@ -88,7 +88,10 @@ enum DMAMadrAddresses
     HWx_DMA9_MADR  = 0x1f801520,
     HWx_DMA10_MADR = 0x1f801530,
     HWx_DMA11_MADR = 0x1f801540,
-    HWx_DMA12_MADR = 0x1f801550
+    HWx_DMA12_MADR = 0x1f801550,
+    HWx_DMA13_MADR = 0x1F801580,
+    HWx_DMA14_MADR = 0x1F8015a0,
+    HWx_DMA15_MADR = 0x1F8015c0
 };
 
 enum DMABcrAddresses
@@ -107,7 +110,10 @@ enum DMABcrAddresses
     HWx_DMA9_BCR  = 0x1f801524,
     HWx_DMA10_BCR = 0x1f801534,
     HWx_DMA11_BCR = 0x1f801544,
-    HWx_DMA12_BCR = 0x1f801554
+    HWx_DMA12_BCR = 0x1f801554,
+    HWx_DMA13_BCR = 0x1F801584,
+    HWx_DMA14_BCR = 0x1F8015a4,
+    HWx_DMA15_BCR = 0x1F8015c4
 };
 
 enum DMAChcrAddresses
@@ -124,7 +130,10 @@ enum DMAChcrAddresses
     HWx_DMA9_CHCR  = 0x1f801528,
     HWx_DMA10_CHCR = 0x1f801538,
     HWx_DMA11_CHCR = 0x1f801548,
-    HWx_DMA12_CHCR = 0x1f801558
+    HWx_DMA12_CHCR = 0x1f801558,
+    HWx_DMA13_CHCR = 0x1F80158c,
+    HWx_DMA14_CHCR = 0x1F8015ac,
+    HWx_DMA15_CHCR = 0x1F8015cc
 };
 
 enum DMATadrAddresses
@@ -180,6 +189,13 @@ enum IOPCountRegs
 #define DmaExec2(n) { \
 	if (HW_DMA##n##_CHCR & 0x01000000 && \
 		HW_DMA_PCR2 & (8 << ((n-7) * 4))) { \
+		psxDma##n(HW_DMA##n##_MADR, HW_DMA##n##_BCR, HW_DMA##n##_CHCR); \
+	} \
+}
+
+#define DmaExec3(n) { \
+	if (HW_DMA##n##_CHCR & 0x0100'0000 && \
+		HW_DMA_PCR3 & (8 << ((n-13) * 4))) { \
 		psxDma##n(HW_DMA##n##_MADR, HW_DMA##n##_BCR, HW_DMA##n##_CHCR); \
 	} \
 }
@@ -290,11 +306,26 @@ static dma_mbc&		hw_dma12	= (dma_mbc&) iopHw[0x1550];
 #define HW_DMA12_BCR  (psxHu32(0x1554))
 #define HW_DMA12_CHCR (psxHu32(0x1558))
 
+#define HW_DMA13_MADR (psxHu32(HWx_DMA13_MADR))
+#define HW_DMA13_BCR  (psxHu32(HWx_DMA13_BCR))
+#define HW_DMA13_CHCR (psxHu32(HWx_DMA13_CHCR))
+
+#define HW_DMA14_MADR (psxHu32(HWx_DMA14_MADR))
+#define HW_DMA14_BCR  (psxHu32(HWx_DMA14_BCR))
+#define HW_DMA14_CHCR (psxHu32(HWx_DMA14_CHCR))
+
+#define HW_DMA15_MADR (psxHu32(HWx_DMA15_MADR))
+#define HW_DMA15_BCR  (psxHu32(HWx_DMA15_BCR))
+#define HW_DMA15_CHCR (psxHu32(HWx_DMA15_CHCR))
+	
 #define HW_DMA_PCR   (psxHu32(0x10f0))
 #define HW_DMA_ICR   (psxHu32(0x10f4))
 
 #define HW_DMA_PCR2  (psxHu32(0x1570))
 #define HW_DMA_ICR2  (psxHu32(0x1574))
+
+#define HW_DMA_PCR3  (psxHu32(0x15f0))
+#define HW_DMA_ICR3  (psxHu32(0x157c))
 
 enum IopEventId
 {
@@ -311,6 +342,7 @@ enum IopEventId
 	IopEvt_CdvdSectorReady,
 	IopEvt_DEV9,
 	IopEvt_USB,
+	IopEvt_FW,
 };
 
 extern void PSX_INT( IopEventId n, s32 ecycle);

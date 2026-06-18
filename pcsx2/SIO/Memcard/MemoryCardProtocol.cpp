@@ -6,6 +6,7 @@
 #include "SIO/Sio.h"
 #include "SIO/Sio2.h"
 #include "SIO/Sio0.h"
+#include "Host.h"
 #include "des.h"
 
 #include "common/Assertions.h"
@@ -31,13 +32,14 @@ namespace
 
 	// keysource and key are self generated values
 	static constexpr Bytes8 keysource = {0xf5, 0x80, 0x95, 0x3c, 0x4c, 0x84, 0xa9, 0xc0};
-	static constexpr Bytes8 coh_keysource = {0x03, 0x14, 0x93, 0x16, 0x27, 0x02, 0x9D, 0xA2};
+	static constexpr Bytes8 coh_keysource = {0x03, 0x13, 0xE4, 0x19, 0x27, 0x01, 0xB9, 0x52};
 
 	static constexpr Bytes16 cex_key = {0x06, 0x46, 0x7a, 0x6c, 0x5b, 0x9b, 0x82, 0x77, 0x0d, 0xdf, 0xe9, 0x7e, 0x24, 0x5b, 0x9f, 0xca}; // SCPH-10020 in Retail mode
 	static constexpr Bytes16 dex_key = {0x17, 0x39, 0xD3, 0xBC, 0xD0, 0x2C, 0x18, 0x07, 0x0F, 0x7A, 0xF3, 0xB7, 0x9E, 0x73, 0x03, 0x1C}; // SCPH-10020 in Developer mode or SCPH-10020T
-	static constexpr Bytes16 coh_key = {0x05, 0x3D, 0x59, 0x77, 0xC4, 0xF7, 0xB0, 0xD4, 0x37, 0xAE, 0x66, 0xA5, 0x17, 0x71, 0xB8, 0xC0}; // COH-H10020
+	static constexpr Bytes16 coh_key = {0xCE, 0xC2, 0x18, 0x1C, 0x03, 0x6B, 0x0A, 0x9B, 0x87, 0x9F, 0x65, 0x6B, 0x43, 0x28, 0x94, 0xCB}; // COH-H10020
 	static constexpr Bytes16 coh_cex_key = {0xA9, 0xFB, 0x27, 0x2A, 0x63, 0xCF, 0xED, 0x6F, 0xD0, 0x28, 0xA2, 0x4A, 0x98, 0x11, 0xB8, 0x2E}; // SCPH-10020 in Arcade mode
 	static constexpr Bytes16 prt_key = {0x8C, 0x4B, 0xEF, 0xA6, 0xF4, 0x9A, 0x23, 0xA0, 0x9C, 0xF1, 0x46, 0xAA, 0x17, 0x1C, 0xFE, 0x75}; // Prototype Memory Card (EB-10020?)
+	static constexpr Bytes8 default_card_key = {'M', 'e', 'c', 'h', 'a', 'P', 'w', 'n'};
 
 	struct MemoryCardAuthState
 	{
@@ -101,6 +103,24 @@ namespace
 			default:
 				return cex_key.data();
 		}
+	}
+
+	static Bytes8 getConfiguredCardKey()
+	{
+		const std::string path = Host::GetStringSettingValue("Python1/Game", "MemoryCardIdFile", "");
+		if (path.empty())
+			return default_card_key;
+
+		Error error;
+		auto file = FileSystem::OpenManagedCFileTryIgnoreCase(path.c_str(), "rb", &error);
+		Bytes8 card_key;
+		if (!file || std::fread(card_key.data(), 1, card_key.size(), file.get()) != card_key.size())
+		{
+			Console.Error("Failed to read Python 1 memory card ID file: '%s'", path.c_str());
+			return default_card_key;
+		}
+
+		return card_key;
 	}
 }
 
@@ -180,7 +200,7 @@ static void generateResponse(MemoryCardAuthState& auth)
 	xor_bit(random.data(), auth.mechaResponse1.data(), auth.mechaResponse2.data(), auth.mechaResponse2.size());
 	doubleDesEncrypt(auth.key, auth.mechaResponse2.data());
 
-	static constexpr Bytes8 cardKey = {'M', 'e', 'c', 'h', 'a', 'P', 'w', 'n'};
+	const Bytes8 cardKey = getConfiguredCardKey();
 	xor_bit(cardKey.data(), auth.mechaResponse2.data(), auth.mechaResponse3.data(), auth.mechaResponse3.size());
 	doubleDesEncrypt(auth.key, auth.mechaResponse3.data());
 }
@@ -768,7 +788,8 @@ void MemoryCardProtocol::AuthCrypt()
 {
 	MC_LOG.WriteLn("%s", __FUNCTION__);
 	PS1_FAIL();
-	MemoryCardAuthState& auth = getActiveAuthState(getActiveMemoryCardSlot());
+	const u32 slot = getActiveMemoryCardSlot();
+	MemoryCardAuthState& auth = getActiveAuthState(slot);
 	const u8 modeByte = g_Sio2FifoIn.front();
 	g_Sio2FifoIn.pop_front();
 
@@ -825,7 +846,8 @@ void MemoryCardProtocol::AuthReset()
 	{
 		mcd->term = Terminator::READY;
 		const u32 slot = getActiveMemoryCardSlot();
-		getActiveAuthState(slot).key = getConfiguredKey(slot);
+		MemoryCardAuthState& auth = getActiveAuthState(slot);
+		auth.key = getConfiguredKey(slot);
 		The2bTerminator(5);
 	}
 }
@@ -834,11 +856,12 @@ void MemoryCardProtocol::AuthKeySelect()
 {
 	MC_LOG.WriteLn("%s", __FUNCTION__);
 	PS1_FAIL();
+	const u32 slot = getActiveMemoryCardSlot();
 	const u8 data = g_Sio2FifoIn.front();
 	g_Sio2FifoIn.pop_front();
 	if (data == 1)
 	{
-		getActiveAuthState(getActiveMemoryCardSlot()).key = cex_key.data();
+		getActiveAuthState(slot).key = cex_key.data();
 	}
 	The2bTerminator(5);
 }

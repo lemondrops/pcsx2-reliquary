@@ -11,6 +11,7 @@
 
 #include "Sif.h"
 #include "DEV9/DEV9.h"
+#include "FireWire/FireWire.h"
 
 using namespace R3000A;
 
@@ -268,4 +269,21 @@ void psxDMA12Interrupt()
 		HW_DMA12_CHCR &= ~0x01000000;
 		psxDmaInterrupt2(5);
 	}
+}
+
+void psxDma13(u32 madr, u32 bcr, u32 chcr)
+{
+	const int size = ((bcr >> 16) * (bcr & 0xffff)) * 4;
+	//Console.Warning("*** DMA 13 - FW0 *** %lx addr = %lx size = %lx", chcr, madr, size);
+	FWwriteDMA((u32*)iopPhysMem(madr), size);
+}
+
+void psxDma14(u32 madr, u32 size, u32 chcr)
+{
+	Console.Warning("*** DMA 14 - FW1 *** %lx addr = %lx size = %lx", chcr, madr, size);
+}
+
+void psxDma15(u32 madr, u32 size, u32 chcr)
+{
+	Console.Warning("*** DMA 15 - FW2 *** %lx addr = %lx size = %lx", chcr, madr, size);
 }

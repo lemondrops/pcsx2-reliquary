@@ -60,13 +60,16 @@ set(pcsx2Sources
 	Achievements.cpp
 	BuildVersion.cpp
 	Cache.cpp
+	ChdHddImage.cpp
 	COP0.cpp
 	COP2.cpp
 	Counters.cpp
 	Dmac.cpp
 	GameDatabase.cpp
 	Elfheader.cpp
-	FW.cpp
+	FireWire/FireWire.cpp
+	FireWire/deviceproxy.cpp
+	FireWire/Devices/KonamiPython1.cpp
 	FiFo.cpp
 	FPU.cpp
 	GameList.cpp
@@ -147,14 +150,18 @@ set(pcsx2Headers
 	Achievements.h
 	BuildVersion.h
 	Cache.h
+	ChdHddImage.h
 	Common.h
 	Config.h
 	COP0.h
 	Counters.h
 	Dmac.h
+	FireWire/FireWire.h
+	FireWire/FireWireDevice.h
+	FireWire/deviceproxy.h
+	FireWire/Devices/KonamiPython1.h
 	GameDatabase.h
 	Elfheader.h
-	FW.h
 	GameList.h
 	Gif.h
 	Gif_Unit.h
@@ -289,7 +296,6 @@ set(pcsx2DEV9Sources
 	DEV9/ATA/ATA_Info.cpp
 	DEV9/ATA/ATA_State.cpp
 	DEV9/ATA/ATA_Transfer.cpp
-	DEV9/ATA/HddChdImage.cpp
 	DEV9/ATA/HddCreate.cpp
 	DEV9/InternalServers/DHCP_Logger.cpp
 	DEV9/InternalServers/DHCP_Server.cpp
@@ -329,7 +335,6 @@ set(pcsx2DEV9Sources
 set(pcsx2DEV9Headers
 	DEV9/AdapterUtils.h
 	DEV9/ATA/ATA.h
-	DEV9/ATA/HddChdImage.h
 	DEV9/ATA/HddCreate.h
 	DEV9/DEV9.h
 	DEV9/InternalServers/DHCP_Logger.h
@@ -382,6 +387,7 @@ set(pcsx2USBSources
 	USB/qemu-usb/input-keymap-qcode-to-qnum.cpp
 	USB/qemu-usb/usb-ohci.cpp
 	USB/shared/ringbuffer.cpp
+	USB/usb-perfect-pool-camera/perfect-pool-camera.cpp
     USB/usb-python2/usb-python2.cpp
     USB/usb-python2/devices/acio.cpp
     USB/usb-python2/devices/ddr_extio.cpp
@@ -423,6 +429,7 @@ set(pcsx2USBHeaders
 	USB/qemu-usb/queue.h
 	USB/qemu-usb/qusb.h
 	USB/shared/ringbuffer.h
+	USB/usb-perfect-pool-camera/perfect-pool-camera.h
     USB/usb-python2/usb-python2.h
     USB/usb-python2/devices/acio.h
     USB/usb-python2/devices/ddr_extio.h
@@ -1197,6 +1204,7 @@ target_link_libraries(PCSX2_FLAGS INTERFACE
 	libzip::zip
 	cpuinfo
 	cubeb
+	fatfs
 	rcheevos
 	discord-rpc
 	simpleini
@@ -1256,7 +1264,6 @@ target_include_directories(PCSX2_FLAGS INTERFACE
 	"${CMAKE_BINARY_DIR}/pcsx2"
 	"${CMAKE_BINARY_DIR}/common/include"
 	"${FFMPEG_INCLUDE_DIRS}"
-	"${CMAKE_SOURCE_DIR}/3rdparty/des/"
 )
 
 set_source_files_properties(PrecompiledHeader.cpp PROPERTIES HEADER_FILE_ONLY TRUE)

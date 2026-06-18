@@ -9,14 +9,13 @@ It targets platforms and software outside the usual retail console path, includi
 - Full security process support end to end.
 - Bring your own keys.
 - Support for all Konami Python 2 titles.
+- Support for all Konami Pyhton 1 titles.
 - Support for CHD-compressed internal HDD images with writable overlays.
 - Switch keying mode between Developer, Retail, Arcade, and Prototype on both mechacon and memory cards.
 - Support raw PS2 memory card dumps with proper keying.
 - Support for utility discs such as HDD installers and DVD installers.
-- Initial support for COH-based machine functionality, including Python 1 and System 2x6.
 - Boots COH memory card dongles when configured in Arcade mode.
-- FireWire stub.
-- Can be configured for Conquest cards, but that path is not functional yet.
+- FireWire Implementation Foundation.
 
 ## What This Fork Is For
 PCSX2 Reliquary exists for preservation, research, and compatibility work around the parts of the PS2 ecosystem that most emulators never needed to care about.
@@ -126,6 +125,50 @@ UniqueId=334281
 The Python 2 IO board (P2IO) is available as a USB device in the controller configuration screen. It must be plugged into port 1 for the inputs and dongles to be authenticated correctly.
 ![p2io-config.png](docs/p2io-config.png)
 
+### Konami Python 1
+Python 1 games require a COH bios, configured mechacon keys, configured arcade override keys and accurate IO Board dumps.
+
+This is all configured through a .py1 file that the game library scanner can read and interpret. HDD and CF images can be loaded directly as either `.raw` or `.chd` files. Any changes to `.chd` files will be written to the PCSX2 settings directory under `hdd-overlays`. To reset a CHD-backed HDD to its base image, close the emulator and delete the matching .overlay and .map files.
+
+Here is an example config for Pop'n Music 14
+```yaml
+[Game]
+; Name of the game that appears in the game list
+Name=Pop'n Music 14
+; Path to the hdd image to load for the title
+HddImagePath=popn14/popn14.chd
+; Path to the CF image to load for the title
+; Games use either a CF or HDD image, but update kits can use CF cards to perform the updates
+; CF Cards also have a MBR + FAT16 container around the pythonFS, this is handled automatically
+; CfImagePath=
+; Battery backed sram dump. Most games happily initialize an empty sram, some need it for security.
+BbsRamPath=popn14/m48t58y.u48
+; IO Board Boot Rom dump, this is the boot rom for the Python 1 IO board.
+; It contains data important to pass security checks in-game.
+IoBootRomPath=popn14/b22a01.u42
+; IO Board Firmware Config dump. Game expects the IO Board to report a specific OUI from the firewire controller
+IoConfigRomPath=popn14/d72872gc.crom
+; IO Board has a built in ds2430 that contains serial information used in game security
+InternalDonglePath=popn14/ds2430.u3
+; IO Board can also optionally have a round black dongle inserted, most games use this as a backup if internal doesn't match.
+; Some titles require a dongle only
+ExternalDonglePath=popn14/ds2430_black_gnf14jab.u3
+; Memory card dongle dump with ECC data. Most games use the same memory card, but there is an exception for satellite terminals
+MemoryCardDonglePath=popn14/kn00002.ps2
+; Memory card card-id. Important for pairing data on KELFs, not required for boot
+MemoryCardIdPath=popn14/kn00002.id
+; IO Mode configuration. Options are 'PPOOL', 'JVS', 'EXTIO', and 'POPN'
+IoMode=POPN
+; GameConfig loader tries to extract this from the IO Boot rom dump, but this can be inaccurate
+; depending on the quality of the dump or in certain situations like upgrade kits.
+; This option lets you manually override the value
+GameId=GNF14JAB
+```
+
+Python 1 controls can be configured under the FireWire menu within the controller configuration screen:
+![p1io-config.png](docs/p1io-config.png)
+
+Perfect pool will automatically set USB device 1 to Trackball and USB device 2 to Perfect Pool Camera. These can be configured in this menu as well, but Camera setup is very minimal and game isn't really playable.
 ### Retail/Utility Disks
 If your bios is a proper dump, and your mechacon and memory cards are setup in Retail mode, then any HDD based functionality will work like a real console. This lets you do things like run the HDD Utility disks, boot FMCB, install game HDD functionality or boot DVD update payloads.
 ![hdd-utility.png](docs/hdd-utility.png)

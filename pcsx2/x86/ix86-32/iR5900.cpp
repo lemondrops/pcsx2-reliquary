@@ -842,7 +842,6 @@ void recClear(u32 addr, u32 size)
 
 static int* s_pCode;
 
-
 // Branch to a runtime variable target
 // pass the target in eax
 void SetBranchReg()
@@ -850,6 +849,7 @@ void SetBranchReg()
 	g_branch = 1;
 
 	xMOV(ptr32[&cpuRegs.pc], eax);
+	xMOV(eax, ptr32[&cpuRegs.pc]);
 
 	// Test for jump to unaligned, only needed for register branches
 	//  since unaligned targets can't be encoded with imm

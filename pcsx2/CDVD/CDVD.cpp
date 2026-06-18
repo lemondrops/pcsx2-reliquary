@@ -49,6 +49,8 @@ static constexpr size_t NVRAM_SIZE = 1024;
 static u8 s_nvram[NVRAM_SIZE];
 
 static constexpr u32 DEFAULT_MECHA_VERSION = 0x00020603;
+static constexpr u8 ARCADE_KELF_OVERRIDE_APPLICATION_TYPE = 0x07;
+static constexpr size_t ARCADE_KELF_OVERRIDE_KEY_SIZE = 16;
 static u32 s_mecha_version = 0;
 
 #pragma pack(push, 1)
@@ -102,7 +104,7 @@ uint16_t g_MemoryCardKeyIndexes[72] = {
 
 uint16_t g_KelfKeysIndex[4] = {0x110, 0x110, 0xC4, 0x15C};
 
-uint16_t g_cardKeyStore[96] = {
+uint16_t g_cardKeyStore[48] = {
 	/* SHA256: fef2015096181409b25fb4c4cd0e0fc48ca73c6ea845c0ed785c06bf9becd84e */
 };
 
@@ -1136,7 +1138,7 @@ static void xor_bit(const void* a, const void* b, void* Result, size_t Length)
 
 static void printChunk(uint8_t* chunks, size_t length)
 {
-	for (int i = 0; i < length; ++i)
+	for (size_t i = 0; i < length; ++i)
 	{
 		printf("%02X", chunks[i]);
 	}
@@ -1348,7 +1350,7 @@ void cdvdReset()
 		Error error;
 		std::string path = Path::Canonicalize(EmuConfig.Security.MgKeyStoreKeyFile);
 		auto fp = FileSystem::OpenManagedCFileTryIgnoreCase(path.c_str(), "rb", &error);
-		if (!fp || std::fread(g_KeyStoreKey, 1, sizeof(g_KeyStoreKey), fp.get()) != sizeof(g_cardKeyStore))
+		if (!fp || std::fread(g_KeyStoreKey, 1, sizeof(g_KeyStoreKey), fp.get()) != sizeof(g_KeyStoreKey))
 		{
 			ERROR_LOG("Failed to read Key Store Key file at {}: {}", path, error.GetDescription());
 		}
@@ -2809,6 +2811,39 @@ MECHA_RESULT verifyCardChallenge()
 	return MECHA_RESULT_CARD_VERIFIED;
 }
 
+static bool ReadArcadeKelfOverrideKey(const std::string& configured_path, const char* description, u8* key)
+{
+	if (configured_path.empty())
+	{
+		Console.Error("%s file is required for arcade KELF application type 0x%02X", description, ARCADE_KELF_OVERRIDE_APPLICATION_TYPE);
+		return false;
+	}
+
+	Error error;
+	const std::string path = Path::Canonicalize(configured_path);
+	auto fp = FileSystem::OpenManagedCFileTryIgnoreCase(path.c_str(), "rb", &error);
+	if (!fp)
+	{
+		Console.Error("Failed to open %s file '%s': %s", description, path.c_str(), error.GetDescription().c_str());
+		return false;
+	}
+
+	const size_t bytes_read = std::fread(key, 1, ARCADE_KELF_OVERRIDE_KEY_SIZE, fp.get());
+	if (bytes_read != ARCADE_KELF_OVERRIDE_KEY_SIZE)
+	{
+		Console.Error("Failed to read %s file '%s': expected %zu bytes, got %zu", description, path.c_str(), ARCADE_KELF_OVERRIDE_KEY_SIZE, bytes_read);
+		return false;
+	}
+
+	return true;
+}
+
+static bool LoadArcadeKelfOverrideKeys(u8* kbit, u8* kc)
+{
+	return ReadArcadeKelfOverrideKey(EmuConfig.Security.ArcadeKelfOverrideKbitFile, "Arcade KELF override KBIT", kbit) &&
+		ReadArcadeKelfOverrideKey(EmuConfig.Security.ArcadeKelfOverrideKcFile, "Arcade KELF override KC", kc);
+}
+
 static MECHA_RESULT DecryptKelfHeader()
 {
 	KELFHeader* header = (KELFHeader*)cdvd.data_buffer;
@@ -2927,6 +2962,7 @@ static MECHA_RESULT DecryptKelfHeader()
 		desDecrypt(cdvd.CardKey[cdvd.cardKeySlot], &Kbit[8]);
 		desDecrypt(cdvd.CardKey[cdvd.cardKeySlot], cdvd.Kc);
 		desDecrypt(cdvd.CardKey[cdvd.cardKeySlot], &cdvd.Kc[8]);
+
 	}
 	else
 	{
@@ -2950,6 +2986,14 @@ static MECHA_RESULT DecryptKelfHeader()
 		doubleDesDecrypt(KEK, &cdvd.Kc[8]);
 	}
 
+	if (header->ApplicationType == ARCADE_KELF_OVERRIDE_APPLICATION_TYPE &&
+		EmuConfig.Security.MgKeyStoreMode == SecurityKeyStoreMode::Arcade &&
+		!LoadArcadeKelfOverrideKeys(Kbit, cdvd.Kc))
+	{
+		cdvd.mecha_errorcode = 0x81;
+		return MECHA_RESULT_FAILED;
+	}
+
 	if (offset > cdvd.DataSize - 8)
 	{
 		Console.Error("Invalid BitTable offset");
@@ -2968,8 +3012,7 @@ static MECHA_RESULT DecryptKelfHeader()
 		sizeof(cdvd.bitTablePtr->BlockCount) + sizeof(cdvd.bitTablePtr->gap) +
 		(sizeof(BitBlock) * static_cast<uint32_t>(cdvd.bitTablePtr->BlockCount)));
 	const uint32_t remaining_data = cdvd.DataSize - offset;
-	if (cdvd.bitTablePtr->BlockCount > std::extent_v<decltype(cdvd.bitTablePtr->Blocks)> ||
-		bit_table_length > remaining_data || remaining_data - bit_table_length < 16)
+	if (bit_table_length > remaining_data || remaining_data - bit_table_length < 16)
 	{
 		Console.Error("Invalid BitTable size");
 		cdvd.mecha_errorcode = 0x81;
@@ -3845,6 +3888,8 @@ static void cdvdWrite16(u8 rt) // SCOMMAND
 					if (cdvd.SCMDParamCnt == 1)
 					{
 						cdvd.mecha_state = MECHA_STATE_READY;
+						cdvd.mecha_result = MECHA_RESULT_0;
+						cdvd.mecha_errorcode = 0;
 						if (cdvd.SCMDParamBuff[0] < 0x10)
 							cdvd.SCMDResultBuff[0] = 0;
 					}

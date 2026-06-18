@@ -10,7 +10,7 @@
 #include "DebugTools/DebugInterface.h"
 #include "DebugTools/SymbolImporter.h"
 #include "Elfheader.h"
-#include "FW.h"
+#include "FireWire/FireWire.h"
 #include "GS.h"
 #include "GS/Renderers/HW/GSTextureReplacements.h"
 #include "GSDumpReplayer.h"
@@ -102,6 +102,10 @@ namespace VMManager
 	static void LogUnsafeSettingsToConsole(const std::string& messages);
 	static void WarnAboutUnsafeSettings();
 
+	static void ApplyPythonBootParameters(const VMBootParameters& boot_params);
+	static void ApplyPythonDeviceSettings();
+	static bool IsPythonGameFileName(const std::string_view filename);
+	static bool LoadPythonGameBootParameters(const std::string& filename, VMBootParameters* params, Error* error);
 	static bool AutoDetectSource(const std::string& filename, Error* error = nullptr);
 	static void UpdateDiscDetails(bool booting);
 	static void ClearDiscDetails();
@@ -183,6 +187,10 @@ static u32 s_frame_advance_count = 0;
 static bool s_fast_boot_requested = false;
 static bool s_gs_open_on_initialize = false;
 static bool s_thread_affinities_set = false;
+
+static bool s_is_python1 = false;
+static u32 s_python1_crc = 0;
+static std::string s_python1_serial;
 
 static bool s_is_python2 = false;
 static u32 s_python2_crc = 0;
@@ -602,6 +610,7 @@ void VMManager::SetDefaultSettings(
 	{
 		Pad::SetDefaultControllerConfig(si);
 		USB::SetDefaultConfiguration(&si);
+		FireWire::SetDefaultConfiguration(&si);
 	}
 	if (hotkeys)
 		Pad::SetDefaultHotkeyConfig(si);
@@ -661,6 +670,7 @@ void VMManager::LoadCoreSettings(SettingsInterface& si)
 	SettingsLoadWrapper slw(si);
 	EmuConfig.LoadSave(slw);
 	Patch::ApplyPatchSettingOverrides();
+	ApplyPythonDeviceSettings();
 
 	// Achievements hardcore mode disallows setting some configuration options.
 	EnforceAchievementsChallengeModeSettings();
@@ -1082,7 +1092,12 @@ void VMManager::UpdateDiscDetails(bool booting)
 		if (!s_elf_override.empty())
 			s_disc_crc = cdvdGetElfCRC(s_elf_override);
 
-		if (s_is_python2)
+		if (s_is_python1)
+		{
+			s_disc_crc = s_python1_crc;
+			s_disc_serial = s_python1_serial;
+		}
+		else if (s_is_python2)
 		{
 			s_disc_crc = s_python2_crc;
 			s_disc_serial = s_python2_serial;
@@ -1289,6 +1304,13 @@ bool VMManager::AutoDetectSource(const std::string& filename, Error* error)
 			s_elf_override = filename;
 			return true;
 		}
+		else if (IsPythonGameFileName(filename))
+		{
+			// Python game entries are manifests, not disc images. Initialize() parses
+			// them before auto-detection reaches this safety path.
+			CDVDsys_ChangeSource(CDVD_SourceType::NoDisc);
+			return true;
+		}
 		else
 		{
 			// TODO: Maybe we should check if it's a valid iso here...
@@ -1303,6 +1325,71 @@ bool VMManager::AutoDetectSource(const std::string& filename, Error* error)
 		CDVDsys_ChangeSource(CDVD_SourceType::NoDisc);
 		return true;
 	}
+}
+
+void VMManager::ApplyPythonBootParameters(const VMBootParameters& boot_params)
+{
+	s_is_python1 = boot_params.is_python1.has_value() && boot_params.is_python1.value();
+	if (s_is_python1)
+	{
+		s_python1_crc = boot_params.python1_crc.has_value() ? boot_params.python1_crc.value() : 0;
+		s_python1_serial = boot_params.python1_serial.has_value() ? boot_params.python1_serial.value() : "";
+	}
+	else
+	{
+		s_python1_crc = 0;
+		s_python1_serial = "";
+	}
+
+	s_is_python2 = boot_params.is_python2.has_value() && boot_params.is_python2.value();
+	if (s_is_python2)
+	{
+		s_python2_crc = boot_params.python2_crc.has_value() ? boot_params.python2_crc.value() : 0;
+		s_python2_serial = boot_params.python2_serial.has_value() ? boot_params.python2_serial.value() : "";
+		s_python2_patch_file = boot_params.python2_patch_file.has_value() ? boot_params.python2_patch_file.value() : "";
+	}
+	else
+	{
+		s_python2_crc = 0;
+		s_python2_serial = "";
+		s_python2_patch_file = "";
+	}
+}
+
+void VMManager::ApplyPythonDeviceSettings()
+{
+	FireWire::SetConfigDeviceOverride(s_is_python1 ? "KonamiPython1" : nullptr);
+
+	if (s_is_python2)
+	{
+		EmuConfig.USB.Ports[0].DeviceType = USB::DeviceTypeNameToIndex("python2io");
+		EmuConfig.USB.Ports[0].DeviceSubtype = 0;
+	}
+}
+
+bool VMManager::IsPythonGameFileName(const std::string_view filename)
+{
+	return StringUtil::EndsWithNoCase(filename, ".py1") || StringUtil::EndsWithNoCase(filename, ".py2");
+}
+
+bool VMManager::LoadPythonGameBootParameters(const std::string& filename, VMBootParameters* params, Error* error)
+{
+	if (!FileSystem::FileExists(filename.c_str()))
+	{
+		Error::SetStringFmt(error, TRANSLATE_FS("VMManager", "Requested filename '{}' does not exist."), filename);
+		return false;
+	}
+
+	GameList::Entry entry;
+	if (!GameList::PopulateEntryFromPath(filename, &entry) ||
+		(entry.type != GameList::EntryType::Python1 && entry.type != GameList::EntryType::Python2))
+	{
+		Error::SetStringFmt(error, TRANSLATE_FS("VMManager", "Failed to parse Python game entry file '{}'."), filename);
+		return false;
+	}
+
+	GameList::FillBootParametersForEntry(params, &entry);
+	return true;
 }
 
 void VMManager::PrecacheCDVDFile()
@@ -1367,20 +1454,7 @@ VMBootResult VMManager::Initialize(const VMBootParameters& boot_params, Error* e
 		return VMBootResult::StartupFailure;
 	}
 
-	s_is_python2 = boot_params.is_python2.has_value() && boot_params.is_python2.value();
-	if (s_is_python2)
-	{
-		// Set parameters for Python 2
-		s_python2_crc = boot_params.python2_crc.has_value() ? boot_params.python2_crc.value() : 0;
-		s_python2_serial = boot_params.python2_serial.has_value() ? boot_params.python2_serial.value() : "";
-		s_python2_patch_file = boot_params.python2_patch_file.has_value() ? boot_params.python2_patch_file.value() : "";
-	}
-	else
-	{
-		s_python2_crc = 0;
-		s_python2_serial = "";
-		s_python2_patch_file = "";
-	}
+	ApplyPythonBootParameters(boot_params);
 
 	// cancel any game list scanning, we need to use CDVD!
 	// TODO: we can get rid of this once, we make CDVD not use globals...
@@ -1412,10 +1486,20 @@ VMBootResult VMManager::Initialize(const VMBootParameters& boot_params, Error* e
 	};
 
 	std::string state_to_load;
+	VMBootParameters direct_python_boot_params;
+	const bool direct_python_boot = !boot_params.source_type.has_value() && IsPythonGameFileName(boot_params.filename);
 
 	s_elf_override = boot_params.elf_override;
 	if (!boot_params.save_state.empty())
 		state_to_load = boot_params.save_state;
+
+	if (direct_python_boot)
+	{
+		if (!LoadPythonGameBootParameters(boot_params.filename, &direct_python_boot_params, error))
+			return VMBootResult::StartupFailure;
+
+		ApplyPythonBootParameters(direct_python_boot_params);
+	}
 
 	// if we're loading an indexed save state, we need to get the serial/crc from the disc.
 	if (boot_params.state_index.has_value())
@@ -1427,7 +1511,20 @@ VMBootResult VMManager::Initialize(const VMBootParameters& boot_params, Error* e
 			return VMBootResult::StartupFailure;
 		}
 
-		state_to_load = GetSaveStateFileName(boot_params.filename.c_str(), boot_params.state_index.value());
+		if (direct_python_boot)
+		{
+			const bool is_python1 = direct_python_boot_params.is_python1.value_or(false);
+			const std::string serial = is_python1 ? direct_python_boot_params.python1_serial.value_or("") :
+				direct_python_boot_params.python2_serial.value_or("");
+			const u32 crc = is_python1 ? direct_python_boot_params.python1_crc.value_or(0) :
+				direct_python_boot_params.python2_crc.value_or(0);
+			state_to_load = GetSaveStateFileName(serial.c_str(), crc, boot_params.state_index.value());
+		}
+		else
+		{
+			state_to_load = GetSaveStateFileName(boot_params.filename.c_str(), boot_params.state_index.value());
+		}
+
 		if (state_to_load.empty())
 		{
 			Error::SetString(error,
@@ -1458,8 +1555,12 @@ VMBootResult VMManager::Initialize(const VMBootParameters& boot_params, Error* e
 	}
 	else
 	{
+		if (direct_python_boot)
+		{
+			CDVDsys_ChangeSource(CDVD_SourceType::NoDisc);
+		}
 		// Automatic type detection of boot parameter based on filename.
-		if (!AutoDetectSource(boot_params.filename, error))
+		else if (!AutoDetectSource(boot_params.filename, error))
 			return VMBootResult::StartupFailure;
 	}
 
@@ -2476,7 +2577,7 @@ bool VMManager::IsSaveStateFileName(const std::string_view path)
 
 bool VMManager::IsDiscFileName(const std::string_view path)
 {
-	static const char* extensions[] = {".iso", ".bin", ".img", ".mdf", ".gz", ".cso", ".zso", ".chd", ".py2"};
+	static const char* extensions[] = {".iso", ".bin", ".img", ".mdf", ".gz", ".cso", ".zso", ".chd", ".py1", ".py2"};
 
 	for (const char* test_extension : extensions)
 	{

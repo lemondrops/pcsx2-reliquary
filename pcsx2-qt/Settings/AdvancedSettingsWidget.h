@@ -24,6 +24,8 @@ private:
 	void onBrowseClickedChallengeIvFile();
 	void onBrowseClickedCardKeyStoreFile();
 	void onBrowseClickedKeyStoreKeyFile();
+	void onBrowseClickedArcadeKelfOverrideKbitFile();
+	void onBrowseClickedArcadeKelfOverrideKcFile();
 	void onBrowseClicked(QLineEdit* pathElement);
 
 	SettingsWindow* m_dialog;

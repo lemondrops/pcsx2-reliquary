@@ -6,7 +6,7 @@
 #include "SIO/Sio2.h"
 #include "SIO/Sio0.h"
 #include "CDVD/Ps1CD.h"
-#include "FW.h"
+#include "FireWire/FireWire.h"
 #include "SPU2/spu2.h"
 #include "DEV9/DEV9.h"
 #include "USB/USB.h"
@@ -14,6 +14,7 @@
 #include "IopDma.h"
 
 #include "ps2/pgif.h"
+#include "ps2/BiosTools.h"
 #include "Mdec.h"
 
 #define SIO0LOG_ENABLE 0
@@ -105,7 +106,8 @@ mem8_t iopHwRead8_Page3(u32 addr)
 	switch (masked_addr)
 	{
 		case 0x100: // TOOL config switches
-			ret = 0;
+			// COH-H/Python boards use bit 3 to ignore the absent CD-ROM drive.
+			ret = (BiosZone == "COH-H") ? 0x08 : 0;
 			break;
 		case 0x204: // TOOL board id
 			ret = 0x7c;
@@ -494,4 +496,3 @@ mem32_t iopHwRead32_Page8( u32 addr )
 }
 
 }
-

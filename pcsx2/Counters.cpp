@@ -6,6 +6,7 @@
 
 #include "Common.h"
 #include "R3000A.h"
+#include "Memory.h"
 #include "Counters.h"
 #include "IopCounters.h"
 
@@ -20,6 +21,8 @@
 #include "Recording/InputRecording.h"
 #include "VMManager.h"
 #include "VUmicro.h"
+
+#include <cstring>
 
 static const uint EECNT_FUTURE_TARGET = 0x10000000;
 

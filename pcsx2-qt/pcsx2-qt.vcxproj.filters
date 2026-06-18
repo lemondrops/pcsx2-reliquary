@@ -104,6 +104,9 @@
     <ClCompile Include="Settings\ControllerBindingWidget.cpp">
       <Filter>Settings</Filter>
     </ClCompile>
+    <ClCompile Include="Settings\FireWireDeviceWidget.cpp">
+      <Filter>Settings</Filter>
+    </ClCompile>
     <ClCompile Include="Settings\ControllerGlobalSettingsWidget.cpp">
       <Filter>Settings</Filter>
     </ClCompile>
@@ -132,6 +135,9 @@
       <Filter>Settings</Filter>
     </ClCompile>
     <ClCompile Include="Settings\HddCreateQt.cpp">
+      <Filter>Settings</Filter>
+    </ClCompile>
+    <ClCompile Include="Settings\Python1SettingsWidget.cpp">
       <Filter>Settings</Filter>
     </ClCompile>
     <ClCompile Include="Settings\Python2SettingsWidget.cpp">
@@ -370,7 +376,13 @@
     <QtMoc Include="Settings\ControllerBindingWidget.h">
       <Filter>Settings</Filter>
     </QtMoc>
+    <QtMoc Include="Settings\FireWireDeviceWidget.h">
+      <Filter>Settings</Filter>
+    </QtMoc>
     <QtMoc Include="Settings\ControllerGlobalSettingsWidget.h">
+      <Filter>Settings</Filter>
+    </QtMoc>
+    <QtMoc Include="Settings\Python1SettingsWidget.h">
       <Filter>Settings</Filter>
     </QtMoc>
     <QtMoc Include="Settings\GameSummaryWidget.h">
@@ -605,6 +617,9 @@
     <QtUi Include="Settings\ControllerBindingWidget.ui">
       <Filter>Settings</Filter>
     </QtUi>
+    <QtUi Include="Settings\FireWireDeviceWidget.ui">
+      <Filter>Settings</Filter>
+    </QtUi>
     <QtUi Include="Settings\ControllerBindingWidget_DualShock2.ui">
       <Filter>Settings</Filter>
     </QtUi>
@@ -663,6 +678,9 @@
       <Filter>Settings</Filter>
     </QtUi>
     <QtUi Include="Settings\DEV9SettingsWidget.ui">
+      <Filter>Settings</Filter>
+    </QtUi>
+    <QtUi Include="Settings\Python1SettingsWidget.ui">
       <Filter>Settings</Filter>
     </QtUi>
     <QtUi Include="Settings\Python2SettingsWidget.ui">
