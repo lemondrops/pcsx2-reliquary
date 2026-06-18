@@ -28,5 +28,6 @@ namespace FireWire::Devices
 		float GetBindingValue(const FireWireDevice* dev, u32 bind_index) const override;
 		void SetBindingValue(FireWireDevice* dev, u32 bind_index, float value) const override;
 		void ResetBindingState(FireWireDevice* dev) const override;
+		bool Freeze(FireWireDevice* dev, StateWrapper& sw) const override;
 	};
 } // namespace FireWire::Devices

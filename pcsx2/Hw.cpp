@@ -4,6 +4,7 @@
 #include "Common.h"
 #include "Gif_Unit.h"
 #include "Hardware.h"
+#include "FireWire/FireWire.h"
 #include "SPU2/spu2.h"
 #include "USB/USB.h"
 
@@ -52,6 +53,7 @@ void hwReset()
 	vif1Reset();
 	gif_fifo.init();
 	USBreset();
+	FWreset();
 }
 
 __fi uint intcInterrupt()
@@ -366,4 +368,3 @@ bool hwDmacSrcChain(DMACh& dma, int id)
 
 	return false;
 }
-

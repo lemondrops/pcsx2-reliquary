@@ -6,6 +6,7 @@
 #include "Common.h"
 #include "ChdHddImage.h"
 #include "Host.h"
+#include "StateWrapper.h"
 
 #include "Input/InputManager.h"
 
@@ -427,10 +428,12 @@ namespace
 	public:
 		bool Open(FireWire::FireWireDeviceHost& host) override;
 		void Close() override;
+		void Reset() override;
 		bool ReadQuadlet(u64 offset, u32* value) override;
 		bool Write(u64 offset, const u32* payload, u32 payload_quads) override;
 		void ServiceEvents() override;
 		void MixAudio(s32* left, s32* right) override;
+		bool DoState(StateWrapper& sw);
 
 		float GetBindingValue(u32 bind_index) const;
 		void SetBindingValue(u32 bind_index, float value);
@@ -492,6 +495,7 @@ namespace
 	bool TryHleKonamiCommand(u64 offset, const u32* payload, u32 payload_quads);
 	void ServicePendingSectorStatusWrites();
 	void MixSubboardAdpcmAudio(s32* left, s32* right);
+	void SoftResetRuntimeState();
 	void SaveBootromIfDirty();
 	void SaveBbsramIfDirty();
 	void SaveDallasDongleIfDirty();
@@ -3175,23 +3179,19 @@ namespace
 		return false;
 	}
 
-	bool KonamiPython1Device::Open(FireWire::FireWireDeviceHost& host)
+	void SoftResetRuntimeState()
 	{
-		s_host = &host;
-	s_device = this;
-	CloseHddImageFile();
-	CloseCfImageFile();
-	s_pending_sector_status_writes.clear();
-		s_host->ClearEvent();
+		s_pending_sector_status_writes.clear();
+		if (s_host)
+			s_host->ClearEvent();
 		s_uart_rx_fifo.clear();
-		LoadBootrom();
-		LoadBbsram();
-		LoadDallasDongles();
-		ResetFsciStream();
 		for (auto& packets : s_net_rx_packets)
 			packets.clear();
+		s_net_property_response = {};
+		ResetFsciStream();
 		ResetSubboardAdpcmPlayback();
-		ResetBindingState();
+		if (s_device)
+			s_device->ResetBindingState();
 		s_jamma_input_dest = INVALID_JAMMA_INPUT_DEST;
 		s_last_jamma_input_status = JAMMA_STATUS_NEUTRAL;
 		s_last_p1io_bind_state = 0;
@@ -3200,25 +3200,89 @@ namespace
 		s_p1io_coin_counters[0] = 0;
 		s_p1io_coin_counters[1] = 0;
 		s_pythonfs_formatted = false;
-		LoadConfigRom();
 		s_next_sector_read_ready_cycle = 0;
+	}
+
+	void DoPendingSectorStatusWriteState(PendingSectorStatusWrite& status, StateWrapper& sw)
+	{
+		sw.Do(&status.ready_cycle);
+		sw.Do(&status.status_offset);
+		sw.Do(&status.checksum);
+	}
+
+	void DoPendingNetPacketState(PendingNetPacket& packet, StateWrapper& sw)
+	{
+		sw.Do(&packet.data);
+		sw.Do(&packet.source_ip);
+		sw.Do(&packet.source_port);
+	}
+
+	template <typename T, typename F>
+	void DoVectorState(std::vector<T>& values, StateWrapper& sw, F&& func)
+	{
+		u32 count = static_cast<u32>(values.size());
+		sw.Do(&count);
+		if (sw.IsReading())
+			values.resize(count);
+		for (T& value : values)
+			func(value, sw);
+	}
+
+	void DoSubboardAdpcmPlaybackState(SubboardAdpcmPlayback& adpcm, StateWrapper& sw)
+	{
+		sw.Do(&adpcm.encoded);
+		sw.Do(&adpcm.samples);
+		sw.Do(&adpcm.decoder_step_index);
+		sw.Do(&adpcm.decoder_pcm_sample);
+		sw.Do(&adpcm.position);
+		sw.Do(&adpcm.loop_start);
+		sw.Do(&adpcm.loop_end);
+		sw.Do(&adpcm.resample_accumulator);
+		sw.Do(&adpcm.volume_left);
+		sw.Do(&adpcm.volume_right);
+		sw.Do(&adpcm.filter_state);
+		sw.Do(&adpcm.fade_in_remaining);
+		sw.Do(&adpcm.fade_out_remaining);
+		sw.Do(&adpcm.sector);
+		sw.Do(&adpcm.playing);
+		sw.Do(&adpcm.looping);
+		sw.Do(&adpcm.stopping);
+		sw.Do(&adpcm.filter_initialized);
+	}
+
+	bool KonamiPython1Device::Open(FireWire::FireWireDeviceHost& host)
+	{
+		s_host = &host;
+		s_device = this;
+		CloseHddImageFile();
+		CloseCfImageFile();
+		LoadBootrom();
+		LoadBbsram();
+		LoadDallasDongles();
+		LoadConfigRom();
+		SoftResetRuntimeState();
 		return true;
 	}
 
 	void KonamiPython1Device::Close()
 	{
 		SaveBootromIfDirty();
-	SaveBbsramIfDirty();
-	SaveDallasDongleIfDirty();
-	CloseHddImageFile();
-	CloseCfImageFile();
-	ResetSubboardAdpcmPlayback();
+		SaveBbsramIfDirty();
+		SaveDallasDongleIfDirty();
+		CloseHddImageFile();
+		CloseCfImageFile();
+		ResetSubboardAdpcmPlayback();
 		s_pending_sector_status_writes.clear();
 		if (s_host)
 			s_host->ClearEvent();
 		if (s_device == this)
 			s_device = nullptr;
 		s_host = nullptr;
+	}
+
+	void KonamiPython1Device::Reset()
+	{
+		SoftResetRuntimeState();
 	}
 
 	bool KonamiPython1Device::ReadQuadlet(u64 offset, u32* value)
@@ -3239,6 +3303,53 @@ namespace
 	void KonamiPython1Device::MixAudio(s32* left, s32* right)
 	{
 		MixSubboardAdpcmAudio(left, right);
+	}
+
+	bool KonamiPython1Device::DoState(StateWrapper& sw)
+	{
+		if (!sw.DoMarker("KonamiPython1"))
+			return false;
+
+		sw.DoBytes(s_bootrom, sizeof(s_bootrom));
+		sw.DoBytes(s_bbsram, sizeof(s_bbsram));
+		sw.Do(&s_dallas_dongle_slots);
+		sw.Do(&s_dallas_dongle_loaded);
+		sw.Do(&s_factory_mac);
+		sw.Do(&s_fsci_mac_stream);
+		sw.Do(&s_bootrom_dirty);
+		sw.Do(&s_bbsram_dirty);
+		sw.DoArray(s_dallas_dongle_dirty, std::size(s_dallas_dongle_dirty));
+
+		sw.Do(&s_fsci_stream_offset);
+		sw.Do(&s_pythonfs_formatted);
+		sw.Do(&s_uart_rx_fifo);
+		DoVectorState(s_pending_sector_status_writes, sw, DoPendingSectorStatusWriteState);
+		for (auto& packets : s_net_rx_packets)
+			DoVectorState(packets, sw, DoPendingNetPacketState);
+		sw.Do(&s_net_property_response);
+		sw.Do(&s_jamma_input_dest);
+		sw.Do(&s_last_jamma_input_status);
+		sw.Do(&s_last_p1io_bind_state);
+		sw.DoArray(s_p1io_coin_counters, std::size(s_p1io_coin_counters));
+		sw.Do(&s_p1io_output_latch_byte);
+		sw.Do(&s_p1io_memcard_slot);
+		sw.Do(&s_next_sector_read_ready_cycle);
+		DoSubboardAdpcmPlaybackState(s_subboard_adpcm, sw);
+
+		u32 bind_state = m_p1io_bind_state.load(std::memory_order_relaxed);
+		sw.Do(&bind_state);
+		if (sw.IsReading())
+			m_p1io_bind_state.store(bind_state, std::memory_order_relaxed);
+
+		{
+			std::lock_guard lock(m_keyboard1_mutex);
+			sw.Do(&m_keyboard1_pressed);
+			sw.Do(&m_keyboard1_events);
+		}
+
+		if (sw.IsReading())
+			SchedulePendingSectorStatusEvent();
+		return !sw.HasError();
 	}
 
 	float KonamiPython1Device::GetBindingValue(u32 bind_index) const
@@ -3491,5 +3602,11 @@ namespace FireWire::Devices
 		KonamiPython1Device* p1io = static_cast<KonamiPython1Device*>(dev);
 		if (p1io)
 			p1io->ResetBindingState();
+	}
+
+	bool KonamiPython1DeviceProxy::Freeze(FireWireDevice* dev, StateWrapper& sw) const
+	{
+		KonamiPython1Device* p1io = static_cast<KonamiPython1Device*>(dev);
+		return p1io && p1io->DoState(sw);
 	}
 } // namespace FireWire::Devices

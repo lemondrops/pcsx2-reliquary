@@ -15,6 +15,7 @@
 #include <vector>
 
 class SettingsInterface;
+class StateWrapper;
 
 namespace FireWire
 {
@@ -44,6 +45,7 @@ namespace FireWire
 		virtual float GetBindingValue(const FireWireDevice* dev, u32 bind_index) const;
 		virtual void SetBindingValue(FireWireDevice* dev, u32 bind_index, float value) const;
 		virtual void ResetBindingState(FireWireDevice* dev) const;
+		virtual bool Freeze(FireWireDevice* dev, StateWrapper& sw) const;
 	};
 
 	class RegisterDevice

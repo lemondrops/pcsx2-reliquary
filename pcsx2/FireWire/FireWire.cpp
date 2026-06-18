@@ -7,6 +7,7 @@
 #include "IopHw.h"
 #include "IopMem.h"
 #include "R3000A.h"
+#include "StateWrapper.h"
 
 #include "FireWire/deviceproxy.h"
 
@@ -434,6 +435,87 @@ namespace
 			psxRegs.interrupt &= ~(1 << IopEvt_FW);
 	}
 
+	void DoPendingDbufDmaWriteState(PendingDbufDmaWrite& dma, StateWrapper& sw)
+	{
+		sw.Do(&dma.active);
+		sw.Do(&dma.dest);
+		sw.Do(&dma.data);
+	}
+
+	void ResetControllerState(bool reset_device)
+	{
+		InitializePhyRegisters();
+		s_ubuf_rx_fifo.clear();
+		s_ubuf_tx_fifo.clear();
+		s_pending_dbuf_r0_rx_fifo.clear();
+		s_pending_dbuf_r0_rx_dma.clear();
+		s_dbuf_r0_rx_fifo.clear();
+		psxRegs.interrupt &= ~(1 << IopEvt_FW);
+		for (int channel = 0; channel < 2; channel++)
+		{
+			s_pht_tx_fifo[channel].clear();
+			s_pht_tx_expected_bytes[channel] = 0;
+			s_pht_write_pending[channel] = false;
+		}
+		s_bus_reset_log_count = 0;
+		s_discovery_log_count = 0;
+		s_dbuf_log_count = 0;
+		s_ubuf_log_count = 0;
+		s_intr_log_count = 0;
+		s_pht_log_count = 0;
+		s_remote_write_log_count = 0;
+
+		if (fwregs)
+		{
+			std::memset(fwregs, 0, 0x10000);
+			fwRu32(FW_NODE_ID) = LOCAL_NODE_ID_REGISTER;
+			fwRu32(FW_CTRL2) = 0x8;
+			UpdateUbufRxLevel();
+			UpdateDbufR0RxLevel();
+		}
+
+		if (reset_device && s_active_device)
+			s_active_device->Reset();
+	}
+
+	void DoControllerState(StateWrapper& sw)
+	{
+		sw.DoBytes(phyregs, sizeof(phyregs));
+		sw.DoBytes(fwregs, 0x10000);
+		sw.Do(&s_ubuf_rx_fifo);
+		sw.Do(&s_ubuf_tx_fifo);
+		sw.Do(&s_pending_dbuf_r0_rx_fifo);
+
+		u32 pending_dma_count = static_cast<u32>(s_pending_dbuf_r0_rx_dma.size());
+		sw.Do(&pending_dma_count);
+		if (sw.IsReading())
+			s_pending_dbuf_r0_rx_dma.resize(pending_dma_count);
+		for (PendingDbufDmaWrite& dma : s_pending_dbuf_r0_rx_dma)
+			DoPendingDbufDmaWriteState(dma, sw);
+
+		sw.Do(&s_dbuf_r0_rx_fifo);
+		for (int channel = 0; channel < 2; channel++)
+		{
+			sw.Do(&s_pht_tx_fifo[channel]);
+			sw.Do(&s_pht_tx_expected_bytes[channel]);
+			sw.Do(&s_pht_write_pending[channel]);
+		}
+
+		if (sw.IsReading())
+		{
+			s_bus_reset_log_count = 0;
+			s_discovery_log_count = 0;
+			s_dbuf_log_count = 0;
+			s_ubuf_log_count = 0;
+			s_intr_log_count = 0;
+			s_pht_log_count = 0;
+			s_remote_write_log_count = 0;
+			UpdateUbufRxLevel();
+			UpdateDbufR0RxLevel();
+			MaybeRaisePendingInterrupts();
+		}
+	}
+
 	const char* TcodeName(u32 tcode)
 	{
 		switch (tcode)
@@ -595,27 +677,6 @@ namespace
 
 s32 FWopen()
 {
-	InitializePhyRegisters();
-	s_ubuf_rx_fifo.clear();
-	s_ubuf_tx_fifo.clear();
-	s_pending_dbuf_r0_rx_fifo.clear();
-	s_pending_dbuf_r0_rx_dma.clear();
-	s_dbuf_r0_rx_fifo.clear();
-	psxRegs.interrupt &= ~(1 << IopEvt_FW);
-	for (int channel = 0; channel < 2; channel++)
-	{
-		s_pht_tx_fifo[channel].clear();
-		s_pht_tx_expected_bytes[channel] = 0;
-		s_pht_write_pending[channel] = false;
-	}
-	s_bus_reset_log_count = 0;
-	s_discovery_log_count = 0;
-	s_dbuf_log_count = 0;
-	s_ubuf_log_count = 0;
-	s_intr_log_count = 0;
-	s_pht_log_count = 0;
-	s_remote_write_log_count = 0;
-
 	const FireWire::FireWireDeviceProxy* proxy = nullptr;
 	s_active_device = FireWire::CreateConfiguredDevice(&proxy);
 	s_active_device_proxy = proxy;
@@ -628,7 +689,6 @@ s32 FWopen()
 		FireWire::SetActiveDevice(nullptr, nullptr);
 	}
 
-	// Initializing our registers.
 	fwregs = static_cast<s8*>(std::calloc(0x10000, 1));
 	if (fwregs == nullptr)
 	{
@@ -642,11 +702,15 @@ s32 FWopen()
 		}
 		return -1;
 	}
-	fwRu32(FW_NODE_ID) = LOCAL_NODE_ID_REGISTER;
-	fwRu32(FW_CTRL2) = 0x8;
-	UpdateUbufRxLevel();
-	UpdateDbufR0RxLevel();
+	ResetControllerState(false);
 	return 0;
+}
+
+void FWreset()
+{
+	ResetControllerState(true);
+	if (fwregs)
+		TriggerBusReset();
 }
 
 void FWclose()
@@ -856,7 +920,83 @@ void FWwriteDMA(u32* pMem, int size)
 	for (u32 i = 0; i < payload_quads; i++)
 		payload[i] = pMem[i];
 
-	const bool handled = s_active_device && s_active_device->Write(offset, payload.data(), payload_quads);
+	if (s_active_device)
+		s_active_device->Write(offset, payload.data(), payload_quads);
 
 	RaiseIntr0(FW_INTR0_PBCntR);
+}
+
+bool FireWire::DoState(StateWrapper& sw)
+{
+	if (sw.IsReading())
+	{
+		if (!sw.DoMarker("FireWire"))
+		{
+			Console.Error("FireWire state is invalid, resetting.");
+			FWreset();
+			return true;
+		}
+
+		DoControllerState(sw);
+
+		s32 state_devtype = DEVTYPE_NONE;
+		u32 state_size = 0;
+		sw.Do(&state_devtype);
+		sw.Do(&state_size);
+
+		const s32 current_devtype = s_active_device_proxy ? RegisterDevice::instance().Index(s_active_device_proxy->TypeName()) : DEVTYPE_NONE;
+		if (sw.HasError() || state_devtype != current_devtype || (state_devtype != DEVTYPE_NONE && !s_active_device))
+		{
+			Console.Error("Save state has FireWire device type %d, but config has %d. Resetting current device.", state_devtype, current_devtype);
+			sw.SkipBytes(state_size);
+			if (s_active_device)
+			{
+				s_active_device->Reset();
+				TriggerBusReset();
+			}
+			return true;
+		}
+
+		if (!s_active_device)
+		{
+			sw.SkipBytes(state_size);
+			return true;
+		}
+
+		if (!s_active_device_proxy->Freeze(s_active_device.get(), sw) || sw.HasError())
+		{
+			Console.Error("Failed to deserialize FireWire device, resetting.");
+			s_active_device->Reset();
+			TriggerBusReset();
+		}
+		return true;
+	}
+
+	if (!sw.DoMarker("FireWire"))
+		return false;
+
+	DoControllerState(sw);
+
+	s32 state_devtype = s_active_device_proxy ? RegisterDevice::instance().Index(s_active_device_proxy->TypeName()) : DEVTYPE_NONE;
+	sw.Do(&state_devtype);
+
+	const u32 size_pos = sw.GetStream()->GetPosition();
+	u32 state_size = 0;
+	sw.Do(&state_size);
+	if (sw.HasError())
+		return false;
+
+	if (!s_active_device)
+		return true;
+
+	const u32 start_pos = sw.GetStream()->GetPosition();
+	if (!s_active_device_proxy->Freeze(s_active_device.get(), sw) || sw.HasError())
+	{
+		Console.Error("Failed to serialize FireWire device.");
+		return false;
+	}
+
+	const u32 end_pos = sw.GetStream()->GetPosition();
+	state_size = end_pos - start_pos;
+	return sw.GetStream()->SeekAbsolute(size_pos) && (sw.Do(&state_size), !sw.HasError()) && sw.GetStream()->SeekAbsolute(end_pos);
 }

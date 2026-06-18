@@ -34,6 +34,7 @@ namespace FireWire
 
 		virtual bool Open(FireWireDeviceHost& host) = 0;
 		virtual void Close() = 0;
+		virtual void Reset();
 		virtual void BusReset();
 		virtual bool ReadQuadlet(u64 offset, u32* value) = 0;
 		virtual bool Write(u64 offset, const u32* payload, u32 payload_quads) = 0;

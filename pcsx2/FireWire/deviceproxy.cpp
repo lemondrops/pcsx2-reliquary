@@ -41,6 +41,10 @@ namespace FireWire
 	{
 	}
 
+	void FireWireDevice::Reset()
+	{
+	}
+
 	void FireWireDevice::ServiceEvents()
 	{
 	}
@@ -119,6 +123,11 @@ namespace FireWire
 
 	void FireWireDeviceProxy::ResetBindingState(FireWireDevice* dev) const
 	{
+	}
+
+	bool FireWireDeviceProxy::Freeze(FireWireDevice* dev, StateWrapper& sw) const
+	{
+		return false;
 	}
 
 	RegisterDevice& RegisterDevice::instance()

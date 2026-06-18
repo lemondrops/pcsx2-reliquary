@@ -11,6 +11,7 @@
 #include "DebugTools/Breakpoints.h"
 #include "DebugTools/SymbolImporter.h"
 #include "Elfheader.h"
+#include "FireWire/FireWire.h"
 #include "GS.h"
 #include "GS/GS.h"
 #include "Host.h"
@@ -632,6 +633,17 @@ public:
 	bool IsRequired() const override { return false; }
 };
 
+class SavestateEntry_FireWire final : public BaseSavestateEntry
+{
+public:
+	~SavestateEntry_FireWire() override = default;
+
+	const char* GetFilename() const override { return "FireWire.bin"; }
+	bool FreezeIn(zip_file_t* zf) const override { return SysState_ComponentFreezeInNew(zf, "FireWire", &FireWire::DoState); }
+	bool FreezeOut(SaveStateBase& writer) const override { return SysState_ComponentFreezeOutNew(writer, "FireWire", 1024 * 1024, &FireWire::DoState); }
+	bool IsRequired() const override { return false; }
+};
+
 class SavestateEntry_PAD final : public BaseSavestateEntry
 {
 public:
@@ -705,6 +717,7 @@ static const std::unique_ptr<BaseSavestateEntry> SavestateEntries[] = {
 	std::unique_ptr<BaseSavestateEntry>(new SavestateEntry_VU1prog),
 	std::unique_ptr<BaseSavestateEntry>(new SavestateEntry_SPU2),
 	std::unique_ptr<BaseSavestateEntry>(new SavestateEntry_USB),
+	std::unique_ptr<BaseSavestateEntry>(new SavestateEntry_FireWire),
 	std::unique_ptr<BaseSavestateEntry>(new SavestateEntry_PAD),
 	std::unique_ptr<BaseSavestateEntry>(new SavestateEntry_GS),
 	std::unique_ptr<BaseSavestateEntry>(new SaveStateEntry_Achievements),

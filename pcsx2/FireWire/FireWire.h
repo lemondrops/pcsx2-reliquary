@@ -11,6 +11,7 @@
 #include <vector>
 
 class SettingsInterface;
+class StateWrapper;
 
 // Our main memory storage, and defines for accessing it.
 extern s8* fwregs;
@@ -19,6 +20,7 @@ extern s8* fwregs;
 
 s32 FWopen();
 void FWclose();
+void FWreset();
 void PHYWrite();
 void PHYRead();
 u32 FWread32(u32 addr);
@@ -56,6 +58,7 @@ namespace FireWire
 	void ClearP1IOBindings(SettingsInterface& si);
 	void CopyConfiguration(SettingsInterface* dest_si, const SettingsInterface& src_si, bool copy_bindings = true);
 	void SetDefaultConfiguration(SettingsInterface* si);
+	bool DoState(StateWrapper& sw);
 }
 
 #define FW_BASE                 0x1f808400
