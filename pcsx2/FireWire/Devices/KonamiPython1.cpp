@@ -266,9 +266,6 @@ namespace
 	constexpr u8 KONAMI_B22_EXTERNAL_IO_SYNC_RESPONSE[] = {
 		0xaa, 0xaa, 0xaa, 0x55,
 	};
-	constexpr u8 KONAMI_DOGSTATIONDX_EXTERNAL_IO_SYNC_RESPONSE[] = {
-		0xaa, 0xaa, 0x55, 0x55,
-	};
 	constexpr u8 KONAMI_EXTERNAL_IO_RESET_RESPONSE[] = {
 		0xaa, 0xaa, 0x00, 0x00,
 	};
@@ -844,8 +841,6 @@ namespace
 		{
 			if (IsPython1B22Mode())
 				QueueUartBytes(KONAMI_B22_EXTERNAL_IO_SYNC_RESPONSE, sizeof(KONAMI_B22_EXTERNAL_IO_SYNC_RESPONSE));
-			else if (IsPython1DogStationDXMode())
-				QueueUartBytes(KONAMI_DOGSTATIONDX_EXTERNAL_IO_SYNC_RESPONSE, sizeof(KONAMI_DOGSTATIONDX_EXTERNAL_IO_SYNC_RESPONSE));
 			else
 				QueueUartBytes(KONAMI_EXTERNAL_IO_SYNC_RESPONSE, sizeof(KONAMI_EXTERNAL_IO_SYNC_RESPONSE));
 		}
@@ -3358,7 +3353,7 @@ u32 FireWire::Devices::GetKonamiPython1P1IOLatchByte()
 
 u32 FireWire::Devices::GetKonamiPython1P1IOMemcardSlot()
 {
-	return IsPython1P1IOSerialMode() ? s_p1io_memcard_slot : 0;
+	return IsPython1DogStationDXMode() ? s_p1io_memcard_slot : 1;
 }
 
 bool FireWire::Devices::IsKonamiPython1P1IOSerialMode()

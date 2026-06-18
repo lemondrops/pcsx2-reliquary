@@ -635,6 +635,7 @@ bool GameList::GetPython1ListEntry(const std::string& path, GameList::Entry* ent
 	sif->SetBoolValue("DEV9/Hdd", "HddEnable", false);
 	sif->SetStringValue("DEV9/Hdd", "HddFile", "");
 	sif->SetStringValue("Security", "MgKeyStoreMode", Pcsx2Config::GetSecurityKeyStoreModeName(SecurityKeyStoreMode::Arcade));
+	sif->SetBoolValue("EmuCore/Gamefixes", "OPHFlagHack", true);
 	sif->SetBoolValue("MemoryCards", "Slot1_Enable", true);
 	sif->SetStringValue("MemoryCards", "Slot1_Filename", memory_card_dongle_path.c_str());
 	sif->SetStringValue("MemoryCards", "Slot1_KeySource", Pcsx2Config::McdOptions::KeySourceNames[static_cast<size_t>(MemoryCardKeySource::Arcade)]);
