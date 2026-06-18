@@ -107,6 +107,7 @@ namespace
 	constexpr const char* PYTHON1_IO_MODE_JVS = "JVS";
 	constexpr const char* PYTHON1_IO_MODE_EXTIO = "EXTIO";
 	constexpr const char* PYTHON1_IO_MODE_POPN = "POPN";
+	constexpr const char* PYTHON1_IO_MODE_PPOOL = "PPOOL";
 	constexpr const char* PYTHON1_IO_MODE_B22 = "B22";
 	constexpr const char* PYTHON1_IO_MODE_DOGSTATIONDX = "DOGSTATIONDX";
 	constexpr const char* P1IO_CONFIG_PREFIX = "P1IO_";
@@ -158,6 +159,7 @@ namespace
 		JVS,
 		EXTIO,
 		POPN,
+		PPOOL,
 		B22,
 		DOGSTATIONDX,
 	};
@@ -685,6 +687,8 @@ namespace
 			return Python1IOMode::EXTIO;
 		if (StringUtil::Strcasecmp(mode.c_str(), PYTHON1_IO_MODE_POPN) == 0)
 			return Python1IOMode::POPN;
+		if (StringUtil::Strcasecmp(mode.c_str(), PYTHON1_IO_MODE_PPOOL) == 0)
+			return Python1IOMode::PPOOL;
 		if (StringUtil::Strcasecmp(mode.c_str(), PYTHON1_IO_MODE_B22) == 0)
 			return Python1IOMode::B22;
 		if (StringUtil::Strcasecmp(mode.c_str(), PYTHON1_IO_MODE_DOGSTATIONDX) == 0)
@@ -698,6 +702,8 @@ namespace
 			return PYTHON1_IO_MODE_EXTIO;
 		if (StringUtil::compareNoCase(mode, PYTHON1_IO_MODE_POPN))
 			return PYTHON1_IO_MODE_POPN;
+		if (StringUtil::compareNoCase(mode, PYTHON1_IO_MODE_PPOOL))
+			return PYTHON1_IO_MODE_PPOOL;
 		if (StringUtil::compareNoCase(mode, PYTHON1_IO_MODE_B22))
 			return PYTHON1_IO_MODE_B22;
 		if (StringUtil::compareNoCase(mode, PYTHON1_IO_MODE_DOGSTATIONDX))

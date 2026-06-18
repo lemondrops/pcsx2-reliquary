@@ -6,6 +6,7 @@
 #include "GameList.h"
 #include "Host.h"
 #include "INISettingsInterface.h"
+#include "USB/USB.h"
 #include "VMManager.h"
 
 #include "common/Assertions.h"
@@ -591,6 +592,8 @@ bool GameList::GetPython1ListEntry(const std::string& path, GameList::Entry* ent
 		io_mode = "EXTIO";
 	else if (StringUtil::Strcasecmp(io_mode.c_str(), "POPN") == 0)
 		io_mode = "POPN";
+	else if (StringUtil::Strcasecmp(io_mode.c_str(), "PPOOL") == 0)
+		io_mode = "PPOOL";
 	else if (StringUtil::Strcasecmp(io_mode.c_str(), "B22") == 0)
 		io_mode = "B22";
 	else if (StringUtil::Strcasecmp(io_mode.c_str(), "DOGSTATIONDX") == 0)
@@ -635,11 +638,16 @@ bool GameList::GetPython1ListEntry(const std::string& path, GameList::Entry* ent
 	sif->SetBoolValue("DEV9/Hdd", "HddEnable", false);
 	sif->SetStringValue("DEV9/Hdd", "HddFile", "");
 	sif->SetStringValue("Security", "MgKeyStoreMode", Pcsx2Config::GetSecurityKeyStoreModeName(SecurityKeyStoreMode::Arcade));
-	sif->SetBoolValue("EmuCore/Gamefixes", "OPHFlagHack", true);
+	sif->SetBoolValue("EmuCore/Gamefixes", "OPHFlagHack", io_mode != "PPOOL"); // OPH Hack seems to help all these titles except perfect pool
 	sif->SetBoolValue("MemoryCards", "Slot1_Enable", true);
 	sif->SetStringValue("MemoryCards", "Slot1_Filename", memory_card_dongle_path.c_str());
 	sif->SetStringValue("MemoryCards", "Slot1_KeySource", Pcsx2Config::McdOptions::KeySourceNames[static_cast<size_t>(MemoryCardKeySource::Arcade)]);
 	sif->SetStringValue("MemoryCards", "Slot1_Key", Pcsx2Config::McdOptions::KeyNames[static_cast<size_t>(MemoryCardKey::Arcade)]);
+	if (io_mode == "PPOOL")
+	{
+		USB::SetConfigDevice(*sif, 0, "trackball");
+		USB::SetConfigDevice(*sif, 1, "perfectpoolcamera");
+	}
 
 	const std::string slot2_filename = sif->GetStringValue("MemoryCards", "Slot2_Filename");
 	if (!memory_card_dongle_path.empty() && slot2_filename == memory_card_dongle_path)
