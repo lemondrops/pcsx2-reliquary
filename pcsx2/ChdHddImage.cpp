@@ -387,9 +387,10 @@ bool ChdHddImage::WriteOverlayBytes(u64 offset, u32 size, const u8* src)
 
 		if (!IsOverlayBlockPresent(block_index))
 		{
+			std::fill(m_overlay_block_buffer.begin(), m_overlay_block_buffer.end(), 0);
 			if (!SetOverlayBlockPresent(block_index) ||
 				!ReadBaseBytes(block_index * OVERLAY_BLOCK_SIZE, block_size, m_overlay_block_buffer.data()) ||
-				!WriteOverlayBlock(block_index, m_overlay_block_buffer.data(), block_size))
+				!WriteOverlayBlock(block_index, m_overlay_block_buffer.data(), OVERLAY_BLOCK_SIZE))
 			{
 				return false;
 			}
