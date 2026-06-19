@@ -313,7 +313,11 @@ std::string GameList::GetRelativeGameIniPath(const std::string& path, const INIS
 	std::string value;
 	ini.GetStringValue("Game", key, &value);
 	if (!value.empty() && !Path::IsAbsolute(value))
-		value = std::string(Path::Canonicalize(Path::Combine(Path::GetDirectory(path), value)));
+	{
+		const std::string real_path = Path::RealPath(path);
+		const std::string base_path = real_path.empty() ? path : real_path;
+		value = std::string(Path::Canonicalize(Path::Combine(Path::GetDirectory(base_path), value)));
+	}
 	return value;
 }
 
