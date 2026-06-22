@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: LGPL-3.0+
 
 #include "GSRendererPGS.h"
+#include "GS/GSScreenshot.h"
 #include "GS/GSState.h"
 #include "GSDumpReplayer.h"
 #include "GS.h"
+#include "Host.h"
 #include "math.hpp"
 #include "muglm/muglm_impl.hpp"
 #include "shaders/slangmosh.hpp"
@@ -13,7 +15,11 @@
 #include "command_buffer.hpp"
 #include "ImGui/FullscreenUI.h"
 #include "ImGui/ImGuiManager.h"
+#include "IconsFontAwesome.h"
 #include "imgui.h"
+
+#include "common/StringUtil.h"
+#include "common/Console.h"
 
 // Workaround because msbuild is broken when mixing C and C++ it seems ...
 #ifdef _MSC_VER
@@ -640,19 +646,18 @@ void GSRendererPGS::VSync(u32 field, bool registers_written, bool refresh_frame)
 
 		// High-res scanout only makes sense if we're doing FSR style upscale.
 		info.high_resolution_scanout = GSConfig.PGSTVEmulation == PGS_TV_EMULATION_NONE &&
-									   GSConfig.PGSPhosphorPrimaries == PGS_CRT_NONE &&
-									   GSConfig.PGSHighResScanout != 0;
+								   GSConfig.PGSPhosphorPrimaries == PGS_CRT_NONE &&
+								   GSConfig.PGSHighResScanout != 0;
 
 		// If we have CRT emulation, we deal with deinterlacing there.
 		info.skip_deinterlace = GSConfig.PGSPhosphorPrimaries != PGS_CRT_NONE;
-
 		auto stats = iface.consume_flush_stats();
 
 		// Do not allow frame skip if frame-dupe is used.
 		frame_is_duped = !registers_written && stats.num_render_passes == 0 && stats.num_copies == 0 && iface.vsync_can_skip(info);
 
 		// Don't waste GPU time scanning out the same thing twice.
-		if (!frame_is_duped || !vsync.image)
+		if (!frame_is_duped || !vsync.image || !m_snapshot.empty())
 			vsync = iface.vsync(info);
 
 		if (frame_is_duped && !GSConfig.SkipDuplicateFrames)
@@ -1039,6 +1044,66 @@ void GSRendererPGS::VSync(u32 field, bool registers_written, bool refresh_frame)
 			render_fsr(*cmd, analog_output_is_valid ? analog_filter.get_output() : vsync.image->get_view());
 		}
 
+		BufferHandle screenshot_readback;
+		u32 screenshot_width = 0;
+		u32 screenshot_height = 0;
+		bool screenshot_bgra = false;
+		bool screenshot_failed = false;
+		const bool capture_screenshot = frame_index == 0 && !m_snapshot.empty() && vsync.image;
+		if (capture_screenshot)
+		{
+			screenshot_width = static_cast<u32>(std::max(1.0f, std::round(vp_width)));
+			screenshot_height = static_cast<u32>(std::max(1.0f, std::round(vp_height)));
+			const VkFormat screenshot_format =
+				wsi.get_backbuffer_format() == BackbufferFormat::sRGB ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+			auto screenshot_info = ImageCreateInfo::render_target(
+				screenshot_width, screenshot_height, screenshot_format);
+			screenshot_info.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+			auto screenshot_target = dev.create_image(screenshot_info);
+
+			if (screenshot_target)
+			{
+				RenderPassInfo rp = {};
+				rp.num_color_attachments = 1;
+				rp.color_attachments[0] = &screenshot_target->get_view();
+				rp.clear_attachments = 1u << 0;
+				rp.store_attachments = 1u << 0;
+				rp.clear_color[0].float32[0] = 0.0f;
+				rp.clear_color[0].float32[1] = 0.0f;
+				rp.clear_color[0].float32[2] = 0.0f;
+				rp.clear_color[0].float32[3] = 1.0f;
+
+				cmd->begin_render_pass(rp);
+				if (GSConfig.PGSPhosphorPrimaries != PGS_CRT_NONE)
+				{
+					cmd->set_viewport({0, 0,
+						static_cast<float>(screenshot_width),
+						static_cast<float>(screenshot_height), 0, 1});
+					crt_filter.run_filter_encode(*cmd, crt_filter_options);
+				}
+				else if (fsr_render_target)
+				{
+					render_rcas(*cmd, fsr_render_target->get_view(), 0, 0,
+						static_cast<float>(screenshot_width),
+						static_cast<float>(screenshot_height));
+				}
+				else
+				{
+					render_blit(*cmd, analog_output_is_valid ? analog_filter.get_output() : vsync.image->get_view(), 0, 0,
+						static_cast<float>(screenshot_width),
+						static_cast<float>(screenshot_height));
+				}
+				cmd->end_render_pass();
+
+				screenshot_failed = !QueueImageReadback(*cmd, *screenshot_target,
+					&screenshot_readback, screenshot_width, screenshot_height, &screenshot_bgra);
+			}
+			else
+			{
+				screenshot_failed = true;
+			}
+		}
+
 		cmd->begin_render_pass(dev.get_swapchain_render_pass(SwapchainRenderPass::ColorOnly));
 		if (vsync.image)
 		{
@@ -1058,11 +1123,25 @@ void GSRendererPGS::VSync(u32 field, bool registers_written, bool refresh_frame)
 					vp_offset_x, vp_offset_y, vp_width, vp_height);
 			}
 		}
-
 		render_ui_flush(*cmd);
-
 		cmd->end_render_pass();
+
 		dev.submit(cmd);
+		if (screenshot_readback || screenshot_failed)
+		{
+			if (screenshot_readback)
+			{
+				dev.wait_idle();
+				screenshot_failed = !SaveScreenshotReadback(*screenshot_readback,
+					screenshot_width, screenshot_height, screenshot_bgra);
+			}
+
+			if (screenshot_failed)
+				Host::AddIconOSDMessage("GSScreenshot", ICON_FA_CAMERA,
+					TRANSLATE_SV("GS", "Failed to render/download screenshot."), Host::OSD_ERROR_DURATION);
+
+			m_snapshot.clear();
+		}
 
 		wsi.end_frame();
 		device.has_wsi_begin_frame = false;
@@ -1244,7 +1323,78 @@ void GSDevicePGS::event_swapchain_destroyed()
 	has_presented_in_current_swapchain = false;
 }
 
-void GSRendererPGS::QueueSnapshot(const std::string &path, u32 gsdump_frames)
+bool GSRendererPGS::QueueImageReadback(CommandBuffer &cmd, const Image &image,
+	BufferHandle *readback, u32 width, u32 height, bool *bgra)
+{
+	const VkFormat format = image.get_format();
+	const bool rgba = (format == VK_FORMAT_R8G8B8A8_UNORM || format == VK_FORMAT_R8G8B8A8_SRGB);
+	*bgra = (format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B8G8R8A8_SRGB);
+	if (!rgba && !*bgra)
+		return false;
+
+	if (width == 0 || height == 0)
+		return false;
+
+	BufferCreateInfo buffer_info = {};
+	buffer_info.domain = BufferDomain::CachedHost;
+	buffer_info.size = static_cast<VkDeviceSize>(width) * height * sizeof(u32);
+	buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+	*readback = device.get_wsi().get_device().create_buffer(buffer_info);
+	if (!*readback)
+		return false;
+
+	cmd.image_barrier(image, VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+		VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+
+	VkImageSubresourceLayers subresource = {};
+	subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	subresource.mipLevel = 0;
+	subresource.baseArrayLayer = 0;
+	subresource.layerCount = 1;
+	cmd.copy_image_to_buffer(**readback, image, 0, {0, 0, 0}, {width, height, 1}, 0, 0, subresource);
+	cmd.buffer_barrier(**readback,
+		VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+		VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_READ_BIT);
+	return true;
+}
+
+bool GSRendererPGS::SaveScreenshotReadback(const Buffer &readback, u32 width, u32 height, bool bgra)
+{
+	auto &dev = device.get_wsi().get_device();
+
+	const u8 *mapped = static_cast<const u8 *>(dev.map_host_buffer(readback, MEMORY_ACCESS_READ_BIT));
+	if (!mapped)
+		return false;
+
+	std::vector<u32> pixels;
+	pixels.resize(static_cast<size_t>(width) * height);
+	if (!bgra)
+	{
+		for (size_t i = 0; i < pixels.size(); i++)
+		{
+			const u32 pixel = reinterpret_cast<const u32*>(mapped)[i];
+			pixels[i] = pixel | 0xff000000u;
+		}
+	}
+	else
+	{
+		for (size_t i = 0; i < pixels.size(); i++)
+		{
+			const u8 b = mapped[i * 4 + 0];
+			const u8 g = mapped[i * 4 + 1];
+			const u8 r = mapped[i * 4 + 2];
+			pixels[i] = static_cast<u32>(r) | (static_cast<u32>(g) << 8) |
+				(static_cast<u32>(b) << 16) | 0xff000000u;
+		}
+	}
+
+	dev.unmap_host_buffer(readback, MEMORY_ACCESS_READ_BIT);
+	GSCompressAndWriteScreenshot(GSGetScreenshotFilename(m_snapshot), width, height, std::move(pixels));
+	return true;
+}
+
+void GSRendererPGS::QueueGSDump(const std::string &path, u32 gsdump_frames)
 {
 	freezeData fd = {0, nullptr};
 	Freeze(&fd, true);
@@ -1272,6 +1422,30 @@ void GSRendererPGS::QueueSnapshot(const std::string &path, u32 gsdump_frames)
 
 	dump_frames = gsdump_frames;
 	delete[] fd.data;
+}
+
+void GSRendererPGS::QueueSnapshot(const std::string &path, u32 gsdump_frames)
+{
+	if (gsdump_frames > 0)
+	{
+		QueueGSDump(path.empty() ? GSGetBaseSnapshotFilename() : path, gsdump_frames);
+		return;
+	}
+
+	if (!m_snapshot.empty())
+		return;
+
+	// Match the common renderer's historical explicit-path behavior.
+	if (path.size() > 4 && StringUtil::EndsWithNoCase(path, ".png"))
+		m_snapshot = path.substr(0, path.size() - 4);
+	else
+		m_snapshot = GSGetBaseSnapshotFilename();
+}
+
+void GSRendererPGS::StopGSDump()
+{
+	dump.reset();
+	dump_frames = 0;
 }
 
 const VkApplicationInfo *GSDevicePGS::get_application_info()

@@ -119,6 +119,7 @@ public:
 	u8 *GetRegsMem();
 
 	void QueueSnapshot(const std::string &path, u32 gsdump_frames);
+	void StopGSDump();
 
 private:
 	GSDevicePGS &device;
@@ -147,6 +148,12 @@ private:
 
 	static int GetSaveStateSize(int version);
 
+	bool QueueImageReadback(Vulkan::CommandBuffer &cmd, const Vulkan::Image &image,
+		Vulkan::BufferHandle *readback, u32 width, u32 height, bool *bgra);
+	bool SaveScreenshotReadback(const Vulkan::Buffer &readback, u32 width, u32 height, bool bgra);
+	void QueueGSDump(const std::string &path, u32 gsdump_frames);
+
+	std::string m_snapshot;
 	std::unique_ptr<GSDumpBase> dump;
 	uint32_t dump_frames = 0;
 

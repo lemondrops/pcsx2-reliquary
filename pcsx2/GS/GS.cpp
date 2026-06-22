@@ -703,7 +703,10 @@ void GSQueueSnapshot(const std::string& path, u32 gsdump_frames)
 {
 #ifdef HAVE_PARALLEL_GS
 	if (g_pgs_renderer)
-		g_pgs_renderer->QueueSnapshot(GSGetBaseSnapshotFilename(), gsdump_frames);
+	{
+		g_pgs_renderer->QueueSnapshot(path, gsdump_frames);
+		return;
+	}
 #endif
 	if (g_gs_renderer)
 		g_gs_renderer->QueueSnapshot(path, gsdump_frames);
@@ -711,6 +714,13 @@ void GSQueueSnapshot(const std::string& path, u32 gsdump_frames)
 
 void GSStopGSDump()
 {
+#ifdef HAVE_PARALLEL_GS
+	if (g_pgs_renderer)
+	{
+		g_pgs_renderer->StopGSDump();
+		return;
+	}
+#endif
 	if (g_gs_renderer)
 		g_gs_renderer->StopGSDump();
 }
