@@ -117,7 +117,7 @@ extern void ReadOSDConfigParames();
 extern bool IsBIOS(const char* filename, u32& version, std::string& description, u32& region, std::string& zone);
 extern bool IsBIOSAvailable(const std::string& full_path);
 
-extern bool LoadBIOS();
+extern bool LoadBIOS(bool prefer_arcade_bios = false);
 extern void CopyBIOSToMemory();
 
 // Values in [][0] are the names on BIOSes v1.70 and below.

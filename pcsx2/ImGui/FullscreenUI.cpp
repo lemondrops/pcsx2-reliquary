@@ -409,7 +409,8 @@ void FullscreenUI::CheckForConfigChanges(const Pcsx2Config& old_config)
 		MTGS::WaitGS(false, false, false);
 	}
 
-	if (old_config.FullpathToBios() != EmuConfig.FullpathToBios())
+	if (old_config.FullpathToBios() != EmuConfig.FullpathToBios() ||
+		old_config.FullpathToArcadeBios() != EmuConfig.FullpathToArcadeBios())
 	{
 		MTGS::RunOnGSThread([]() {
 			ApplyLayoutSettings();

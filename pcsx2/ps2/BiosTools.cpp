@@ -314,11 +314,32 @@ bool IsBIOSAvailable(const std::string& full_path)
 // Exceptions:
 //   BadStream - Thrown if the primary bios file (usually .bin) is not found, corrupted, etc.
 //
-bool LoadBIOS()
+bool LoadBIOS(bool prefer_arcade_bios)
 {
 	pxAssertMsg(eeMem->ROM, "PS2 system memory has not been initialized yet.");
 
-	std::string path = EmuConfig.FullpathToBios();
+	std::string path;
+	if (prefer_arcade_bios)
+	{
+		path = EmuConfig.FullpathToArcadeBios();
+		u32 bios_version, bios_region;
+		std::string bios_description, bios_zone;
+		if (path.empty() || !FileSystem::FileExists(path.c_str()) || !IsBIOS(path.c_str(), bios_version, bios_description, bios_region, bios_zone))
+		{
+			if (path.empty())
+				Console.Warning("No Arcade BIOS configured, falling back to retail BIOS selection.");
+			else
+			{
+				Console.Warning("Configured Arcade BIOS '%s' is missing or invalid, falling back to retail BIOS selection.",
+					EmuConfig.BaseFilenames.ArcadeBios.c_str());
+			}
+
+			path.clear();
+		}
+	}
+
+	if (path.empty())
+		path = EmuConfig.FullpathToBios();
 	if (path.empty() || !FileSystem::FileExists(path.c_str()))
 	{
 		if (!path.empty())

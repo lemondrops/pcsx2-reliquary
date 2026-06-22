@@ -1841,6 +1841,7 @@ void Pcsx2Config::FilenameOptions::LoadSave(SettingsWrapper& wrap)
 	SettingsWrapSection("Filenames");
 
 	wrap.Entry(CURRENT_SETTINGS_SECTION, "BIOS", Bios, Bios);
+	wrap.Entry(CURRENT_SETTINGS_SECTION, "ArcadeBIOS", ArcadeBios, ArcadeBios);
 }
 
 bool Pcsx2Config::FilenameOptions::operator!=(const FilenameOptions& right) const
@@ -1850,7 +1851,7 @@ bool Pcsx2Config::FilenameOptions::operator!=(const FilenameOptions& right) cons
 
 bool Pcsx2Config::FilenameOptions::operator==(const FilenameOptions& right) const
 {
-	return OpEqu(Bios);
+	return OpEqu(Bios) && OpEqu(ArcadeBios);
 }
 
 Pcsx2Config::EmulationSpeedOptions::EmulationSpeedOptions()
@@ -2227,6 +2228,14 @@ std::string Pcsx2Config::FullpathToBios() const
 	std::string ret;
 	if (!BaseFilenames.Bios.empty())
 		ret = Path::Combine(EmuFolders::Bios, BaseFilenames.Bios);
+	return ret;
+}
+
+std::string Pcsx2Config::FullpathToArcadeBios() const
+{
+	std::string ret;
+	if (!BaseFilenames.ArcadeBios.empty())
+		ret = Path::Combine(EmuFolders::Bios, BaseFilenames.ArcadeBios);
 	return ret;
 }
 

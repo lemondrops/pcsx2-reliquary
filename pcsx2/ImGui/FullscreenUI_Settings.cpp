@@ -2437,6 +2437,49 @@ void FullscreenUI::DrawInterfaceSettingsPage()
 	EndMenuButtons();
 }
 
+static void DrawBIOSSelector(SettingsInterface* bsi, const char* title, const char* description, const char* setting_key)
+{
+	const SmallString bios_selection = FullscreenUI::GetEditingSettingsInterface()->GetSmallStringValue("Filenames", setting_key, "");
+	if (!MenuButtonWithValue(FSUI_ICONSTR(ICON_PF_MICROCHIP, title), description,
+			bios_selection.empty() ? FSUI_CSTR("Automatic") : bios_selection.c_str()))
+	{
+		return;
+	}
+
+	ImGuiFullscreen::ChoiceDialogOptions choices;
+	choices.emplace_back(FSUI_STR("Automatic"), bios_selection.empty());
+
+	std::vector<std::string> values;
+	values.push_back("");
+
+	FileSystem::FindResultsArray results;
+	FileSystem::FindFiles(EmuFolders::Bios.c_str(), "*", FILESYSTEM_FIND_FILES | FILESYSTEM_FIND_HIDDEN_FILES, &results);
+	for (const FILESYSTEM_FIND_DATA& fd : results)
+	{
+		u32 version, region;
+		std::string bios_description, zone;
+		if (!IsBIOS(fd.FileName.c_str(), version, bios_description, region, zone))
+			continue;
+
+		const std::string_view filename(Path::GetFileName(fd.FileName));
+		choices.emplace_back(fmt::format("{} ({})", bios_description, filename), bios_selection == filename);
+		values.emplace_back(filename);
+	}
+
+	OpenChoiceDialog(title, false, std::move(choices),
+		[game_settings = FullscreenUI::IsEditingGameSettings(bsi), setting_key, values = std::move(values)](s32 index, const std::string& title, bool checked) {
+			if (index < 0)
+				return;
+
+			auto lock = Host::GetSettingsLock();
+			SettingsInterface* bsi = FullscreenUI::GetEditingSettingsInterface(game_settings);
+			bsi->SetStringValue("Filenames", setting_key, values[index].c_str());
+			FullscreenUI::SetSettingsChanged(bsi);
+			FullscreenUI::ApplyLayoutSettings(bsi);
+			CloseChoiceDialog();
+		});
+}
+
 void FullscreenUI::DrawBIOSSettingsPage()
 {
 	SettingsInterface* bsi = GetEditingSettingsInterface();
@@ -2447,44 +2490,10 @@ void FullscreenUI::DrawBIOSSettingsPage()
 
 	DrawFolderSetting(bsi, FSUI_ICONSTR(ICON_FA_FOLDER_OPEN, "Change Search Directory"), "Folders", "Bios", EmuFolders::Bios);
 
-	const SmallString bios_selection = GetEditingSettingsInterface()->GetSmallStringValue("Filenames", "BIOS", "");
-	if (MenuButtonWithValue(FSUI_ICONSTR(ICON_PF_MICROCHIP, "BIOS Selection"),
-			FSUI_CSTR("Changes the BIOS image used to start future sessions."),
-			bios_selection.empty() ? FSUI_CSTR("Automatic") : bios_selection.c_str()))
-	{
-		ImGuiFullscreen::ChoiceDialogOptions choices;
-		choices.emplace_back(FSUI_STR("Automatic"), bios_selection.empty());
-
-		std::vector<std::string> values;
-		values.push_back("");
-
-		FileSystem::FindResultsArray results;
-		FileSystem::FindFiles(EmuFolders::Bios.c_str(), "*", FILESYSTEM_FIND_FILES | FILESYSTEM_FIND_HIDDEN_FILES, &results);
-		for (const FILESYSTEM_FIND_DATA& fd : results)
-		{
-			u32 version, region;
-			std::string description, zone;
-			if (!IsBIOS(fd.FileName.c_str(), version, description, region, zone))
-				continue;
-
-			const std::string_view filename(Path::GetFileName(fd.FileName));
-			choices.emplace_back(fmt::format("{} ({})", description, filename), bios_selection == filename);
-			values.emplace_back(filename);
-		}
-
-		OpenChoiceDialog(FSUI_CSTR("BIOS Selection"), false, std::move(choices),
-			[game_settings = IsEditingGameSettings(bsi), values = std::move(values)](s32 index, const std::string& title, bool checked) {
-				if (index < 0)
-					return;
-
-				auto lock = Host::GetSettingsLock();
-				SettingsInterface* bsi = GetEditingSettingsInterface(game_settings);
-				bsi->SetStringValue("Filenames", "BIOS", values[index].c_str());
-				SetSettingsChanged(bsi);
-				ApplyLayoutSettings(bsi);
-				CloseChoiceDialog();
-			});
-	}
+	DrawBIOSSelector(bsi, FSUI_CSTR("Retail BIOS"),
+		FSUI_CSTR("Changes the BIOS image used by retail discs, PS2 ELFs, Python 2 titles, and BIOS-only boots."), "BIOS");
+	DrawBIOSSelector(bsi, FSUI_CSTR("Arcade BIOS"),
+		FSUI_CSTR("Changes the BIOS image preferred by Python 1 arcade title boots."), "ArcadeBIOS");
 
 	MenuHeading(FSUI_CSTR("Fast Boot Options"));
 	DrawToggleSetting(bsi, FSUI_ICONSTR(ICON_FA_FORWARD_FAST, "Fast Boot"), FSUI_CSTR("Skips the intro screen, and bypasses region checks."),

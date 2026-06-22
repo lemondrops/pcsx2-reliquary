@@ -1570,7 +1570,7 @@ VMBootResult VMManager::Initialize(const VMBootParameters& boot_params, Error* e
 	if (!GSDumpReplayer::IsReplayingDump())
 	{
 		Console.WriteLn("Loading BIOS...");
-		if (!LoadBIOS())
+		if (!LoadBIOS(s_is_python1))
 		{
 			Error::SetStringFmt(error,
 				TRANSLATE_FS("VMManager",

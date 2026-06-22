@@ -15,12 +15,13 @@ public:
 	BIOSSettingsWidget(SettingsWindow* settings_dialog, QWidget* parent);
 	~BIOSSettingsWidget();
 
-	static void populateList(QTreeWidget* list, const std::string& directory);
+	static void populateList(QTreeWidget* list, const std::string& directory, const char* setting_key = "BIOS");
 
 private Q_SLOTS:
 	void refreshList();
 
-	void listItemChanged(const QTreeWidgetItem* current, const QTreeWidgetItem* previous);
+	void retailListItemChanged(const QTreeWidgetItem* current, const QTreeWidgetItem* previous);
+	void arcadeListItemChanged(const QTreeWidgetItem* current, const QTreeWidgetItem* previous);
 
 	void fastBootChanged();
 

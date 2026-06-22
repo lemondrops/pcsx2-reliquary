@@ -230,11 +230,14 @@ void SetupWizardDialog::setupBIOSPage()
 
 void SetupWizardDialog::refreshBiosList()
 {
-	BIOSSettingsWidget::populateList(m_ui.biosList, m_ui.biosSearchDirectory->text().toStdString());
+	BIOSSettingsWidget::populateList(m_ui.biosList, m_ui.biosSearchDirectory->text().toStdString(), "BIOS");
 }
 
 void SetupWizardDialog::biosListItemChanged(const QTreeWidgetItem* current, const QTreeWidgetItem* previous)
 {
+	if (!current)
+		return;
+
 	Host::SetBaseStringSettingValue("Filenames", "BIOS", current->text(0).toUtf8().constData());
 	Host::CommitBaseSettingChanges();
 	g_emu_thread->applySettings();

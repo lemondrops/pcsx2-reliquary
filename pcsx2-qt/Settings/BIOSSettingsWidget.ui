@@ -107,27 +107,72 @@
        </layout>
       </item>
       <item row="0" column="0">
-       <widget class="QTreeWidget" name="fileList">
-        <property name="rootIsDecorated">
-         <bool>false</bool>
-        </property>
-        <attribute name="headerMinimumSectionSize">
-         <number>250</number>
-        </attribute>
-        <attribute name="headerDefaultSectionSize">
-         <number>250</number>
-        </attribute>
-        <column>
-         <property name="text">
-          <string>Filename</string>
-         </property>
-        </column>
-        <column>
-         <property name="text">
-          <string>Version</string>
-         </property>
-        </column>
-       </widget>
+       <layout class="QHBoxLayout" name="biosSelectionLayout">
+        <item>
+         <widget class="QGroupBox" name="retailBiosGroupBox">
+          <property name="title">
+           <string>Retail BIOS</string>
+          </property>
+          <layout class="QVBoxLayout" name="verticalLayout_3">
+           <item>
+            <widget class="QTreeWidget" name="retailFileList">
+             <property name="rootIsDecorated">
+              <bool>false</bool>
+             </property>
+             <attribute name="headerMinimumSectionSize">
+              <number>250</number>
+             </attribute>
+             <attribute name="headerDefaultSectionSize">
+              <number>250</number>
+             </attribute>
+             <column>
+              <property name="text">
+               <string>Filename</string>
+              </property>
+             </column>
+             <column>
+              <property name="text">
+               <string>Version</string>
+              </property>
+             </column>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+        <item>
+         <widget class="QGroupBox" name="arcadeBiosGroupBox">
+          <property name="title">
+           <string>Arcade BIOS</string>
+          </property>
+          <layout class="QVBoxLayout" name="verticalLayout_4">
+           <item>
+            <widget class="QTreeWidget" name="arcadeFileList">
+             <property name="rootIsDecorated">
+              <bool>false</bool>
+             </property>
+             <attribute name="headerMinimumSectionSize">
+              <number>250</number>
+             </attribute>
+             <attribute name="headerDefaultSectionSize">
+              <number>250</number>
+             </attribute>
+             <column>
+              <property name="text">
+               <string>Filename</string>
+              </property>
+             </column>
+             <column>
+              <property name="text">
+               <string>Version</string>
+              </property>
+             </column>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+       </layout>
       </item>
      </layout>
     </widget>
@@ -178,7 +223,8 @@
   <tabstop>searchDirectory</tabstop>
   <tabstop>browseSearchDirectory</tabstop>
   <tabstop>resetSearchDirectory</tabstop>
-  <tabstop>fileList</tabstop>
+  <tabstop>retailFileList</tabstop>
+  <tabstop>arcadeFileList</tabstop>
   <tabstop>openSearchDirectory</tabstop>
   <tabstop>refresh</tabstop>
   <tabstop>fastBoot</tabstop>

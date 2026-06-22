@@ -1261,6 +1261,7 @@ struct Pcsx2Config
 	struct FilenameOptions
 	{
 		std::string Bios;
+		std::string ArcadeBios;
 
 		FilenameOptions();
 		void LoadSave(SettingsWrapper& wrap);
@@ -1509,6 +1510,7 @@ struct Pcsx2Config
 	void ReloadPatchAffectingOptions();
 
 	std::string FullpathToBios() const;
+	std::string FullpathToArcadeBios() const;
 	std::string FullpathToMcd(uint slot) const;
 
 	bool operator==(const Pcsx2Config& right) const = delete;
