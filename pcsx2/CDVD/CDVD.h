@@ -239,6 +239,14 @@ struct cdvdStruct
 	u8 KeyXor;
 	u8 decSet;
 
+	u8 mg_buffer[65536];
+	int mg_size;
+	int mg_maxsize;
+	int mg_datatype; // 0-data(encrypted); 1-header
+	u8 mg_kbit[16];
+	u8 mg_kcon[16];
+
+	bool mecha_hle;
 	uint8_t icvps2Key[16];
 	MECHA_STATE mecha_state;
 	MECHA_RESULT mecha_result;
@@ -306,6 +314,7 @@ extern void cdvdReadInterrupt();
 extern void cdvdNewDiskCB();
 extern u8 cdvdRead(u8 key);
 extern void cdvdWrite(u8 key, u8 rt);
+extern bool cdvdHasCompleteMechaKeyset();
 
 extern void cdvdGetDiscInfo(std::string* out_serial, std::string* out_elf_path, std::string* out_version, u32* out_crc,
 	CDVDDiscType* out_disc_type);
@@ -315,4 +324,3 @@ extern bool cdvdLoadDiscElf(ElfObject* elfo, IsoReader& isor, const std::string_
 
 extern s32 cdvdCtrlTrayOpen();
 extern s32 cdvdCtrlTrayClose();
-

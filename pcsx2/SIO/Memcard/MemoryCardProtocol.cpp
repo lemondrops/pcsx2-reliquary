@@ -6,6 +6,7 @@
 #include "SIO/Sio.h"
 #include "SIO/Sio2.h"
 #include "SIO/Sio0.h"
+#include "CDVD/CDVD.h"
 #include "Host.h"
 #include "des.h"
 
@@ -617,10 +618,71 @@ void MemoryCardProtocol::UnknownBoot()
 	The2bTerminator(5);
 }
 
+void MemoryCardProtocol::AuthXorHle()
+{
+	const u8 modeByte = g_Sio2FifoIn.front();
+	g_Sio2FifoIn.pop_front();
+
+	switch (modeByte)
+	{
+		case 0x01:
+		case 0x02:
+		case 0x04:
+		case 0x0f:
+		case 0x11:
+		case 0x13:
+		{
+			g_Sio2FifoOut.push_back(0x00);
+			g_Sio2FifoOut.push_back(0x2b);
+			u8 xorResult = 0x00;
+
+			for (size_t xorCounter = 0; xorCounter < 8; xorCounter++)
+			{
+				const u8 toXOR = g_Sio2FifoIn.front();
+				g_Sio2FifoIn.pop_front();
+				xorResult ^= toXOR;
+				g_Sio2FifoOut.push_back(0x00);
+			}
+
+			g_Sio2FifoOut.push_back(xorResult);
+			g_Sio2FifoOut.push_back(mcd->term);
+			break;
+		}
+		case 0x00:
+		case 0x03:
+		case 0x05:
+		case 0x08:
+		case 0x09:
+		case 0x0a:
+		case 0x0c:
+		case 0x0d:
+		case 0x0e:
+		case 0x10:
+		case 0x12:
+		case 0x14:
+			The2bTerminator(5);
+			break;
+		case 0x06:
+		case 0x07:
+		case 0x0b:
+			The2bTerminator(14);
+			break;
+		default:
+			Console.Warning("%s(queue) Unexpected modeByte (%02X), please report to the PCSX2 team", __FUNCTION__, modeByte);
+			break;
+	}
+}
+
 void MemoryCardProtocol::AuthXor()
 {
 	MC_LOG.WriteLn("%s", __FUNCTION__);
 	PS1_FAIL();
+	if (cdvd.mecha_hle)
+	{
+		AuthXorHle();
+		return;
+	}
+
 	const u32 slot = getActiveMemoryCardSlot();
 	MemoryCardAuthState& auth = getActiveAuthState(slot);
 	const u8 modeByte = g_Sio2FifoIn.front();
@@ -845,9 +907,12 @@ void MemoryCardProtocol::AuthReset()
 	else
 	{
 		mcd->term = Terminator::READY;
-		const u32 slot = getActiveMemoryCardSlot();
-		MemoryCardAuthState& auth = getActiveAuthState(slot);
-		auth.key = getConfiguredKey(slot);
+		if (!cdvd.mecha_hle)
+		{
+			const u32 slot = getActiveMemoryCardSlot();
+			MemoryCardAuthState& auth = getActiveAuthState(slot);
+			auth.key = getConfiguredKey(slot);
+		}
 		The2bTerminator(5);
 	}
 }
@@ -856,6 +921,12 @@ void MemoryCardProtocol::AuthKeySelect()
 {
 	MC_LOG.WriteLn("%s", __FUNCTION__);
 	PS1_FAIL();
+	if (cdvd.mecha_hle)
+	{
+		The2bTerminator(5);
+		return;
+	}
+
 	const u32 slot = getActiveMemoryCardSlot();
 	const u8 data = g_Sio2FifoIn.front();
 	g_Sio2FifoIn.pop_front();

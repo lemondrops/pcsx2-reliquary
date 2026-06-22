@@ -27,6 +27,7 @@
 #include "common/StringUtil.h"
 #include "common/Threading.h"
 
+#include <algorithm>
 #include <cctype>
 #include <ctime>
 #include <type_traits>
@@ -113,6 +114,54 @@ uint8_t g_KeyStoreKey[16] = {/* SHA256: f7c9233b37a7662a882eca096f43b35af74b3de6
 uint8_t MG_IV_NULL[8] = {0};
 
 u8 temp_mechaver[4] = {0, 0, 0, 0};
+
+static bool cdvdReadMechaKeyFile(const std::string& filename, const char* description, void* data, size_t expected_size)
+{
+	if (filename.empty())
+		return false;
+
+	Error error;
+	const std::string path = Path::Canonicalize(filename);
+	auto fp = FileSystem::OpenManagedCFileTryIgnoreCase(path.c_str(), "rb", &error);
+	if (!fp)
+	{
+		if (data)
+			ERROR_LOG("Failed to open {} file at {}: {}", description, path, error.GetDescription());
+		return false;
+	}
+
+	if (std::fseek(fp.get(), 0, SEEK_END) != 0 || std::ftell(fp.get()) != static_cast<long>(expected_size) ||
+		std::fseek(fp.get(), 0, SEEK_SET) != 0)
+	{
+		if (data)
+			ERROR_LOG("Invalid {} file size at {}: expected {} bytes", description, path, expected_size);
+		return false;
+	}
+
+	if (data && std::fread(data, 1, expected_size, fp.get()) != expected_size)
+	{
+		ERROR_LOG("Failed to read {} file at {}: {}", description, path, error.GetDescription());
+		return false;
+	}
+
+	return true;
+}
+
+bool cdvdHasCompleteMechaKeyset()
+{
+	return cdvdReadMechaKeyFile(EmuConfig.Security.MgChallengeIvFile, "Challenge IV", nullptr, 8) &&
+		cdvdReadMechaKeyFile(EmuConfig.Security.MgCardKeyStoreFile, "Card Key Store", nullptr, sizeof(g_cardKeyStore)) &&
+		cdvdReadMechaKeyFile(EmuConfig.Security.MgEncryptedKeyStoreFile, "Encrypted Key Store", nullptr, sizeof(g_EncryptedKeyStore)) &&
+		cdvdReadMechaKeyFile(EmuConfig.Security.MgKeyStoreKeyFile, "Key Store Key", nullptr, sizeof(g_KeyStoreKey));
+}
+
+static bool cdvdLoadMechaKeyFiles()
+{
+	return cdvdReadMechaKeyFile(EmuConfig.Security.MgChallengeIvFile, "Challenge IV", nullptr, 8) &&
+		cdvdReadMechaKeyFile(EmuConfig.Security.MgEncryptedKeyStoreFile, "Encrypted Key Store", g_EncryptedKeyStore, sizeof(g_EncryptedKeyStore)) &&
+		cdvdReadMechaKeyFile(EmuConfig.Security.MgCardKeyStoreFile, "Card Key Store", g_cardKeyStore, sizeof(g_cardKeyStore)) &&
+		cdvdReadMechaKeyFile(EmuConfig.Security.MgKeyStoreKeyFile, "Key Store Key", g_KeyStoreKey, sizeof(g_KeyStoreKey));
+}
 
 u32 getCdvdOffset()
 {
@@ -1323,41 +1372,23 @@ void cdvdReset()
 
 	cdvdCtrlTrayClose();
 
-	if (!EmuConfig.Security.MgEncryptedKeyStoreFile.empty())
+	if (cdvdLoadMechaKeyFiles())
 	{
-		Error error;
-		std::string path = Path::Canonicalize(EmuConfig.Security.MgEncryptedKeyStoreFile);
-		auto fp = FileSystem::OpenManagedCFileTryIgnoreCase(path.c_str(), "rb", &error);
-		if (!fp || std::fread(g_EncryptedKeyStore, 1, sizeof(g_EncryptedKeyStore), fp.get()) != sizeof(g_EncryptedKeyStore))
-		{
-			ERROR_LOG("Failed to read Encrypted Key Store file at {}: {}", path, error.GetDescription());
-		}
-	}
+		cdvd.mecha_hle = false;
 
-	if (!EmuConfig.Security.MgCardKeyStoreFile.empty())
+		readAndDecryptKeyStore(EmuConfig.Security.MgKeyStoreMode); // 0: dev, 1: retail, 2: proto?, 3: arcade
+		cdvd.mecha_state = MECHA_STATE_READY;
+	}
+	else
 	{
-		Error error;
-		std::string path = Path::Canonicalize(EmuConfig.Security.MgCardKeyStoreFile);
-		auto fp = FileSystem::OpenManagedCFileTryIgnoreCase(path.c_str(), "rb", &error);
-		if (!fp || std::fread(g_cardKeyStore, 1, sizeof(g_cardKeyStore), fp.get()) != sizeof(g_cardKeyStore))
-		{
-			ERROR_LOG("Failed to read Card Key Store file at {}: {}", path, error.GetDescription());
-		}
+		cdvd.mecha_hle = true;
+		cdvd.mecha_state = MECHA_STATE_READY;
+		cdvd.mg_size = 0;
+		cdvd.mg_maxsize = 0;
+		cdvd.mg_datatype = 0;
+		std::memset(cdvd.mg_kbit, 0, sizeof(cdvd.mg_kbit));
+		std::memset(cdvd.mg_kcon, 0, sizeof(cdvd.mg_kcon));
 	}
-
-	if (!EmuConfig.Security.MgKeyStoreKeyFile.empty())
-	{
-		Error error;
-		std::string path = Path::Canonicalize(EmuConfig.Security.MgKeyStoreKeyFile);
-		auto fp = FileSystem::OpenManagedCFileTryIgnoreCase(path.c_str(), "rb", &error);
-		if (!fp || std::fread(g_KeyStoreKey, 1, sizeof(g_KeyStoreKey), fp.get()) != sizeof(g_KeyStoreKey))
-		{
-			ERROR_LOG("Failed to read Key Store Key file at {}: {}", path, error.GetDescription());
-		}
-	}
-
-	readAndDecryptKeyStore(EmuConfig.Security.MgKeyStoreMode); // 0: dev, 1: retail, 2: proto?, 3: arcade
-	cdvd.mecha_state = MECHA_STATE_READY;
 	std::memcpy(temp_mechaver, &s_mecha_version, 4);
 
 	// Patch the region on Deckard Slims (75k+)
@@ -3305,6 +3336,207 @@ static void executeMechaHandler()
 		break;
 	}
 }
+
+static __fi void fail_pol_cal()
+{
+	Console.Error("[MG] ERROR - Make sure the file is already decrypted!!!");
+	cdvd.SCMDResultBuff[0] = 0x80;
+}
+
+static bool cdvdWrite16MechaHle(u8 rt)
+{
+	switch (rt)
+	{
+		case 0x80: // secrman: __mechacon_auth_0x80
+			SetSCMDResultSize(1); //in:1
+			cdvd.mg_datatype = 0; //data
+			cdvd.SCMDResultBuff[0] = 0;
+			return true;
+
+		case 0x81: // secrman: __mechacon_auth_0x81
+			SetSCMDResultSize(1); //in:1
+			cdvd.mg_datatype = 0; //data
+			cdvd.SCMDResultBuff[0] = 0;
+			return true;
+
+		case 0x82: // secrman: __mechacon_auth_0x82
+			SetSCMDResultSize(1); //in:16
+			cdvd.SCMDResultBuff[0] = 0;
+			return true;
+
+		case 0x83: // secrman: __mechacon_auth_0x83
+			SetSCMDResultSize(1); //in:8
+			cdvd.SCMDResultBuff[0] = 0;
+			return true;
+
+		case 0x84: // secrman: __mechacon_auth_0x84
+			SetSCMDResultSize(1 + 8 + 4); //in:0
+			cdvd.SCMDResultBuff[0] = 0;
+			cdvd.SCMDResultBuff[1] = 0x21;
+			cdvd.SCMDResultBuff[2] = 0xdc;
+			cdvd.SCMDResultBuff[3] = 0x31;
+			cdvd.SCMDResultBuff[4] = 0x96;
+			cdvd.SCMDResultBuff[5] = 0xce;
+			cdvd.SCMDResultBuff[6] = 0x72;
+			cdvd.SCMDResultBuff[7] = 0xe0;
+			cdvd.SCMDResultBuff[8] = 0xc8;
+			cdvd.SCMDResultBuff[9] = 0x69;
+			cdvd.SCMDResultBuff[10] = 0xda;
+			cdvd.SCMDResultBuff[11] = 0x34;
+			cdvd.SCMDResultBuff[12] = 0x9b;
+			return true;
+
+		case 0x85: // secrman: __mechacon_auth_0x85
+			SetSCMDResultSize(1 + 4 + 8); //in:0
+			cdvd.SCMDResultBuff[0] = 0;
+			cdvd.SCMDResultBuff[1] = 0xeb;
+			cdvd.SCMDResultBuff[2] = 0x01;
+			cdvd.SCMDResultBuff[3] = 0xc7;
+			cdvd.SCMDResultBuff[4] = 0xa9;
+			cdvd.SCMDResultBuff[5] = 0x3f;
+			cdvd.SCMDResultBuff[6] = 0x9c;
+			cdvd.SCMDResultBuff[7] = 0x5b;
+			cdvd.SCMDResultBuff[8] = 0x19;
+			cdvd.SCMDResultBuff[9] = 0x31;
+			cdvd.SCMDResultBuff[10] = 0xa0;
+			cdvd.SCMDResultBuff[11] = 0xb3;
+			cdvd.SCMDResultBuff[12] = 0xa3;
+			return true;
+
+		case 0x86: // secrman: __mechacon_auth_0x86
+		case 0x87: // secrman: __mechacon_auth_0x87
+			SetSCMDResultSize(1);
+			cdvd.SCMDResultBuff[0] = 0;
+			return true;
+
+		case 0x8D: // sceMgWriteData
+			SetSCMDResultSize(1); //in:length<=16
+			if (cdvd.mg_size + cdvd.SCMDParamCnt > cdvd.mg_maxsize)
+			{
+				cdvd.SCMDResultBuff[0] = 0x80;
+			}
+			else
+			{
+				memcpy(&cdvd.mg_buffer[cdvd.mg_size], cdvd.SCMDParamBuff, cdvd.SCMDParamCnt);
+				cdvd.mg_size += cdvd.SCMDParamCnt;
+				cdvd.SCMDResultBuff[0] = 0;
+			}
+			return true;
+
+		case 0x8E: // sceMgReadData
+			SetSCMDResultSize(static_cast<u8>(std::min(16, cdvd.mg_size)));
+			memcpy(&cdvd.SCMDResultBuff[0], &cdvd.mg_buffer[0], cdvd.SCMDResultCnt);
+			cdvd.mg_size -= cdvd.SCMDResultCnt;
+			memmove(&cdvd.mg_buffer[0], &cdvd.mg_buffer[cdvd.SCMDResultCnt], cdvd.mg_size);
+			return true;
+
+		case 0x88: // secrman: __mechacon_auth_0x88
+		case 0x8F: // secrman: __mechacon_auth_0x8F
+			SetSCMDResultSize(1); //in:0
+			if (cdvd.mg_datatype == 1) // header data
+			{
+				if ((cdvd.mg_maxsize != cdvd.mg_size) || (cdvd.mg_size < 0x20) || (cdvd.mg_size != GetBufferU16(&cdvd.mg_buffer[0], 0x14)))
+				{
+					fail_pol_cal();
+					return true;
+				}
+
+				const int bit_ofs = mg_BIToffset(&cdvd.mg_buffer[0]);
+				if (bit_ofs < 0x20 || static_cast<size_t>(bit_ofs) > sizeof(cdvd.mg_buffer) - 8)
+				{
+					fail_pol_cal();
+					return true;
+				}
+
+				memcpy(&cdvd.mg_kbit[0], &cdvd.mg_buffer[bit_ofs - 0x20], 0x10);
+				memcpy(&cdvd.mg_kcon[0], &cdvd.mg_buffer[bit_ofs - 0x10], 0x10);
+
+				if ((cdvd.mg_buffer[bit_ofs + 5] || cdvd.mg_buffer[bit_ofs + 6] || cdvd.mg_buffer[bit_ofs + 7]) ||
+					(GetBufferU16(&cdvd.mg_buffer[0], bit_ofs + 4) * 16 + bit_ofs + 8 + 16 != GetBufferU16(&cdvd.mg_buffer[0], 0x14)))
+				{
+					fail_pol_cal();
+					return true;
+				}
+			}
+			cdvd.SCMDResultBuff[0] = 0;
+			return true;
+
+		case 0x8C:
+			SetSCMDResultSize(1); //in:0
+			cdvd.SCMDResultBuff[0] = 0;
+			return true;
+
+		case 0x90: // sceMgWriteHeaderStart
+			SetSCMDResultSize(1); //in:5
+			cdvd.mg_size = 0;
+			cdvd.mg_datatype = 1; //header data
+			cdvd.mg_maxsize = cdvd.SCMDParamBuff[1] | (static_cast<int>(cdvd.SCMDParamBuff[2]) << 8);
+			cdvd.SCMDResultBuff[0] = 0;
+			return true;
+
+		case 0x91: // sceMgReadBITLength
+		{
+			SetSCMDResultSize(3); //in:0
+			const int bit_ofs = mg_BIToffset(&cdvd.mg_buffer[0]);
+			if (bit_ofs < 0 || static_cast<size_t>(bit_ofs) > sizeof(cdvd.mg_buffer) - 5)
+			{
+				fail_pol_cal();
+				return true;
+			}
+
+			const unsigned int blocks = static_cast<unsigned int>(cdvd.mg_buffer[bit_ofs + 4]);
+			const size_t copy_len = 8 + 16 * static_cast<size_t>(blocks);
+			if (copy_len > sizeof(cdvd.mg_buffer) - static_cast<size_t>(bit_ofs))
+			{
+				fail_pol_cal();
+				return true;
+			}
+
+			memmove(&cdvd.mg_buffer[0], &cdvd.mg_buffer[bit_ofs], copy_len);
+			cdvd.mg_maxsize = 0;
+			cdvd.mg_size = 8 + 16 * cdvd.mg_buffer[4];
+			cdvd.SCMDResultBuff[0] = (cdvd.mg_datatype == 1) ? 0 : 0x80;
+			cdvd.SCMDResultBuff[1] = (cdvd.mg_size >> 0) & 0xFF;
+			cdvd.SCMDResultBuff[2] = (cdvd.mg_size >> 8) & 0xFF;
+			return true;
+		}
+
+		case 0x92: // sceMgWriteDatainLength
+			SetSCMDResultSize(1); //in:2
+			cdvd.mg_size = 0;
+			cdvd.mg_datatype = 0; //data (encrypted)
+			cdvd.mg_maxsize = cdvd.SCMDParamBuff[0] | (static_cast<int>(cdvd.SCMDParamBuff[1]) << 8);
+			cdvd.SCMDResultBuff[0] = 0;
+			return true;
+
+		case 0x93: // sceMgWriteDataoutLength
+			SetSCMDResultSize(1); //in:2
+			if (((cdvd.SCMDParamBuff[0] | (static_cast<int>(cdvd.SCMDParamBuff[1]) << 8)) == cdvd.mg_size) && (cdvd.mg_datatype == 0))
+			{
+				cdvd.mg_maxsize = 0;
+				cdvd.SCMDResultBuff[0] = 0;
+			}
+			else
+			{
+				cdvd.SCMDResultBuff[0] = 0x80;
+			}
+			return true;
+
+		case 0x94: // sceMgReadKbit
+		case 0x95: // sceMgReadKbit2
+		case 0x96: // sceMgReadKcon
+		case 0x97: // sceMgReadKcon2
+		{
+			SetSCMDResultSize(1 + 8); //in:0
+			cdvd.SCMDResultBuff[0] = 0;
+			const u8* key = (rt < 0x96) ? cdvd.mg_kbit : cdvd.mg_kcon;
+			memcpy(&cdvd.SCMDResultBuff[1], key + ((rt & 1) ? 8 : 0), 8);
+			return true;
+		}
+	}
+
+	return false;
+}
 	
 
 static void cdvdWrite16(u8 rt) // SCOMMAND
@@ -3321,6 +3553,13 @@ static void cdvdWrite16(u8 rt) // SCOMMAND
 		cdvd.sCommand = rt;
 		std::memset(&cdvd.SCMDResultBuff[0], 0, sizeof(cdvd.SCMDResultBuff));
 		std::memcpy(temp_mechaver, &s_mecha_version, 4);
+
+		if (rt >= 0x80 && rt <= 0x97 && cdvd.mecha_hle && cdvdWrite16MechaHle(rt))
+		{
+			cdvd.SCMDParamPos = 0;
+			cdvd.SCMDParamCnt = 0;
+			return;
+		}
 		
 		switch (rt)
 		{

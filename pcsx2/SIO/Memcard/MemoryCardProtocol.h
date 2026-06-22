@@ -27,6 +27,7 @@ private:
 	void The2bTerminator(size_t length);
 	void ReadWriteIncrement(size_t length);
 	void RecalculatePS1Addr();
+	void AuthXorHle();
 
 public:
 	void ResetPS1State();

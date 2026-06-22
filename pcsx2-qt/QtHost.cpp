@@ -47,8 +47,9 @@
 
 #include <QtCore/QTimer>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QMessageBox>
+#include <QtWidgets/QCheckBox>
 #include <QtWidgets/QFileDialog>
+#include <QtWidgets/QMessageBox>
 #include <QtGui/QClipboard>
 #include <QtGui/QInputMethod>
 
@@ -88,6 +89,7 @@ namespace QtHost
 static QTimer* s_settings_save_timer = nullptr;
 static std::unique_ptr<INISettingsInterface> s_base_settings_interface;
 static std::unique_ptr<INISettingsInterface> s_secrets_settings_interface;
+
 static bool s_batch_mode = false;
 static bool s_nogui_mode = false;
 static bool s_start_big_picture_mode = false;
@@ -99,6 +101,27 @@ static bool s_boot_and_debug = false;
 static std::atomic_int s_vm_locked_with_dialog = 0;
 static std::string s_clipboard_cache;
 static std::mutex s_clipboard_cache_mutex;
+
+static void WarnAboutMissingMechaKeys()
+{
+	if (s_nogui_mode || s_batch_mode || cdvdHasCompleteMechaKeyset() || Host::GetBaseBoolSettingValue("UI", "SuppressMissingMechaKeysWarning", false))
+		return;
+
+	QMessageBox msgbox(g_main_window);
+	msgbox.setIcon(QMessageBox::Warning);
+	msgbox.setWindowTitle(QStringLiteral("PCSX2"));
+	msgbox.setText(QStringLiteral("No complete mecha keyset detected, emulation will proceed however, DVD playback, Python 1 + 2 emulation, HDD installs and more will not function."));
+	msgbox.setStandardButtons(QMessageBox::Ok);
+	QCheckBox* checkbox = new QCheckBox(QStringLiteral("Don't show this again"), &msgbox);
+	msgbox.setCheckBox(checkbox);
+	msgbox.exec();
+
+	if (checkbox->isChecked())
+	{
+		Host::SetBaseBoolSettingValue("UI", "SuppressMissingMechaKeysWarning", true);
+		Host::CommitBaseSettingChanges();
+	}
+}
 
 //////////////////////////////////////////////////////////////////////////
 // CPU Thread
@@ -211,6 +234,8 @@ void EmuThread::startVM(std::shared_ptr<VMBootParameters> boot_params)
 		QMetaObject::invokeMethod(this, "startVM", Qt::QueuedConnection, Q_ARG(std::shared_ptr<VMBootParameters>, boot_params));
 		return;
 	}
+
+	QtHost::RunOnUIThread(&WarnAboutMissingMechaKeys, true);
 
 	// Determine whether to start fullscreen or not.
 	m_is_rendering_to_main = shouldRenderToMain();
