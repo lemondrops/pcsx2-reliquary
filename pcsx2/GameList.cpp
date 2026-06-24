@@ -39,7 +39,7 @@ namespace GameList
 	enum : u32
 	{
 		GAME_LIST_CACHE_SIGNATURE = 0x45434C47,
-		GAME_LIST_CACHE_VERSION = 38,
+		GAME_LIST_CACHE_VERSION = 39,
 
 
 		PLAYED_TIME_SERIAL_LENGTH = 32,
@@ -112,6 +112,7 @@ const char* GameList::EntryTypeToString(EntryType type, bool translate)
 		TRANSLATE_NOOP("GameList", "Python 1"),
 		TRANSLATE_NOOP("GameList", "Python 2"),
 		TRANSLATE_NOOP("GameList", "Invalid"),
+		TRANSLATE_NOOP("GameList", "DVD-Video"),
 	};
 
 	const char* name = names.at(static_cast<int>(type));
@@ -252,11 +253,14 @@ void GameList::FillBootParametersForEntry(VMBootParameters* params, const Entry*
 	params->python2_serial = "";
 	params->python2_patch_file = "";
 
-	if (entry->type == GameList::EntryType::PS1Disc || entry->type == GameList::EntryType::PS2Disc)
+	if (entry->type == GameList::EntryType::PS1Disc || entry->type == GameList::EntryType::PS2Disc || entry->type == GameList::EntryType::DVDVideo)
 	{
 		params->filename = entry->path;
 		params->source_type = CDVD_SourceType::Iso;
 		params->elf_override.clear();
+
+		if (entry->type == GameList::EntryType::DVDVideo)
+			params->fast_boot = false;
 	}
 	else if (entry->type == GameList::EntryType::ELF)
 	{
@@ -332,6 +336,13 @@ u32 GameList::HashPathForUniqueId(const std::string_view path)
 	return hash ? hash : 1u;
 }
 
+void GameList::GetDVDVideoSerialAndCRCForPath(const std::string_view path, std::string* serial, u32* crc)
+{
+	const u32 path_crc = HashPathForUniqueId(path);
+	*serial = fmt::format("DVDV-{:08X}", path_crc);
+	*crc = path_crc;
+}
+
 std::string GameList::CleanPythonGameId(std::string_view game_id)
 {
 	std::string ret;
@@ -402,7 +413,15 @@ bool GameList::GetIsoSerialAndCRC(const std::string& path, s32* disc_type, std::
 
 	// TODO: we could include the version in the game list?
 	*disc_type = DoCDVDdetectDiskType();
-	cdvdGetDiscInfo(serial, nullptr, nullptr, crc, nullptr);
+	if (*disc_type == CDVD_TYPE_DVDV)
+	{
+		serial->clear();
+		*crc = 0;
+	}
+	else
+	{
+		cdvdGetDiscInfo(serial, nullptr, nullptr, crc, nullptr);
+	}
 	DoCDVDclose();
 	return true;
 }
@@ -537,6 +556,10 @@ bool GameList::GetIsoListEntry(const std::string& path, GameList::Entry* entry)
 			entry->type = EntryType::PS2Disc;
 			break;
 
+		case CDVD_TYPE_DVDV:
+			entry->type = EntryType::DVDVideo;
+			break;
+
 		case CDVD_TYPE_ILLEGAL:
 		default:
 		{
@@ -554,6 +577,13 @@ bool GameList::GetIsoListEntry(const std::string& path, GameList::Entry* entry)
 	entry->path = path;
 	entry->total_size = sd.Size;
 	entry->compatibility_rating = CompatibilityRating::Unknown;
+	if (entry->type == EntryType::DVDVideo)
+	{
+		GetDVDVideoSerialAndCRCForPath(path, &entry->serial, &entry->crc);
+		entry->title = Path::GetFileTitle(path);
+		entry->region = Region::Other;
+		return true;
+	}
 
 	if (const GameDatabaseSchema::GameEntry* db_entry = GameDatabase::findGame(entry->serial))
 	{
@@ -1355,8 +1385,13 @@ bool GameList::GetSerialAndCRCForFilename(const char* filename, std::string* ser
 {
 	if (const GameList::Entry* entry = GetEntryForPath(filename); entry)
 	{
-		*serial = entry->serial;
-		*crc = entry->crc;
+		if (entry->type == EntryType::DVDVideo && entry->serial.empty())
+			GetDVDVideoSerialAndCRCForPath(filename, serial, crc);
+		else
+		{
+			*serial = entry->serial;
+			*crc = entry->crc;
+		}
 		return true;
 	}
 

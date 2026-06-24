@@ -40,6 +40,20 @@ cdvdStruct cdvd;
 
 u32 PSXCLK = 36864000;
 
+static u32 cdvdDvdVideoEdcCrc32(const u8* data, u32 size)
+{
+	// DVD raw-sector EDC uses polynomial x^32 + x^31 + x^4 + 1, initial value 0.
+	// This covers the 4-byte sector ID, 2-byte IED, 6-byte CPR_MAI, and 2048 data bytes.
+	u32 crc = 0;
+	for (u32 i = 0; i < size; i++)
+	{
+		crc ^= static_cast<u32>(data[i]) << 24;
+		for (u32 bit = 0; bit < 8; bit++)
+			crc = (crc << 1) ^ ((crc & 0x80000000u) ? 0x80000011u : 0u);
+	}
+	return crc;
+}
+
 static constexpr s32 GMT9_OFFSET_SECONDS = 9 * 60 * 60; // 32400
 
 static constexpr u8 monthmap[13] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
@@ -1031,6 +1045,7 @@ static u32 cdvdRotationTime(CDVD_MODE_TYPE mode)
 		{
 			case CDVD_TYPE_DETCTDVDS:
 			case CDVD_TYPE_PS2DVD:
+			case CDVD_TYPE_DVDV:
 			case CDVD_TYPE_DETCTDVDD:
 				numSectors = 2298496;
 
@@ -1068,6 +1083,7 @@ static uint cdvdBlockReadTime(CDVD_MODE_TYPE mode) noexcept
 		{
 			case CDVD_TYPE_DETCTDVDS:
 			case CDVD_TYPE_PS2DVD:
+			case CDVD_TYPE_DVDV:
 			case CDVD_TYPE_DETCTDVDD:
 				numSectors = 2298496;
 				u32 layer1Start;
@@ -1538,22 +1554,18 @@ int cdvdReadSector()
 		mdest[4] = 0;
 		mdest[5] = 0;
 
-		// sector CPR_MAI (not calculated at present)
-		mdest[6] = 0;
-		mdest[7] = 0;
-		mdest[8] = 0;
-		mdest[9] = 0;
-		mdest[10] = 0;
-		mdest[11] = 0;
+		// sector CPR_MAI (not present in 2048-byte ISO images)
+		std::memset(&mdest[6], 0, 6);
 
 		// normal 2048 bytes of sector data
 		memcpy(&mdest[12], &cdr.Transfer[0], 2048);
 
-		// 4 bytes of edc (not calculated at present)
-		mdest[2060] = 0;
-		mdest[2061] = 0;
-		mdest[2062] = 0;
-		mdest[2063] = 0;
+		// DVD sector EDC covers the sector ID, IED, CPR_MAI, and 2048 bytes of data.
+		const u32 edc = cdvdDvdVideoEdcCrc32(mdest, 2060);
+		mdest[2060] = static_cast<u8>(edc);
+		mdest[2061] = static_cast<u8>(edc >> 8);
+		mdest[2062] = static_cast<u8>(edc >> 16);
+		mdest[2063] = static_cast<u8>(edc >> 24);
 	}
 	else
 	{
@@ -3901,6 +3913,7 @@ static void cdvdWrite16(u8 rt) // SCOMMAND
 					SetSCMDResultSize(1);
 					cdvd.SCMDResultBuff[0] = 0x80;
 				}
+				break;
 
 				//		case 0x1F: // sceRemote2_7 (2:1) - cdvdman_call117
 				//			break;

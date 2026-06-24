@@ -1072,6 +1072,11 @@ void VMManager::UpdateDiscDetails(bool booting)
 		else if (CDVDsys_GetSourceType() != CDVD_SourceType::NoDisc)
 		{
 			cdvdGetDiscInfo(&s_disc_serial, &s_disc_elf, &s_disc_version, &s_disc_crc, nullptr);
+			if (cdvd.DiscType == CDVD_TYPE_DVDV && s_disc_serial.empty())
+			{
+				GameList::GetDVDVideoSerialAndCRCForPath(CDVDsys_GetFile(CDVDsys_GetSourceType()), &s_disc_serial, &s_disc_crc);
+				title = Path::GetFileTitle(CDVDsys_GetFile(CDVDsys_GetSourceType()));
+			}
 			serial_is_valid = !s_disc_serial.empty();
 		}
 		else if (!s_elf_override.empty())
@@ -2025,7 +2030,12 @@ bool VMManager::HasSaveStateInSlot(const char* game_serial, u32 game_crc, s32 sl
 std::string VMManager::GetCurrentSaveStateFileName(s32 slot, bool backup)
 {
 	std::unique_lock lock(s_info_mutex);
-	return GetSaveStateFileName(s_disc_serial.c_str(), s_disc_crc, slot, backup);
+	std::string serial = s_disc_serial;
+	u32 crc = s_disc_crc;
+	if (serial.empty() && cdvd.DiscType == CDVD_TYPE_DVDV && CDVDsys_GetSourceType() != CDVD_SourceType::NoDisc)
+		GameList::GetDVDVideoSerialAndCRCForPath(CDVDsys_GetFile(CDVDsys_GetSourceType()), &serial, &crc);
+
+	return GetSaveStateFileName(serial.c_str(), crc, slot, backup);
 }
 
 bool VMManager::DoLoadState(const char* filename, Error* error)
