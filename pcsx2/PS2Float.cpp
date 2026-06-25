@@ -476,15 +476,12 @@ PS2Float PS2Float::DoAdd(PS2Float other)
 	if (absMan == 0)
 		return PS2Float(0);
 
-	s32 rawExp = selfExponent - roundingMultiplier;
-
-	s32 amount = Common::normalizeAmounts[Common::CountLeadingSignBits(absMan)];
-	rawExp -= amount;
-	absMan <<= amount;
-
-	s32 msbIndex = Common::BitScanReverse(absMan >> MANTISSA_BITS);
-	rawExp += msbIndex;
-	absMan >>= msbIndex;
+	const s32 highestBit = 31 - std::countl_zero(static_cast<u32>(absMan));
+	s32 rawExp = selfExponent + highestBit - (MANTISSA_BITS + roundingMultiplier);
+	if (highestBit > MANTISSA_BITS)
+		absMan >>= highestBit - MANTISSA_BITS;
+	else
+		absMan <<= MANTISSA_BITS - highestBit;
 
 	if (rawExp > 255)
 	{

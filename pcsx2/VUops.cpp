@@ -1187,7 +1187,7 @@ static __fi void _vuSQRT(VURegs* VU)
 
 		VU->statusflag &= ~0x30;
 
-		if (ft.ToDouble() < 0.0)
+		if (ft.Sign())
 			VU->statusflag |= 0x410;
 		VU->q.UL = PS2Float(ft).Sqrt().raw;
 	}
@@ -1231,7 +1231,7 @@ static __fi void _vuRSQRT(VURegs* VU)
 		}
 		else
 		{
-			if (ft.ToDouble() < 0.0)
+			if (ft.Sign())
 				VU->statusflag |= 0x410;
 
 			VU->q.UL = fs.Rsqrt(PS2Float(ft)).raw;
