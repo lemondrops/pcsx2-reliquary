@@ -64,7 +64,7 @@ static __ri u32 VU_MAC_UPDATE(s32 shift, VURegs* VU, PS2Float f)
 		VU->macflag = (VU->macflag & ~(0x1000 << shift)) | (0x0101 << shift);
 	}
 
-	if (f.IsZero())
+	if (f.IsZero() && !isUnderflow)
 	{
 		VU->macflag = (VU->macflag & ~(0x1100 << shift)) | (0x0001 << shift);
 		return v;

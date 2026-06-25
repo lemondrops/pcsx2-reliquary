@@ -585,7 +585,7 @@ PS2Float PS2Float::DoAdd(PS2Float other)
 	}
 	else if (rawExp < 1)
 	{
-		PS2Float result = PS2Float(man < 0, 0, 0);
+		PS2Float result = PS2Float(((u32)man & SIGNMASK) | ((u32)absMan & 0x7FFFFF));
 		result.uf = true;
 		return result;
 	}
