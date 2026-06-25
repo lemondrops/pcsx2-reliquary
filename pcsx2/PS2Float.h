@@ -145,7 +145,7 @@ private:
 
 	static bool DetermineSubtractionOperationSign(PS2Float a, PS2Float b);
 
-    static u8 DetermineMacException(u8 mode, u32 acc, bool acc_oflw, bool moflw, s32 msign, u32& addsubres, bool& oflw, bool& uflw);
+	static u8 DetermineMacException(u8 mode, u32 acc, bool acc_oflw, bool moflw, s32 msign, u32& addsubres, bool& oflw, bool& uflw);
 };
 
 #include "PS2Float.inl"
