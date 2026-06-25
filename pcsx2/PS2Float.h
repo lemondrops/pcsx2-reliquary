@@ -14,16 +14,28 @@ public:
 	static constexpr u32 ONE = 0x3F800000;
 	static constexpr u32 MIN_ONE = 0xBF800000;
 
-	bool dz = false;
-	bool iv = false;
-	bool of = false;
-	bool uf = false;
-
 	u32 raw;
+	u8 flags = 0;
+
+	enum Flag : u8
+	{
+		DivideByZero = 1 << 0,
+		Invalid = 1 << 1,
+		Overflow = 1 << 2,
+		Underflow = 1 << 3,
+	};
 
 	constexpr u32 Mantissa() const { return raw & 0x7FFFFF; }
 	constexpr u8 Exponent() const { return (raw >> 23) & 0xFF; }
 	constexpr bool Sign() const { return ((raw >> 31) & 1) != 0; }
+	constexpr bool HasDivideByZero() const { return (flags & DivideByZero) != 0; }
+	constexpr bool HasInvalid() const { return (flags & Invalid) != 0; }
+	constexpr bool HasOverflow() const { return (flags & Overflow) != 0; }
+	constexpr bool HasUnderflow() const { return (flags & Underflow) != 0; }
+	__fi void SetDivideByZero(bool set = true) { SetFlag(DivideByZero, set); }
+	__fi void SetInvalid(bool set = true) { SetFlag(Invalid, set); }
+	__fi void SetOverflow(bool set = true) { SetFlag(Overflow, set); }
+	__fi void SetUnderflow(bool set = true) { SetFlag(Underflow, set); }
 
 	__fi PS2Float(s32 value)
 		: raw((u32)value)
@@ -115,6 +127,14 @@ public:
 
 protected:
 private:
+	__fi void SetFlag(Flag flag, bool set)
+	{
+		if (set)
+			flags |= flag;
+		else
+			flags &= ~flag;
+	}
+
 	PS2Float DoAdd(PS2Float other);
 
 	PS2Float DoMul(PS2Float other);

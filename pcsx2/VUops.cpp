@@ -497,20 +497,6 @@ static __fi PS2Float vuAccurateMulSub(u32 a, u32 b, u32 c)
 	return PS2Float(a).MulSub(PS2Float(b), PS2Float(c));
 }
 
-static __fi PS2Float vuAccurateMulAddAcc(u32 a, u32 b, u32 c, bool oflw)
-{
-	PS2Float acc = PS2Float(a);
-	acc = oflw;
-	return acc.MulAddAcc(PS2Float(b), PS2Float(c));
-}
-
-static __fi PS2Float vuAccurateMulSubAcc(u32 a, u32 b, u32 c, bool oflw)
-{
-	PS2Float acc = PS2Float(a);
-	acc = oflw;
-	return acc.MulSubAcc(PS2Float(b), PS2Float(c));
-}
-
 template <u32(*Fn)(u32)>
 void __fi applyUnaryFunction(VURegs* VU)
 {
@@ -797,10 +783,10 @@ static __fi void applyAccurateTernaryMACOpWithMulUnderflow(VURegs* VU)
 {
 	VECTOR* dst = _getDst<Dst>(VU);
 	bool mul_underflow = false;
-	if (_X) { mul_underflow |= PS2Float(VU->VF[_Fs_].i.x).Mul(PS2Float(VU->VF[_Ft_].i.x)).uf; dst->i.x = VU_MACx_UPDATE(VU, Fn(VU->ACC.i.x, VU->VF[_Fs_].i.x, VU->VF[_Ft_].i.x)); } else VU_MACx_CLEAR(VU);
-	if (_Y) { mul_underflow |= PS2Float(VU->VF[_Fs_].i.y).Mul(PS2Float(VU->VF[_Ft_].i.y)).uf; dst->i.y = VU_MACy_UPDATE(VU, Fn(VU->ACC.i.y, VU->VF[_Fs_].i.y, VU->VF[_Ft_].i.y)); } else VU_MACy_CLEAR(VU);
-	if (_Z) { mul_underflow |= PS2Float(VU->VF[_Fs_].i.z).Mul(PS2Float(VU->VF[_Ft_].i.z)).uf; dst->i.z = VU_MACz_UPDATE(VU, Fn(VU->ACC.i.z, VU->VF[_Fs_].i.z, VU->VF[_Ft_].i.z)); } else VU_MACz_CLEAR(VU);
-	if (_W) { mul_underflow |= PS2Float(VU->VF[_Fs_].i.w).Mul(PS2Float(VU->VF[_Ft_].i.w)).uf; dst->i.w = VU_MACw_UPDATE(VU, Fn(VU->ACC.i.w, VU->VF[_Fs_].i.w, VU->VF[_Ft_].i.w)); } else VU_MACw_CLEAR(VU);
+	if (_X) { mul_underflow |= PS2Float(VU->VF[_Fs_].i.x).Mul(PS2Float(VU->VF[_Ft_].i.x)).HasUnderflow(); dst->i.x = VU_MACx_UPDATE(VU, Fn(VU->ACC.i.x, VU->VF[_Fs_].i.x, VU->VF[_Ft_].i.x)); } else VU_MACx_CLEAR(VU);
+	if (_Y) { mul_underflow |= PS2Float(VU->VF[_Fs_].i.y).Mul(PS2Float(VU->VF[_Ft_].i.y)).HasUnderflow(); dst->i.y = VU_MACy_UPDATE(VU, Fn(VU->ACC.i.y, VU->VF[_Fs_].i.y, VU->VF[_Ft_].i.y)); } else VU_MACy_CLEAR(VU);
+	if (_Z) { mul_underflow |= PS2Float(VU->VF[_Fs_].i.z).Mul(PS2Float(VU->VF[_Ft_].i.z)).HasUnderflow(); dst->i.z = VU_MACz_UPDATE(VU, Fn(VU->ACC.i.z, VU->VF[_Fs_].i.z, VU->VF[_Ft_].i.z)); } else VU_MACz_CLEAR(VU);
+	if (_W) { mul_underflow |= PS2Float(VU->VF[_Fs_].i.w).Mul(PS2Float(VU->VF[_Ft_].i.w)).HasUnderflow(); dst->i.w = VU_MACw_UPDATE(VU, Fn(VU->ACC.i.w, VU->VF[_Fs_].i.w, VU->VF[_Ft_].i.w)); } else VU_MACw_CLEAR(VU);
 	VU_STAT_UPDATE(VU);
 	if (mul_underflow)
 		VU->statusflag |= 0x100;
@@ -852,7 +838,7 @@ static __fi PS2Float _vuAccurateOpMADD(u32 acc, u32 fs, u32 ft)
 static __fi PS2Float _vuAccurateOpMADDA(u32 acc, u32 fs, u32 ft, bool oflw)
 {
 	PS2Float accfloat = PS2Float(acc);
-	accfloat.of = oflw;
+	accfloat.SetOverflow(oflw);
 	return accfloat.MulAddAcc(PS2Float(fs), PS2Float(ft));
 }
 
@@ -915,7 +901,7 @@ static __fi PS2Float _vuAccurateOpMSUB(u32 acc, u32 fs, u32 ft)
 static __fi PS2Float _vuAccurateOpMSUBA(u32 acc, u32 fs, u32 ft, bool oflw)
 {
 	PS2Float accfloat = PS2Float(acc);
-	accfloat.of = oflw;
+	accfloat.SetOverflow(oflw);
 	return accfloat.MulSubAcc(PS2Float(fs), PS2Float(ft));
 }
 

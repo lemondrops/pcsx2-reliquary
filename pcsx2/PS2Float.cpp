@@ -247,12 +247,12 @@ PS2Float PS2Float::MulAdd(PS2Float opsend, PS2Float optend)
 	PS2Float mulres = opsend.Mul(optend);
 	PS2Float addres = Add(mulres);
 	u32 rawres = addres.raw;
-	bool oflw = addres.of;
-	bool uflw = addres.uf;
-	DetermineMacException(3, raw, of, mulres.of, mulres.Sign() ? 1 : 0, rawres, oflw, uflw);
+	bool oflw = addres.HasOverflow();
+	bool uflw = addres.HasUnderflow();
+	DetermineMacException(3, raw, HasOverflow(), mulres.HasOverflow(), mulres.Sign() ? 1 : 0, rawres, oflw, uflw);
 	PS2Float result = PS2Float(rawres);
-	result.of = oflw;
-	result.uf = uflw;
+	result.SetOverflow(oflw);
+	result.SetUnderflow(uflw);
 	return result;
 }
 
@@ -261,14 +261,14 @@ PS2Float PS2Float::MulAddAcc(PS2Float opsend, PS2Float optend)
 	PS2Float mulres = opsend.Mul(optend);
 	PS2Float addres = Add(mulres);
 	u32 rawres = addres.raw;
-	bool oflw = addres.of;
-	bool uflw = addres.uf;
-	DetermineMacException(8, raw, of, mulres.of, mulres.Sign() ? 1 : 0, rawres, oflw, uflw);
+	bool oflw = addres.HasOverflow();
+	bool uflw = addres.HasUnderflow();
+	DetermineMacException(8, raw, HasOverflow(), mulres.HasOverflow(), mulres.Sign() ? 1 : 0, rawres, oflw, uflw);
 	raw = rawres;
-	of = oflw;
+	SetOverflow(oflw);
 	PS2Float result = PS2Float(rawres);
-	result.of = oflw;
-	result.uf = uflw;
+	result.SetOverflow(oflw);
+	result.SetUnderflow(uflw);
 	return result;
 }
 
@@ -277,12 +277,12 @@ PS2Float PS2Float::MulSub(PS2Float opsend, PS2Float optend)
 	PS2Float mulres = opsend.Mul(optend);
 	PS2Float subres = Sub(mulres);
 	u32 rawres = subres.raw;
-	bool oflw = subres.of;
-	bool uflw = subres.uf;
-	DetermineMacException(4, raw, of, mulres.of, mulres.Sign() ? 1 : 0, rawres, oflw, uflw);
+	bool oflw = subres.HasOverflow();
+	bool uflw = subres.HasUnderflow();
+	DetermineMacException(4, raw, HasOverflow(), mulres.HasOverflow(), mulres.Sign() ? 1 : 0, rawres, oflw, uflw);
 	PS2Float result = PS2Float(rawres);
-	result.of = oflw;
-	result.uf = uflw;
+	result.SetOverflow(oflw);
+	result.SetUnderflow(uflw);
 	return result;
 }
 
@@ -291,14 +291,14 @@ PS2Float PS2Float::MulSubAcc(PS2Float opsend, PS2Float optend)
 	PS2Float mulres = opsend.Mul(optend);
 	PS2Float subres = Sub(mulres);
 	u32 rawres = subres.raw;
-	bool oflw = subres.of;
-	bool uflw = subres.uf;
-	DetermineMacException(9, raw, of, mulres.of, mulres.Sign() ? 1 : 0, rawres, oflw, uflw);
+	bool oflw = subres.HasOverflow();
+	bool uflw = subres.HasUnderflow();
+	DetermineMacException(9, raw, HasOverflow(), mulres.HasOverflow(), mulres.Sign() ? 1 : 0, rawres, oflw, uflw);
 	raw = rawres;
-	of = oflw;
+	SetOverflow(oflw);
 	PS2Float result = PS2Float(rawres);
-	result.of = oflw;
-	result.uf = uflw;
+	result.SetOverflow(oflw);
+	result.SetUnderflow(uflw);
 	return result;
 }
 
@@ -319,7 +319,7 @@ PS2Float PS2Float::Div(PS2Float divend)
 		floatResult &= PS2Float::MAX_FLOATING_POINT_VALUE;
 		floatResult |= (u32)(((s32)(b >> 31) != (s32)(a >> 31)) ? 1 : 0 & 1) << 31;
 		PS2Float result = PS2Float(floatResult);
-		result.dz = true;
+		result.SetDivideByZero();
 		return result;
 	}
 	if (((a & 0x7F800000) == 0) && ((b & 0x7F800000) == 0))
@@ -328,7 +328,7 @@ PS2Float PS2Float::Div(PS2Float divend)
 		floatResult &= PS2Float::MAX_FLOATING_POINT_VALUE;
 		floatResult |= (u32)(((s32)(b >> 31) != (s32)(a >> 31)) ? 1 : 0 & 1) << 31;
 		PS2Float result = PS2Float(floatResult);
-		result.iv = true;
+		result.SetInvalid();
 		return result;
 	}
 	u32 am = mantissa(a) << 2;
@@ -358,7 +358,7 @@ PS2Float PS2Float::Div(PS2Float divend)
 	if (Dvdtexp == 0 && Dvsrexp == 0)
 	{
 		PS2Float result = PS2Float(sign | PS2Float::MAX_FLOATING_POINT_VALUE);
-		result.iv = true;
+		result.SetInvalid();
 		return result;
 	}
 	else if (Dvdtexp == 0 || Dvsrexp != 0)
@@ -368,19 +368,19 @@ PS2Float PS2Float::Div(PS2Float divend)
 	else
 	{
 		PS2Float result = PS2Float(sign | PS2Float::MAX_FLOATING_POINT_VALUE);
-		result.dz = true;
+		result.SetDivideByZero();
 		return result;
 	}
 	if (cexp > 255)
 	{
 		PS2Float result = PS2Float(sign | PS2Float::MAX_FLOATING_POINT_VALUE);
-		result.of = true;
+		result.SetOverflow();
 		return result;
 	}
 	else if (cexp < 1)
 	{
 		PS2Float result = PS2Float(sign);
-		result.uf = true;
+		result.SetUnderflow();
 		return result;
 	}
 	return (quotient & 0x7fffff) | (cexp << 23) | sign;
@@ -392,7 +392,7 @@ PS2Float PS2Float::Sqrt()
 	if ((a & 0x7F800000) == 0)
 	{
 		PS2Float result = PS2Float(0);
-		result.iv = ((a >> 31) & 1) != 0;
+		result.SetInvalid(((a >> 31) & 1) != 0);
 		return result;
 	}
 	u32 m = mantissa(a) << 1;
@@ -423,7 +423,7 @@ PS2Float PS2Float::Sqrt()
 	{
 		if (result.Sign())
 			result = result.Negate();
-		result.iv = true;
+		result.SetInvalid();
 	}
 	return result;
 }
@@ -433,10 +433,10 @@ PS2Float PS2Float::Rsqrt(PS2Float other)
 	PS2Float sqrt = PS2Float(false, other.Exponent(), other.Mantissa()).Sqrt();
 	PS2Float div = Div(sqrt);
 	PS2Float result = PS2Float(div.raw);
-	result.dz = sqrt.dz || div.dz;
-	result.iv = sqrt.iv || div.iv;
-	result.of = div.of;
-	result.uf = div.uf;
+	result.SetDivideByZero(sqrt.HasDivideByZero() || div.HasDivideByZero());
+	result.SetInvalid(sqrt.HasInvalid() || div.HasInvalid());
+	result.SetOverflow(div.HasOverflow());
+	result.SetUnderflow(div.HasUnderflow());
 	return result;
 }
 
@@ -580,13 +580,13 @@ PS2Float PS2Float::DoAdd(PS2Float other)
 	if (rawExp > 255)
 	{
 		PS2Float result = man < 0 ? Min() : Max();
-		result.of = true;
+		result.SetOverflow();
 		return result;
 	}
 	else if (rawExp < 1)
 	{
 		PS2Float result = PS2Float(((u32)man & SIGNMASK) | ((u32)absMan & 0x7FFFFF));
-		result.uf = true;
+		result.SetUnderflow();
 		return result;
 	}
 
@@ -613,13 +613,13 @@ PS2Float PS2Float::DoMul(PS2Float other)
 	if (resExponent > 255)
 	{
 		PS2Float result = PS2Float(sign | MAX_FLOATING_POINT_VALUE);
-		result.of = true;
+		result.SetOverflow();
 		return result;
 	}
 	else if (resExponent < 1)
 	{
 		PS2Float result = PS2Float(sign);
-		result.uf = true;
+		result.SetUnderflow();
 		return result;
 	}
 

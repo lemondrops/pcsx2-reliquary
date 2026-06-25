@@ -92,7 +92,7 @@ bool checkUnderflow(u32& xReg, u32 cFlagsToSet) {
 
 bool checkOverflowUnderflowSoft(PS2Float xReg, u32 cFlagsToSet, bool oflw)
 {
-	if ((oflw && xReg.of) || (!oflw && xReg.uf))
+	if ((oflw && xReg.HasOverflow()) || (!oflw && xReg.HasUnderflow()))
 	{
 		_ContVal_ |= (cFlagsToSet);
 		return true;
@@ -131,12 +131,12 @@ bool checkDivideByZero(u32& xReg, u32 yDivisorReg, u32 zDividendReg, u32 cFlagsT
 
 bool checkDivideByZeroInvalidSoft(PS2Float xReg, u32 cFlagsToSet1, u32 cFlagsToSet2)
 {
-	if (xReg.dz)
+	if (xReg.HasDivideByZero())
 	{
 		_ContVal_ |= cFlagsToSet1;
 		return true;
 	}
-	else if (xReg.iv)
+	else if (xReg.HasInvalid())
 	{
 		_ContVal_ |= cFlagsToSet2;
 		return true;
@@ -376,7 +376,7 @@ void MADD_S() {
 		_FdValUl_ = fmacres.raw;
 		if (checkOverflowUnderflowSoft(fmacres, FPUflagO | FPUflagSO, true)) return;
 		checkOverflowUnderflowSoft(fmacres, FPUflagU | FPUflagSU, false);
-		if (mulres.uf)
+		if (mulres.HasUnderflow())
 			_ContVal_ |= FPUflagSU;
 	}
 	else
@@ -397,7 +397,7 @@ void MADDA_S() {
 		_FAValUl_ = fmacres.raw;
 		if (checkOverflowUnderflowSoft(fmacres, FPUflagO | FPUflagSO, true)) return;
 		checkOverflowUnderflowSoft(fmacres, FPUflagSU, false);
-		if (mulres.uf)
+		if (mulres.HasUnderflow())
 			_ContVal_ |= FPUflagSU;
 	}
 	else
@@ -435,7 +435,7 @@ void MSUB_S() {
 		_FdValUl_ = fmacres.raw;
 		if (checkOverflowUnderflowSoft(fmacres, FPUflagO | FPUflagSO, true)) return;
 		checkOverflowUnderflowSoft(fmacres, FPUflagU | FPUflagSU, false);
-		if (mulres.uf)
+		if (mulres.HasUnderflow())
 			_ContVal_ |= FPUflagSU;
 	}
 	else
@@ -456,7 +456,7 @@ void MSUBA_S() {
 		_FAValUl_ = fmacres.raw;
 		if (checkOverflowUnderflowSoft(fmacres, FPUflagO | FPUflagSO, true)) return;
 		checkOverflowUnderflowSoft(fmacres, FPUflagSU, false);
-		if (mulres.uf)
+		if (mulres.HasUnderflow())
 			_ContVal_ |= FPUflagSU;
 	}
 	else
