@@ -85,7 +85,7 @@ public:
 
 	PS2Float Sub(PS2Float subtrahend);
 
-	PS2Float Mul(PS2Float mulend);
+	__fi PS2Float Mul(PS2Float mulend);
 
 	PS2Float MulAdd(PS2Float opsend, PS2Float optend);
 
@@ -109,13 +109,13 @@ public:
 
 	PS2Float ERSQRT();
 
-	bool IsDenormalized();
+	constexpr bool IsDenormalized() const { return Exponent() == 0; }
 
-	bool IsZero();
+	constexpr bool IsZero() const { return Abs() == 0; }
 
-	u32 Abs();
+	constexpr u32 Abs() const { return raw & MAX_FLOATING_POINT_VALUE; }
 
-	PS2Float Negate();
+	__fi PS2Float Negate() const { return PS2Float(raw ^ SIGNMASK); }
 
 	s32 CompareTo(PS2Float other);
 
@@ -137,7 +137,7 @@ private:
 
 	PS2Float DoAdd(PS2Float other);
 
-	PS2Float DoMul(PS2Float other);
+	__fi PS2Float DoMul(PS2Float other);
 
 	static bool DetermineMultiplicationDivisionOperationSign(PS2Float a, PS2Float b);
 
@@ -147,3 +147,5 @@ private:
 
     static u8 DetermineMacException(u8 mode, u32 acc, bool acc_oflw, bool moflw, s32 msign, u32& addsubres, bool& oflw, bool& uflw);
 };
+
+#include "PS2Float.inl"
