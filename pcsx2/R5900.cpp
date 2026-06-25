@@ -14,6 +14,7 @@
 #include "VMManager.h"
 
 #include "Hardware.h"
+#include "IopBios.h"
 #include "IPU/IPUdma.h"
 
 #include "Elfheader.h"
@@ -55,6 +56,12 @@ In fast boot mode, 15 arguments can fit because the only call to EELOAD is "<ELF
 const int kMaxArgs = 16;
 uptr g_argPtrs[kMaxArgs];
 #define DEBUG_LAUNCHARG 0 // show lots of helpful console messages as the launch arguments are passed to the game
+
+static bool IsDvdVideoEELoadCommand(const std::string& elfname)
+{
+	return cdvd.DiscType == CDVD_TYPE_DVDV && elfname.find(' ') != std::string::npos &&
+		!R3000A::ioman::is_host(elfname) && !elfname.starts_with("cdrom:") && !elfname.starts_with("cdrom0:");
+}
 
 void cpuReset()
 {
@@ -713,7 +720,10 @@ void eeloadHook()
 		}
 	}
 
-	VMManager::Internal::ELFLoadingOnCPUThread(std::move(elfname));
+	if (!IsDvdVideoEELoadCommand(elfname))
+	{
+		VMManager::Internal::ELFLoadingOnCPUThread(std::move(elfname));
+	}
 
 	if (CHECK_EXTRAMEM)
 	{
