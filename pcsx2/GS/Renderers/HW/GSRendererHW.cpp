@@ -1358,10 +1358,10 @@ GSVector4i GSRendererHW::ComputeBoundingBoxRT(const GSVector2i& rtsize, float rt
 	return GSVector4i(box * GSVector4(rtscale)).rintersect(GSVector4i(0, 0, rtsize.x, rtsize.y));
 }
 
-GSVector4i GSRendererHW::ComputeBoundingBoxTex(const GSVector2i& texsize, const GSVector4i& region, float texscale)
+GSVector4i GSRendererHW::ComputeBoundingBoxTex(const GSVector2i& texsize, const GSVector4i& coverage, const GSVector4i& region, float texscale)
 {
 	const GSVector4 offset = GSVector4(region.xyxy()) + GSVector4(-1.0f, -1.0f, 1.0f, 1.0f); // Region offset + round value
-	const GSVector4 box = m_vt.m_min.t.upld(m_vt.m_max.t) + offset;
+	const GSVector4 box = GSVector4(coverage) + offset;
 	return GSVector4i(box * GSVector4(texscale)).rintersect(GSVector4i(0, 0, texsize.x, texsize.y));
 }
 
@@ -5442,6 +5442,25 @@ void GSRendererHW::SetupIA(float target_scale, float sx, float sy, bool req_vert
 					GL_INS("HW: AA1 line expand.");
 					m_conf.vs.expand = GSHWDrawConfig::VSExpand::LineAA1;
 					m_conf.cb_vs.point_size = GSVector2(16.0f * sx, 16.0f * sy);
+
+					if (target_scale == 1.0f)
+					{
+						m_conf.cb_vs.line_aa1_width = 1.0f; // 1 native pixel on each side.
+						m_conf.cb_ps.LineCovScale = 1.0f; // Linear falloff on both sides.
+					}
+					else
+					{
+						// Reduce the amount of blur with upscaling.
+						constexpr float half_native_px = 0.5f;
+						const float upscaled_px = 1.0f / target_scale;
+
+						// Half a native pixel + 1 upscaled pixel on both sides.
+						m_conf.cb_vs.line_aa1_width = half_native_px + upscaled_px;
+
+						// Opaque in middle and linear falloff on last 2 upscaled pixels on each side.
+						m_conf.cb_ps.LineCovScale = (half_native_px + upscaled_px) / (2 * upscaled_px); 
+					}
+
 					m_conf.topology = GSHWDrawConfig::Topology::Triangle;
 					m_conf.indices_per_prim = 6;
 					ExpandLineIndices();
@@ -5583,7 +5602,7 @@ void GSRendererHW::EmulateZbuffer(const GSTextureCache::Target* ds)
 	// No interpolation for flat Z so we can make some optimizations.
 	const bool flat_z = m_vt.m_eq.z || m_vt.m_primclass == GS_POINT_CLASS || m_vt.m_primclass == GS_SPRITE_CLASS;
 
-	m_conf.cb_vs.max_depth = GSVector2i(0xFFFFFFFF);
+	m_conf.cb_vs.max_depth = 0xFFFFFFFF;
 	m_conf.cb_ps.TA_MaxDepth_Af.z = 0.0f;
 	m_conf.ps.zclamp = false;
 
@@ -5597,7 +5616,7 @@ void GSRendererHW::EmulateZbuffer(const GSTextureCache::Target* ds)
 		if (flat_z)
 		{
 			// Clamp in vertex shader.
-			m_conf.cb_vs.max_depth = GSVector2i(max_z);
+			m_conf.cb_vs.max_depth = max_z;
 		}
 		else
 		{
@@ -5881,10 +5900,12 @@ void GSRendererHW::EmulateDATESelectMethod(DATEOptions& date_options, GSTextureC
 
 	const GSDevice::FeatureSupport& features = g_gs_device->Features();
 
+	// Date one can run with complex alpha test if there's no overlap.
 	const bool complex_alpha_test = m_cached_ctx.TEST.ATE &&
 	                                m_cached_ctx.TEST.ATST != ATST_ALWAYS &&
 	                                m_cached_ctx.TEST.ATST != ATST_NEVER &&
-	                                m_cached_ctx.TEST.AFAIL != AFAIL_KEEP;
+	                                m_cached_ctx.TEST.AFAIL != AFAIL_KEEP &&
+	                                m_prim_overlap != PRIM_OVERLAP_NO;
 	if (m_cached_ctx.TEST.DATM)
 	{
 		blend_alpha_min = std::max(blend_alpha_min, 128);
@@ -5927,9 +5948,15 @@ void GSRendererHW::EmulateDATESelectMethod(DATEOptions& date_options, GSTextureC
 		m_conf.require_full_barrier = true;
 		date_options.barrier = true;
 	}
+	else if (m_conf.colormask.wa && complex_alpha_test && features.feedback_loops())
+	{
+		GL_PERF("DATE: Accurate with complex alpha test.");
+		m_conf.require_full_barrier = true;
+		date_options.barrier = true;
+	}
 	// When Blending is disabled and Edge Anti Aliasing is enabled,
 	// the output alpha is Coverage (which we force to 128) so DATE will fail/pass guaranteed on second pass.
-	else if (m_conf.colormask.wa && (m_context->FBA.FBA || IsCoverageAlphaFixedOne()) && features.stencil_buffer)
+	else if (m_conf.colormask.wa && !complex_alpha_test && (m_context->FBA.FBA || IsCoverageAlphaFixedOne()) && features.stencil_buffer)
 	{
 		GL_PERF("DATE: Fast with FBA, all pixels will be >= 128");
 		date_options.stencil_one = !m_cached_ctx.TEST.DATM;
@@ -6206,16 +6233,6 @@ void GSRendererHW::DetermineBarriers(GSTextureCache::Target* rt, GSTextureCache:
 		ComputeDrawlistGetSize(rt->m_scale);
 		m_conf.drawlist = &m_drawlist;
 		m_conf.drawlist_bbox = &m_drawlist_bbox;
-
-		if (m_conf.tex_hazard != GSHWDrawConfig::TEX_HAZARD_NONE)
-		{
-			GetPrimitiveOverlapDrawlistTextureBBox(tex->GetScale());
-			m_conf.drawlist_bbox_tex = &m_drawlist_bbox_tex;
-		}
-		else
-		{
-			m_conf.drawlist_bbox_tex = nullptr;
-		}
 	}
 }
 
@@ -9462,7 +9479,7 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 
 	const GSVector4i tex_region = tex ? tex->GetRegionRect() : GSVector4i::zero();
 	m_conf.samplearea = m_channel_shuffle ? scissor :
-		GSVector4i::loadh(texsize).rintersect(ComputeBoundingBoxTex(texsize, tex_region, texscale));
+		GSVector4i::loadh(texsize).rintersect(ComputeBoundingBoxTex(texsize, tmm.coverage, tex_region, texscale));
 
 	m_conf.scissor = (date_options.enabled && !date_options.barrier) ? m_conf.drawarea : scissor;
 

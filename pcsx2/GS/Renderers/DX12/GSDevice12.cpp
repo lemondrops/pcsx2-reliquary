@@ -1442,6 +1442,7 @@ bool GSDevice12::CheckFeatures(const u32& vendor_id)
 	m_device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &options, sizeof(D3D12_FEATURE_DATA_D3D12_OPTIONS));
 	m_features.rov = options.ROVsSupported;
 
+	Console.WriteLnFmt("D3D12: Tight Alignment: {}", m_allocator->IsTightAlignmentSupported() ? "Supported" : "Not Supported");
 	return true;
 }
 
@@ -3529,11 +3530,6 @@ void GSDevice12::PSSetUnorderedAccess(GSTexture* rt, GSTexture* ds, bool write_r
 {
 	GSTexture12* d12Rt = static_cast<GSTexture12*>(rt);
 	GSTexture12* d12Ds = static_cast<GSTexture12*>(ds);
-	GSTexture12* oldD12Rt = m_tfx_textures_uav[0] != m_null_texture.get() ? m_tfx_textures_uav[0] : nullptr;
-	GSTexture12* oldD12Ds = m_tfx_textures_uav[1] != m_null_texture.get() ? m_tfx_textures_uav[1] : nullptr;
-
-	if (!(d12Rt || d12Ds || oldD12Rt || oldD12Ds))
-		return;
 
 	pxAssert(!(d12Rt || d12Ds) || m_features.rov);
 
@@ -3671,9 +3667,8 @@ void GSDevice12::UnbindTexture(GSTexture12* tex)
 	// RT UAV / depth UAV
 	for (u32 i = TEXTURE_RT_UAV; i <= TEXTURE_DEPTH_UAV; i++)
 	{
-		if (m_tfx_textures_uav[i - TEXTURE_RT_UAV] == tex)
+		if (m_tfx_textures[i] == tex->GetUAVDescriptor())
 		{
-			m_tfx_textures_uav[i - TEXTURE_RT_UAV] = nullptr;
 			m_tfx_textures[i] = m_null_texture->GetUAVDescriptor();
 			m_dirty_flags |= DIRTY_FLAG_TFX_RT_TEXTURES;
 		}
