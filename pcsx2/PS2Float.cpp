@@ -95,6 +95,10 @@ PS2Float PS2Float::Add(PS2Float addend)
 
 	//exponent difference
 	s32 exp_diff = Exponent() - addend.Exponent();
+	if (exp_diff >= 25)
+		return *this;
+	else if (exp_diff <= -25)
+		return addend;
 
 	//diff = 1 .. 24, expt < expd
 	if (exp_diff > 0 && exp_diff < 25)
@@ -144,6 +148,10 @@ PS2Float PS2Float::Sub(PS2Float subtrahend)
 
 	//exponent difference
 	s32 exp_diff = Exponent() - subtrahend.Exponent();
+	if (exp_diff >= 25)
+		return *this;
+	else if (exp_diff <= -25)
+		return subtrahend.Negate();
 
 	//diff = 1 .. 24, expt < expd
 	if (exp_diff > 0 && exp_diff < 25)

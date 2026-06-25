@@ -67,7 +67,7 @@ static __fi u64 MulMantissa(u32 a, u32 b)
 
 inline __fi PS2Float PS2Float::Mul(PS2Float mulend)
 {
-	if (IsDenormalized() || mulend.IsDenormalized() || IsZero() || mulend.IsZero())
+	if (IsDenormalized() || mulend.IsDenormalized())
 		return PS2Float(DetermineMultiplicationDivisionOperationSign(*this, mulend), 0, 0);
 
 	return DoMul(mulend);
