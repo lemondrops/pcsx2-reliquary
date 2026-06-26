@@ -61,6 +61,8 @@
 
 //****************************************************************
 
+static bool s_fpuAccOverflow = false;
+
 // If we have an infinity value, then Overflow has occured.
 bool checkOverflow(u32& xReg, u32 cFlagsToSet)
 {
@@ -97,7 +99,7 @@ bool checkOverflowUnderflowSoft(PS2Float xReg, u32 cFlagsToSet, bool oflw)
 		_ContVal_ |= (cFlagsToSet);
 		return true;
 	}
-	else if (cFlagsToSet & FPUflagO)
+	else if (cFlagsToSet & (FPUflagO | FPUflagU))
 		_ContVal_ &= oflw ? ~FPUflagO : ~FPUflagU;
 
 	return false;
@@ -244,12 +246,34 @@ static __fi PS2Float fpuAccurateDiv(u32 a, u32 b)
 
 static __fi PS2Float fpuAccurateMulAdd(u32 a, u32 b, u32 c)
 {
-	return PS2Float(a).MulAdd(PS2Float(b), PS2Float(c));
+	PS2Float acc(a);
+	if (s_fpuAccOverflow)
+		acc.SetOverflow();
+	return acc.MulAdd(PS2Float(b), PS2Float(c));
+}
+
+static __fi PS2Float fpuAccurateMulAddAcc(u32 a, u32 b, u32 c)
+{
+	PS2Float acc(a);
+	if (s_fpuAccOverflow)
+		acc.SetOverflow();
+	return acc.MulAddAcc(PS2Float(b), PS2Float(c));
 }
 
 static __fi PS2Float fpuAccurateMulSub(u32 a, u32 b, u32 c)
 {
-	return PS2Float(a).MulSub(PS2Float(b), PS2Float(c));
+	PS2Float acc(a);
+	if (s_fpuAccOverflow)
+		acc.SetOverflow();
+	return acc.MulSub(PS2Float(b), PS2Float(c));
+}
+
+static __fi PS2Float fpuAccurateMulSubAcc(u32 a, u32 b, u32 c)
+{
+	PS2Float acc(a);
+	if (s_fpuAccOverflow)
+		acc.SetOverflow();
+	return acc.MulSubAcc(PS2Float(b), PS2Float(c));
 }
 
 void ABS_S() {
@@ -278,6 +302,7 @@ void ADDA_S() {
 	{
 		PS2Float addres = fpuAccurateAdd(_FsValUl_, _FtValUl_);
 		_FAValUl_ = addres.raw;
+		s_fpuAccOverflow = addres.HasOverflow();
 		if (checkOverflowUnderflowSoft(addres, FPUflagO | FPUflagSO, true)) return;
 		checkOverflowUnderflowSoft(addres, FPUflagU | FPUflagSU, false);
 	}
@@ -371,7 +396,7 @@ void MADD_S() {
 	if (CHECK_FPU_SOFT_ADDSUB && CHECK_FPU_SOFT_MUL)
 	{
 		PS2Float mulres = fpuAccurateMul(_FsValUl_, _FtValUl_);
-		PS2Float fmacres = fpuAccurateMulAdd(_FAValUl_, _FsValUl_, _FtValUl_);
+		PS2Float fmacres = fpuAccurateMulAddAcc(_FAValUl_, _FsValUl_, _FtValUl_);
 		_FdValUl_ = fmacres.raw;
 		if (checkOverflowUnderflowSoft(fmacres, FPUflagO | FPUflagSO, true)) return;
 		checkOverflowUnderflowSoft(fmacres, FPUflagU | FPUflagSU, false);
@@ -392,8 +417,9 @@ void MADDA_S() {
 	if (CHECK_FPU_SOFT_ADDSUB && CHECK_FPU_SOFT_MUL)
 	{
 		PS2Float mulres = fpuAccurateMul(_FsValUl_, _FtValUl_);
-		PS2Float fmacres = fpuAccurateMulAdd(_FAValUl_, _FsValUl_, _FtValUl_);
+		PS2Float fmacres = fpuAccurateMulAddAcc(_FAValUl_, _FsValUl_, _FtValUl_);
 		_FAValUl_ = fmacres.raw;
+		s_fpuAccOverflow = fmacres.HasOverflow();
 		if (checkOverflowUnderflowSoft(fmacres, FPUflagO | FPUflagSO, true)) return;
 		checkOverflowUnderflowSoft(fmacres, FPUflagSU, false);
 		if (mulres.HasUnderflow())
@@ -430,7 +456,7 @@ void MSUB_S() {
 	if (CHECK_FPU_SOFT_ADDSUB && CHECK_FPU_SOFT_MUL)
 	{
 		PS2Float mulres = fpuAccurateMul(_FsValUl_, _FtValUl_);
-		PS2Float fmacres = fpuAccurateMulSub(_FAValUl_, _FsValUl_, _FtValUl_);
+		PS2Float fmacres = fpuAccurateMulSubAcc(_FAValUl_, _FsValUl_, _FtValUl_);
 		_FdValUl_ = fmacres.raw;
 		if (checkOverflowUnderflowSoft(fmacres, FPUflagO | FPUflagSO, true)) return;
 		checkOverflowUnderflowSoft(fmacres, FPUflagU | FPUflagSU, false);
@@ -451,8 +477,9 @@ void MSUBA_S() {
 	if (CHECK_FPU_SOFT_ADDSUB && CHECK_FPU_SOFT_MUL)
 	{
 		PS2Float mulres = fpuAccurateMul(_FsValUl_, _FtValUl_);
-		PS2Float fmacres = fpuAccurateMulSub(_FAValUl_, _FsValUl_, _FtValUl_);
+		PS2Float fmacres = fpuAccurateMulSubAcc(_FAValUl_, _FsValUl_, _FtValUl_);
 		_FAValUl_ = fmacres.raw;
+		s_fpuAccOverflow = fmacres.HasOverflow();
 		if (checkOverflowUnderflowSoft(fmacres, FPUflagO | FPUflagSO, true)) return;
 		checkOverflowUnderflowSoft(fmacres, FPUflagSU, false);
 		if (mulres.HasUnderflow())
@@ -491,6 +518,7 @@ void MULA_S() {
 	{
 		PS2Float mulres = fpuAccurateMul(_FsValUl_, _FtValUl_);
 		_FAValUl_ = mulres.raw;
+		s_fpuAccOverflow = mulres.HasOverflow();
 		if (checkOverflowUnderflowSoft(mulres, FPUflagO | FPUflagSO, true)) return;
 		checkOverflowUnderflowSoft(mulres, FPUflagU | FPUflagSU, false);
 	}
@@ -584,6 +612,7 @@ void SUBA_S() {
 	{
 		PS2Float subres = fpuAccurateSub(_FsValUl_, _FtValUl_);
 		_FAValUl_ = subres.raw;
+		s_fpuAccOverflow = subres.HasOverflow();
 		if (checkOverflowUnderflowSoft(subres, FPUflagO | FPUflagSO, true)) return;
 		checkOverflowUnderflowSoft(subres, FPUflagU | FPUflagSU, false);
 	}
