@@ -39,6 +39,7 @@
 #include "SPU2/spu2.h"
 #include "SupportURLs.h"
 #include "USB/USB.h"
+#include "VUops.h"
 #include "Vif_Dynarec.h"
 #include "VMManager.h"
 #include "ps2/BiosTools.h"
@@ -2861,7 +2862,8 @@ void VMManager::UpdateCPUImplementations()
 	psxCpu = CHECK_IOPREC ? &psxRec : &psxInt;
 
 	CpuVU0 = EmuConfig.Cpu.Recompiler.EnableVU0 ? static_cast<BaseVUmicroCPU*>(&CpuMicroVU0) : static_cast<BaseVUmicroCPU*>(&CpuIntVU0);
-	CpuVU1 = (EmuConfig.Cpu.Recompiler.EnableVU1 && !(CHECK_VU_SOFT_ADDSUB(1) || CHECK_VU_SOFT_MUL(1))) ? static_cast<BaseVUmicroCPU*>(&CpuMicroVU1) : static_cast<BaseVUmicroCPU*>(&CpuIntVU1);
+	CpuVU1 = REC_VU1 ? static_cast<BaseVUmicroCPU*>(&CpuMicroVU1) : static_cast<BaseVUmicroCPU*>(&CpuIntVU1);
+	vu1SoftNativeDiagProvider(CpuVU1 == static_cast<BaseVUmicroCPU*>(&CpuMicroVU1));
 #else
 	Cpu = &intCpu;
 	psxCpu = &psxInt;

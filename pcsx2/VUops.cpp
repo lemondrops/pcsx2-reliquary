@@ -8,6 +8,7 @@
 #include "Gif_Unit.h"
 #include "MTVU.h"
 
+#include <atomic>
 #include <cmath>
 u32 laststall = 0;
 //Lower/Upper instructions can use that..
@@ -36,6 +37,37 @@ static constexpr u32 VU_FMAC_STICKY_SOURCE_VALID = 1u << 20;
 #define VI_BACKUP
 
 alignas(16) static VECTOR RDzero;
+
+static std::atomic<u64> s_vu1_soft_native_diag_provider_microvu{0};
+static std::atomic<u64> s_vu1_soft_native_diag_provider_interp{0};
+static std::atomic<u64> s_vu1_soft_native_diag_upper_helper{0};
+
+static bool vu1SoftNativeDiagShouldLog(u64 count)
+{
+	return count <= 16 || (count & (count - 1)) == 0;
+}
+
+void vu1SoftNativeDiagProvider(bool microVUProvider)
+{
+	if (!IsVU1SoftNativeDiagEnabled())
+		return;
+
+	const u64 micro = microVUProvider ? s_vu1_soft_native_diag_provider_microvu.fetch_add(1, std::memory_order_relaxed) + 1 : s_vu1_soft_native_diag_provider_microvu.load(std::memory_order_relaxed);
+	const u64 interp = !microVUProvider ? s_vu1_soft_native_diag_provider_interp.fetch_add(1, std::memory_order_relaxed) + 1 : s_vu1_soft_native_diag_provider_interp.load(std::memory_order_relaxed);
+	const u64 count = microVUProvider ? micro : interp;
+	if (vu1SoftNativeDiagShouldLog(count))
+		Console.WriteLn("VU1 soft native diag: provider=%s micro=%" PRIu64 " interp=%" PRIu64, microVUProvider ? "microVU" : "interpreter", micro, interp);
+}
+
+void vu1SoftNativeDiagUpperHelper(VuUpperFmacSoftOp op)
+{
+	if (!IsVU1SoftNativeDiagEnabled())
+		return;
+
+	const u64 count = s_vu1_soft_native_diag_upper_helper.fetch_add(1, std::memory_order_relaxed) + 1;
+	if (vu1SoftNativeDiagShouldLog(count))
+		Console.WriteLn("VU1 soft native diag: upper_helper=%" PRIu64 " op=%u", count, static_cast<u32>(op));
+}
 
 static __fi u32 vuApplyFMACStatusFlag(u32 current_status, u32 fmac_status, bool write_sticky)
 {
@@ -1197,6 +1229,9 @@ static __fi void _vuMSUBAw(VURegs* VU) { vuMSUBAbc(VU, VU->VF[_Ft_].i.w); }
 
 void vuUpperFmacSoftHelper(VURegs* VU, VuUpperFmacSoftOp op)
 {
+	if (VU == &VU1)
+		vu1SoftNativeDiagUpperHelper(op);
+
 	switch (op)
 	{
 		case VuUpperFmacSoftOp::ADD:

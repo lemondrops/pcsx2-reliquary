@@ -111,6 +111,8 @@ extern void _vuTestLowerStalls(VURegs * VU, _VURegsNum *VUregsn);
 extern void _vuAddUpperStalls(VURegs * VU, _VURegsNum *VUregsn);
 extern void _vuAddLowerStalls(VURegs * VU, _VURegsNum *VUregsn);
 extern void _vuXGKICKTransfer(s32 cycles, bool flush);
+extern void vu1SoftNativeDiagProvider(bool microVUProvider);
+extern void vu1SoftNativeDiagUpperHelper(VuUpperFmacSoftOp op);
 extern void vuUpperFmacSoftHelper(VURegs* VU, VuUpperFmacSoftOp op);
 extern void vuUpperFmacSoftNativeFixup(VURegs* VU, VuUpperFmacSoftOp op);
 extern void vuLowerDivSoftHelper(VURegs* VU, u32 op);

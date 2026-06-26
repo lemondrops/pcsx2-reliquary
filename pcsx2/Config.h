@@ -9,6 +9,8 @@
 #include "common/FPControl.h"
 
 #include <array>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 #include <optional>
 #include <vector>
@@ -1588,11 +1590,31 @@ namespace EmuFolders
 // ------------ CPU / Recompiler Options ---------------
 
 #ifdef _M_X86 // TODO: Remove me once EE/VU/IOP recs are added.
-#define REC_VU1 (EmuConfig.Cpu.Recompiler.EnableVU1 && !(CHECK_VU_SOFT_ADDSUB(1) || CHECK_VU_SOFT_MUL(1)))
-#define THREAD_VU1 (REC_VU1 && EmuConfig.Speedhacks.vuThread)
+static inline bool IsVU1SoftNativeDiagEnabled()
+{
+	static const bool enabled = []() {
+		const char* value = std::getenv("PCSX2_VU1_SOFT_NATIVE_DIAG");
+		return value && value[0] && value[0] != '0';
+	}();
+	return enabled;
+}
+
+static inline bool IsVU1SoftNativeDiagFallbackOnly()
+{
+	static const bool enabled = []() {
+		const char* value = std::getenv("PCSX2_VU1_SOFT_NATIVE_DIAG");
+		return value && std::strcmp(value, "fallback") == 0;
+	}();
+	return enabled;
+}
+
+#define REC_VU1 (EmuConfig.Cpu.Recompiler.EnableVU1 && ((IsVU1SoftNativeDiagEnabled() && !IsVU1SoftNativeDiagFallbackOnly()) || !(CHECK_VU_SOFT_ADDSUB(1) || CHECK_VU_SOFT_MUL(1))))
+#define THREAD_VU1 (REC_VU1 && EmuConfig.Speedhacks.vuThread && !(CHECK_VU_SOFT_ADDSUB(1) || CHECK_VU_SOFT_MUL(1)))
 #else
 #define THREAD_VU1 false
 #define REC_VU1 false
+#define IsVU1SoftNativeDiagEnabled() false
+#define IsVU1SoftNativeDiagFallbackOnly() false
 #endif
 #define INSTANT_VU1 (EmuConfig.Speedhacks.vu1Instant)
 #define CHECK_EEREC (EmuConfig.Cpu.Recompiler.EnableEE)

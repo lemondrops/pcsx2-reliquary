@@ -231,10 +231,17 @@ static bool mVUCanUseUpperSoftHelper(microVU& mVU, int opCase, int opType, bool 
 {
 	if (mVU.index != 1)
 		return false;
+	if (!IsVU1SoftNativeDiagEnabled())
+		return false;
+	if (IsVU1SoftNativeDiagFallbackOnly())
+		return false;
+	if (!mVU1Stage1NativeAllowed)
+		return false;
+	if ((opCase != 1 && opCase != 2) || isACC)
+		return false;
 	switch (opType)
 	{
 		case 0:
-		case 5:
 		case 1:
 			return CHECK_VU_SOFT_ADDSUB(1);
 		case 2:
@@ -246,7 +253,7 @@ static bool mVUCanUseUpperSoftHelper(microVU& mVU, int opCase, int opType, bool 
 
 static bool mVUCanUseUpperSoftHelperMulAdd(microVU& mVU, int opCase)
 {
-	return mVU.index == 1 && CHECK_VU_SOFT_ADDSUB(1) && CHECK_VU_SOFT_MUL(1);
+	return false;
 }
 
 static VuUpperFmacSoftOp mVUselectUpperSoftHelperOp(microVU& mVU, int opCase, int opType, bool isACC)
