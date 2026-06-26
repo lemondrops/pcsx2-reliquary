@@ -35,20 +35,9 @@ static __fi CSAResult CSA(u32 a, u32 b, u32 c)
 static __fi s32 quotientSelect(CSAResult current)
 {
 	// Note: Decimal point is between bits 24 and 25
-	u32 mask = (1 << 24) - 1; // Bit 23 needs to be or'd in instead of added
-	s32 test = ((current.sum & ~mask) + current.carry) | (current.sum & mask);
-	if (test >= 1 << 23)
-	{ // test >= 0.25
-		return 1;
-	}
-	else if (test < (s32)(~0u << 24))
-	{ // test < -0.5
-		return -1;
-	}
-	else
-	{
-		return 0;
-	}
+	constexpr u32 mask = (1 << 24) - 1; // Bit 23 needs to be or'd in instead of added
+	const s32 test = ((current.sum & ~mask) + current.carry) | (current.sum & mask);
+	return (test >= (1 << 23)) - (test < static_cast<s32>(~0u << 24));
 }
 
 static __fi u32 mantissa(u32 x)
@@ -164,11 +153,30 @@ PS2Float PS2Float::Div(PS2Float divend)
 		result.SetInvalid();
 		return result;
 	}
+	u32 sign = ((a ^ b) & 0x80000000);
+	u32 Dvdtexp = exponent(a);
+	u32 Dvsrexp = exponent(b);
+	s32 cexp = Dvdtexp - Dvsrexp + 126;
+	if (cexp > 255)
+	{
+		PS2Float result = PS2Float(sign | PS2Float::MAX_FLOATING_POINT_VALUE);
+		result.SetOverflow();
+		return result;
+	}
+	else if (cexp < 0)
+	{
+		PS2Float result = PS2Float(sign);
+		result.SetUnderflow();
+		return result;
+	}
 	u32 am = mantissa(a) << 2;
 	u32 bm = mantissa(b) << 2;
 	struct CSAResult current = {am, 0};
 	u32 quotient = 0;
 	int quotientBit = 1;
+#if defined(__clang__)
+#pragma clang loop unroll(full)
+#endif
 	for (int i = 0; i < 25; i++)
 	{
 		quotient = (quotient << 1) + quotientBit;
@@ -179,10 +187,6 @@ PS2Float PS2Float::Div(PS2Float divend)
 		current.sum = csa.sum << 1;
 		current.carry = csa.carry << 1;
 	}
-	u32 sign = ((a ^ b) & 0x80000000);
-	u32 Dvdtexp = exponent(a);
-	u32 Dvsrexp = exponent(b);
-	s32 cexp = Dvdtexp - Dvsrexp + 126;
 	if (quotient >= (1 << 24))
 	{
 		cexp += 1;
@@ -234,6 +238,9 @@ PS2Float PS2Float::Sqrt()
 	struct CSAResult current = {m, 0};
 	u32 quotient = 0;
 	s32 quotientBit = 1;
+#if defined(__clang__)
+#pragma clang loop unroll(full)
+#endif
 	for (s32 i = 0; i < 25; i++)
 	{
 		// Adding n to quotient adds n * (2*quotient + n) to quotient^2
