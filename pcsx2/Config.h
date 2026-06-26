@@ -1608,7 +1608,7 @@ static inline bool IsVU1SoftNativeDiagFallbackOnly()
 	return enabled;
 }
 
-#define REC_VU1 (EmuConfig.Cpu.Recompiler.EnableVU1 && ((IsVU1SoftNativeDiagEnabled() && !IsVU1SoftNativeDiagFallbackOnly()) || !(CHECK_VU_SOFT_ADDSUB(1) || CHECK_VU_SOFT_MUL(1))))
+#define REC_VU1 (EmuConfig.Cpu.Recompiler.EnableVU1 && !IsVU1SoftNativeDiagFallbackOnly())
 #define THREAD_VU1 (REC_VU1 && EmuConfig.Speedhacks.vuThread && !(CHECK_VU_SOFT_ADDSUB(1) || CHECK_VU_SOFT_MUL(1)))
 #else
 #define THREAD_VU1 false

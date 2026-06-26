@@ -402,7 +402,7 @@ static mVU1Stage1ScanResult mVU1ScanNativeSoftFloatStage1(microVU& mVU, s32 star
 	const bool soft_mul = CHECK_VU_SOFT_MUL(1) != 0;
 	if (!soft_addsub && !soft_mul)
 		return {false, "soft-disabled", static_cast<u32>(start), 0};
-	if (mVU.index != 1 || !IsVU1SoftNativeDiagEnabled() || IsVU1SoftNativeDiagFallbackOnly())
+	if (mVU.index != 1 || IsVU1SoftNativeDiagFallbackOnly())
 		return {false, "diag-disabled", static_cast<u32>(start), 0};
 	if (start < 0 || end <= start)
 		return {false, "empty-range", static_cast<u32>(start), 0};

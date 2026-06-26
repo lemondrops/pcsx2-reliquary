@@ -1511,6 +1511,79 @@ void vuUpperFmacSoftHelper(VURegs* VU, VuUpperFmacSoftOp op)
 
 void vuUpperFmacSoftNativeFixup(VURegs* VU, VuUpperFmacSoftOp op)
 {
+	auto updateMaskedBinaryFlags = [VU](PS2Float (*fn)(u32, u32)) {
+		VECTOR flags_only;
+		vuApplyXYZWResults(VU, &flags_only,
+			fn(VU->VF[_Fs_].i.x, VU->VF[_Ft_].i.x),
+			fn(VU->VF[_Fs_].i.y, VU->VF[_Ft_].i.y),
+			fn(VU->VF[_Fs_].i.z, VU->VF[_Ft_].i.z),
+			fn(VU->VF[_Fs_].i.w, VU->VF[_Ft_].i.w));
+		const u32 xyzw = (VU->code >> 21) & 0xf;
+		if (xyzw != 0xf)
+		{
+			const u32 lane_mask = xyzw | (xyzw << 4) | (xyzw << 8) | (xyzw << 12);
+			VU->macflag &= lane_mask;
+			VU_STAT_UPDATE_INLINE(VU);
+			VU->statusflag |= 0x300;
+			VU->VI[REG_STATUS_FLAG].UL = VU->statusflag;
+		}
+	};
+	auto addBroadcastSticky = [VU]() {
+		VU->statusflag |= 0x300;
+		VU->VI[REG_STATUS_FLAG].UL |= 0x300;
+	};
+
+	switch (op)
+	{
+		case VuUpperFmacSoftOp::ADD:
+			updateMaskedBinaryFlags(vuAccurateAdd);
+			return;
+		case VuUpperFmacSoftOp::ADDx:
+			addBroadcastSticky();
+			return;
+		case VuUpperFmacSoftOp::ADDy:
+			addBroadcastSticky();
+			return;
+		case VuUpperFmacSoftOp::ADDz:
+			addBroadcastSticky();
+			return;
+		case VuUpperFmacSoftOp::ADDw:
+			addBroadcastSticky();
+			return;
+		case VuUpperFmacSoftOp::SUB:
+			updateMaskedBinaryFlags(vuAccurateSub);
+			return;
+		case VuUpperFmacSoftOp::SUBx:
+			addBroadcastSticky();
+			return;
+		case VuUpperFmacSoftOp::SUBy:
+			addBroadcastSticky();
+			return;
+		case VuUpperFmacSoftOp::SUBz:
+			addBroadcastSticky();
+			return;
+		case VuUpperFmacSoftOp::SUBw:
+			addBroadcastSticky();
+			return;
+		case VuUpperFmacSoftOp::MUL:
+			updateMaskedBinaryFlags(vuAccurateMul);
+			return;
+		case VuUpperFmacSoftOp::MULx:
+			addBroadcastSticky();
+			return;
+		case VuUpperFmacSoftOp::MULy:
+			addBroadcastSticky();
+			return;
+		case VuUpperFmacSoftOp::MULz:
+			addBroadcastSticky();
+			return;
+		case VuUpperFmacSoftOp::MULw:
+			addBroadcastSticky();
+			return;
+		default:
+			break;
+	}
+
 	auto productUnderflows = [](u32 fs, u32 ft) {
 		const u32 afs = fs & 0x7fffffffu;
 		const u32 aft = ft & 0x7fffffffu;

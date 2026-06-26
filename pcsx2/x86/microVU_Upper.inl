@@ -231,8 +231,6 @@ static bool mVUCanUseUpperSoftHelper(microVU& mVU, int opCase, int opType, bool 
 {
 	if (mVU.index != 1)
 		return false;
-	if (!IsVU1SoftNativeDiagEnabled())
-		return false;
 	if (IsVU1SoftNativeDiagFallbackOnly())
 		return false;
 	if (!mVU1Stage1NativeAllowed)
