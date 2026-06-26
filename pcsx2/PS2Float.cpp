@@ -40,6 +40,12 @@ static __fi s32 quotientSelect(CSAResult current)
 	return (test >= (1 << 23)) - (test < static_cast<s32>(~0u << 24));
 }
 
+static __fi CSAResult selectCSAResult(CSAResult current, CSAResult csa, s32 quotientBit)
+{
+	const u32 mask = static_cast<u32>(-(quotientBit != 0));
+	return {(current.sum & ~mask) | (csa.sum & mask), (current.carry & ~mask) | (csa.carry & mask)};
+}
+
 static __fi u32 mantissa(u32 x)
 {
 	return (x & 0x7fffff) | 0x800000;
@@ -174,7 +180,7 @@ PS2Float PS2Float::Div(PS2Float divend)
 		u32 add = quotientBit > 0 ? ~bm : quotientBit < 0 ? bm : 0;
 		current.carry += quotientBit > 0;
 		struct CSAResult csa = CSA(current.sum, current.carry, add);
-		quotientBit = quotientSelect(quotientBit ? csa : current);
+		quotientBit = quotientSelect(selectCSAResult(current, csa, quotientBit));
 		current.sum = csa.sum << 1;
 		current.carry = csa.carry << 1;
 	}
@@ -226,7 +232,7 @@ PS2Float PS2Float::Sqrt()
 		u32 add = quotientBit > 0 ? ~adjust : quotientBit < 0 ? adjust : 0;
 		current.carry += quotientBit > 0;
 		struct CSAResult csa = CSA(current.sum, current.carry, add);
-		quotientBit = quotientSelect(quotientBit ? csa : current);
+		quotientBit = quotientSelect(selectCSAResult(current, csa, quotientBit));
 		current.sum = csa.sum << 1;
 		current.carry = csa.carry << 1;
 	}
@@ -241,6 +247,18 @@ PS2Float PS2Float::Sqrt()
 PS2Float PS2Float::Rsqrt(PS2Float other)
 {
 	const u32 other_abs = other.Abs();
+	if ((other_abs & 0x7F800000) == 0)
+	{
+		PS2Float result = PS2Float((raw & SIGNMASK) | PS2Float::MAX_FLOATING_POINT_VALUE);
+		if (IsDenormalized())
+			result.SetInvalid();
+		else
+			result.SetDivideByZero();
+		return result;
+	}
+	if (IsDenormalized())
+		return PS2Float(raw & SIGNMASK);
+
 	if (!IsDenormalized() && (other_abs & 0x7F800000) != 0)
 	{
 		const u32 sign = raw & SIGNMASK;
