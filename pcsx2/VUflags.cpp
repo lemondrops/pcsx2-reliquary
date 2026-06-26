@@ -147,5 +147,5 @@ __ri void VU_STAT_UPDATE(VURegs * VU) {
 	if (VU->macflag & 0x0F00) newflag |= 0x4;
 	if (VU->macflag & 0xF000) newflag |= 0x8;
 	// Save old sticky flags and D/I settings, everthing else is the new flags only
-	VU->statusflag = newflag;
+	VU->statusflag = (VU->statusflag & 0xFC0) | newflag;
 }

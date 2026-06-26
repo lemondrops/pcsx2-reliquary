@@ -88,10 +88,12 @@ public:
 	__fi PS2Float Mul(PS2Float mulend);
 
 	PS2Float MulAdd(PS2Float opsend, PS2Float optend);
+	PS2Float AddMulResult(PS2Float mulres);
 
 	PS2Float MulAddAcc(PS2Float opsend, PS2Float optend);
 
 	PS2Float MulSub(PS2Float opsend, PS2Float optend);
+	PS2Float SubMulResult(PS2Float mulres);
 
 	PS2Float MulSubAcc(PS2Float opsend, PS2Float optend);
 

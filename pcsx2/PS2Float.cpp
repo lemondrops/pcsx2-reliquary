@@ -174,6 +174,11 @@ PS2Float PS2Float::Sub(PS2Float subtrahend)
 PS2Float PS2Float::MulAdd(PS2Float opsend, PS2Float optend)
 {
 	PS2Float mulres = opsend.Mul(optend);
+	return AddMulResult(mulres);
+}
+
+PS2Float PS2Float::AddMulResult(PS2Float mulres)
+{
 	PS2Float addres = Add(mulres);
 	u32 rawres = addres.raw;
 	bool oflw = addres.HasOverflow();
@@ -204,6 +209,11 @@ PS2Float PS2Float::MulAddAcc(PS2Float opsend, PS2Float optend)
 PS2Float PS2Float::MulSub(PS2Float opsend, PS2Float optend)
 {
 	PS2Float mulres = opsend.Mul(optend);
+	return SubMulResult(mulres);
+}
+
+PS2Float PS2Float::SubMulResult(PS2Float mulres)
+{
 	PS2Float subres = Sub(mulres);
 	u32 rawres = subres.raw;
 	bool oflw = subres.HasOverflow();
