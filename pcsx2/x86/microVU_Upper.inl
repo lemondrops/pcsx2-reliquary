@@ -227,12 +227,156 @@ static void setupFtReg(microVU& mVU, xmm& Ft, xmm& tempFt, int opCase, int clamp
 	}
 }
 
+static bool mVUCanUseUpperSoftHelper(microVU& mVU, int opCase, int opType, bool isACC)
+{
+	if (mVU.index != 1)
+		return false;
+	switch (opType)
+	{
+		case 0:
+		case 5:
+		case 1:
+			return CHECK_VU_SOFT_ADDSUB(1);
+		case 2:
+			return CHECK_VU_SOFT_MUL(1);
+		default:
+			return false;
+	}
+}
+
+static bool mVUCanUseUpperSoftHelperMulAdd(microVU& mVU, int opCase)
+{
+	return mVU.index == 1 && CHECK_VU_SOFT_ADDSUB(1) && CHECK_VU_SOFT_MUL(1);
+}
+
+static VuUpperFmacSoftOp mVUselectUpperSoftHelperOp(microVU& mVU, int opCase, int opType, bool isACC)
+{
+	static constexpr VuUpperFmacSoftOp add_ops[][7] = {
+		{VuUpperFmacSoftOp::ADD, VuUpperFmacSoftOp::ADDi, VuUpperFmacSoftOp::ADDq, VuUpperFmacSoftOp::ADDx, VuUpperFmacSoftOp::ADDy, VuUpperFmacSoftOp::ADDz, VuUpperFmacSoftOp::ADDw},
+		{VuUpperFmacSoftOp::ADDA, VuUpperFmacSoftOp::ADDAi, VuUpperFmacSoftOp::ADDAq, VuUpperFmacSoftOp::ADDAx, VuUpperFmacSoftOp::ADDAy, VuUpperFmacSoftOp::ADDAz, VuUpperFmacSoftOp::ADDAw},
+	};
+	static constexpr VuUpperFmacSoftOp sub_ops[][7] = {
+		{VuUpperFmacSoftOp::SUB, VuUpperFmacSoftOp::SUBi, VuUpperFmacSoftOp::SUBq, VuUpperFmacSoftOp::SUBx, VuUpperFmacSoftOp::SUBy, VuUpperFmacSoftOp::SUBz, VuUpperFmacSoftOp::SUBw},
+		{VuUpperFmacSoftOp::SUBA, VuUpperFmacSoftOp::SUBAi, VuUpperFmacSoftOp::SUBAq, VuUpperFmacSoftOp::SUBAx, VuUpperFmacSoftOp::SUBAy, VuUpperFmacSoftOp::SUBAz, VuUpperFmacSoftOp::SUBAw},
+	};
+	static constexpr VuUpperFmacSoftOp mul_ops[][7] = {
+		{VuUpperFmacSoftOp::MUL, VuUpperFmacSoftOp::MULi, VuUpperFmacSoftOp::MULq, VuUpperFmacSoftOp::MULx, VuUpperFmacSoftOp::MULy, VuUpperFmacSoftOp::MULz, VuUpperFmacSoftOp::MULw},
+		{VuUpperFmacSoftOp::MULA, VuUpperFmacSoftOp::MULAi, VuUpperFmacSoftOp::MULAq, VuUpperFmacSoftOp::MULAx, VuUpperFmacSoftOp::MULAy, VuUpperFmacSoftOp::MULAz, VuUpperFmacSoftOp::MULAw},
+	};
+
+	const int variant = (opCase == 3) ? 1 : (opCase == 4) ? 2 : (opCase == 2) ? (3 + _bc_) : 0;
+	const int dst = isACC ? 1 : 0;
+	return (opType == 0 || opType == 5) ? add_ops[dst][variant] : (opType == 1) ? sub_ops[dst][variant] : mul_ops[dst][variant];
+}
+
+static VuUpperFmacSoftOp mVUselectUpperSoftHelperMulAddOp(microVU& mVU, int opCase, VuUpperFmacSoftOp normal, VuUpperFmacSoftOp immediate, VuUpperFmacSoftOp q, VuUpperFmacSoftOp x)
+{
+	if (opCase == 3)
+		return immediate;
+	if (opCase == 4)
+		return q;
+	if (opCase == 2)
+		return static_cast<VuUpperFmacSoftOp>(static_cast<u32>(x) + _bc_);
+	return normal;
+}
+
+static void mVUemitUpperSoftHelperCall(microVU& mVU, VuUpperFmacSoftOp op)
+{
+	static constexpr u32 VU_FMAC_STICKY_SOURCE_VALID = 1u << 20;
+	static constexpr u32 VU_FMAC_NATIVE_PRODUCT_UNDERFLOW = 1u << 21;
+
+	mVU.regAlloc->flushAll();
+
+	mVUallocSFLAGc(gprT1, gprT2, sFLAG.lastWrite);
+	xOR(gprT1, ptr32[&mVU.regs().VI[REG_STATUS_FLAG].UL]);
+	xMOV(ptr32[&mVU.regs().statusflag], gprT1);
+	xMOV(ptr32[&mVU.regs().VI[REG_STATUS_FLAG].UL], gprT1);
+	mVUallocMFLAGa(mVU, gprT1, mFLAG.lastWrite);
+	xMOV(ptr32[&mVU.regs().macflag], gprT1);
+	xMOV(ptr32[&mVU.regs().code], mVU.code);
+	getQreg(xmmT1, mVUinfo.readQ);
+	xMOVSS(ptr32[&mVU.regs().VI[REG_Q].UL], xmmT1);
+
+	mVUbackupRegs(mVU, true, false);
+	xLoadFarAddr(arg1reg, &mVU.regs());
+	xMOV(arg2regd, static_cast<u32>(op));
+	xFastCall((void*)vuUpperFmacSoftHelper, arg1reg, arg2reg);
+	xLoadFarAddr(arg1reg, &mVU.regs());
+	xMOV(arg2regd, static_cast<u32>(op));
+	xFastCall((void*)vuUpperFmacSoftNativeFixup, arg1reg, arg2reg);
+	mVUrestoreRegs(mVU, true, false);
+	if (op == VuUpperFmacSoftOp::MADD || op == VuUpperFmacSoftOp::MSUB)
+		xOR(ptr32[&mVU.regs().statusflag], VU_FMAC_NATIVE_PRODUCT_UNDERFLOW);
+	if (op == VuUpperFmacSoftOp::ADDi || op == VuUpperFmacSoftOp::SUBi || op == VuUpperFmacSoftOp::MULi)
+	{
+		xAND(ptr32[&mVU.regs().statusflag], 0xfffffcff);
+		xAND(ptr32[&mVU.regs().VI[REG_STATUS_FLAG].UL], 0xfffffcff);
+		mVUallocSFLAGc(gprT1, gprT2, sFLAG.lastWrite);
+		xAND(gprT1, 0xc0);
+		xOR(ptr32[&mVU.regs().statusflag], gprT1);
+		xOR(ptr32[&mVU.regs().VI[REG_STATUS_FLAG].UL], gprT1);
+	}
+	if (op >= VuUpperFmacSoftOp::MADD && op <= VuUpperFmacSoftOp::MSUBAw)
+	{
+		mVUallocSFLAGc(gprT1, gprT2, sFLAG.lastWrite);
+		xAND(gprT1, 0x3c0);
+		xOR(ptr32[&mVU.regs().statusflag], gprT1);
+		xOR(ptr32[&mVU.regs().VI[REG_STATUS_FLAG].UL], gprT1);
+	}
+	xMOV(gprT1, ptr32[&mVU.regs().statusflag]);
+	xTEST(gprT1, VU_FMAC_STICKY_SOURCE_VALID);
+	xForwardJZ8 use_helper_vi_status;
+	xMOV(gprT2, gprT1);
+	xSHR(gprT2, 10);
+	xAND(gprT2, 0x3c0);
+	xAND(gprT1, 0xfcf);
+	xOR(gprT1, gprT2);
+	xMOV(ptr32[&mVU.regs().VI[REG_STATUS_FLAG].UL], gprT1);
+	xForwardJump8 keep_helper_status;
+	use_helper_vi_status.SetTarget();
+	xMOV(ptr32[&mVU.regs().VI[REG_STATUS_FLAG].UL], gprT1);
+	keep_helper_status.SetTarget();
+	xMOV(gprT1, ptr32[&mVU.regs().macflag]);
+	xMOV(ptr32[&mVU.regs().VI[REG_MAC_FLAG].UL], gprT1);
+
+	if (mFLAG.doFlag)
+	{
+		xMOV(gprT1, ptr32[&mVU.regs().macflag]);
+		mVUallocMFLAGb(mVU, gprT1, mFLAG.write);
+	}
+	if (sFLAG.doFlag)
+	{
+		xMOV(gprT1, ptr32[&mVU.regs().statusflag]);
+		xTEST(gprT1, VU_FMAC_STICKY_SOURCE_VALID);
+		xForwardJZ8 use_visible_status;
+		mVUallocSFLAGd(&mVU.regs().VI[REG_STATUS_FLAG].UL, gprT1, gprT2);
+		xForwardJump8 status_done;
+		use_visible_status.SetTarget();
+		mVUallocSFLAGd(&mVU.regs().VI[REG_STATUS_FLAG].UL, gprT1, gprT2);
+		status_done.SetTarget();
+		mVUallocSFLAGb(gprT1, sFLAG.write);
+		if (op == VuUpperFmacSoftOp::MADD || op == VuUpperFmacSoftOp::MSUB)
+		{
+			xOR(getFlagReg((sFLAG.write + 1) & 3), 0x0400000);
+			xOR(getFlagReg((sFLAG.write + 2) & 3), 0x0400000);
+			xOR(getFlagReg((sFLAG.write + 3) & 3), 0x0400000);
+		}
+	}
+}
+
 // Normal FMAC Opcodes
 static void mVU_FMACa(microVU& mVU, int recPass, int opCase, int opType, bool isACC, microOpcode opEnum, int clampType)
 {
 	pass1 { setupPass1(mVU, opCase, isACC, ((opType == 3) || (opType == 4))); }
 	pass2
 	{
+		if (mVUCanUseUpperSoftHelper(mVU, opCase, opType, isACC))
+		{
+			mVUemitUpperSoftHelperCall(mVU, mVUselectUpperSoftHelperOp(mVU, opCase, opType, isACC));
+			mVU.profiler.EmitOp(opEnum);
+			return;
+		}
+
 		if (doSafeSub(mVU, opCase, opType, isACC))
 			return;
 
@@ -289,6 +433,15 @@ static void mVU_FMACb(microVU& mVU, int recPass, int opCase, int opType, microOp
 	pass1 { setupPass1(mVU, opCase, true, false); }
 	pass2
 	{
+		if (mVUCanUseUpperSoftHelperMulAdd(mVU, opCase))
+		{
+			mVUemitUpperSoftHelperCall(mVU, opType == 0 ?
+				mVUselectUpperSoftHelperMulAddOp(mVU, opCase, VuUpperFmacSoftOp::MADDA, VuUpperFmacSoftOp::MADDAi, VuUpperFmacSoftOp::MADDAq, VuUpperFmacSoftOp::MADDAx) :
+				mVUselectUpperSoftHelperMulAddOp(mVU, opCase, VuUpperFmacSoftOp::MSUBA, VuUpperFmacSoftOp::MSUBAi, VuUpperFmacSoftOp::MSUBAq, VuUpperFmacSoftOp::MSUBAx));
+			mVU.profiler.EmitOp(opEnum);
+			return;
+		}
+
 		xmm Fs, Ft, ACC, tempFt;
 		setupFtReg(mVU, Ft, tempFt, opCase, clampType);
 
@@ -337,6 +490,13 @@ static void mVU_FMACc(microVU& mVU, int recPass, int opCase, microOpcode opEnum,
 	pass1 { setupPass1(mVU, opCase, false, false); }
 	pass2
 	{
+		if (mVUCanUseUpperSoftHelperMulAdd(mVU, opCase))
+		{
+			mVUemitUpperSoftHelperCall(mVU, mVUselectUpperSoftHelperMulAddOp(mVU, opCase, VuUpperFmacSoftOp::MADD, VuUpperFmacSoftOp::MADDi, VuUpperFmacSoftOp::MADDq, VuUpperFmacSoftOp::MADDx));
+			mVU.profiler.EmitOp(opEnum);
+			return;
+		}
+
 		xmm Fs, Ft, ACC, tempFt;
 		setupFtReg(mVU, Ft, tempFt, opCase, clampType);
 
@@ -374,6 +534,13 @@ static void mVU_FMACd(microVU& mVU, int recPass, int opCase, microOpcode opEnum,
 	pass1 { setupPass1(mVU, opCase, false, false); }
 	pass2
 	{
+		if (mVUCanUseUpperSoftHelperMulAdd(mVU, opCase))
+		{
+			mVUemitUpperSoftHelperCall(mVU, mVUselectUpperSoftHelperMulAddOp(mVU, opCase, VuUpperFmacSoftOp::MSUB, VuUpperFmacSoftOp::MSUBi, VuUpperFmacSoftOp::MSUBq, VuUpperFmacSoftOp::MSUBx));
+			mVU.profiler.EmitOp(opEnum);
+			return;
+		}
+
 		xmm Fs, Ft, Fd, tempFt;
 		setupFtReg(mVU, Ft, tempFt, opCase, clampType);
 

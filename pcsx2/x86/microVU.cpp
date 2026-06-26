@@ -378,17 +378,17 @@ void recMicroVU1::Step()
 
 void recMicroVU1::Execute(u32 cycles)
 {
-	if (!THREAD_VU1)
-	{
-		if (!(VU0.VI[REG_VPU_STAT].UL & 0x100))
-			return;
-	}
-	if (CHECK_VU_SOFT(1))
+	if (CHECK_VU_SOFT_ADDSUB(1) || CHECK_VU_SOFT_MUL(1))
 	{
 		CpuIntVU1.Execute(cycles);
 		return;
 	}
 
+	if (!THREAD_VU1)
+	{
+		if (!(VU0.VI[REG_VPU_STAT].UL & 0x100))
+			return;
+	}
 	VU1.VI[REG_TPC].UL <<= 3;
 	((mVUrecCall)microVU1.startFunct)(VU1.VI[REG_TPC].UL, cycles);
 	VU1.VI[REG_TPC].UL >>= 3;

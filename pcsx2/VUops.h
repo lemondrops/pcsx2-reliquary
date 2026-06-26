@@ -21,6 +21,80 @@ struct _VURegsNum {
 using FnPtr_VuVoid = void (*)();
 using FnPtr_VuRegsN = void(*)(_VURegsNum *VUregsn);
 
+enum class VuUpperFmacSoftOp : u32
+{
+	ADD,
+	ADDi,
+	ADDq,
+	ADDx,
+	ADDy,
+	ADDz,
+	ADDw,
+	SUB,
+	SUBi,
+	SUBq,
+	SUBx,
+	SUBy,
+	SUBz,
+	SUBw,
+	MUL,
+	MULi,
+	MULq,
+	MULx,
+	MULy,
+	MULz,
+	MULw,
+	ADDA,
+	ADDAi,
+	ADDAq,
+	ADDAx,
+	ADDAy,
+	ADDAz,
+	ADDAw,
+	SUBA,
+	SUBAi,
+	SUBAq,
+	SUBAx,
+	SUBAy,
+	SUBAz,
+	SUBAw,
+	MULA,
+	MULAi,
+	MULAq,
+	MULAx,
+	MULAy,
+	MULAz,
+	MULAw,
+	MADD,
+	MADDi,
+	MADDq,
+	MADDx,
+	MADDy,
+	MADDz,
+	MADDw,
+	MADDA,
+	MADDAi,
+	MADDAq,
+	MADDAx,
+	MADDAy,
+	MADDAz,
+	MADDAw,
+	MSUB,
+	MSUBi,
+	MSUBq,
+	MSUBx,
+	MSUBy,
+	MSUBz,
+	MSUBw,
+	MSUBA,
+	MSUBAi,
+	MSUBAq,
+	MSUBAx,
+	MSUBAy,
+	MSUBAz,
+	MSUBAw,
+};
+
 alignas(16) extern const FnPtr_VuVoid VU0_LOWER_OPCODE[128];
 alignas(16) extern const FnPtr_VuVoid VU0_UPPER_OPCODE[64];
 alignas(16) extern const FnPtr_VuRegsN VU0regs_LOWER_OPCODE[128];
@@ -37,3 +111,6 @@ extern void _vuTestLowerStalls(VURegs * VU, _VURegsNum *VUregsn);
 extern void _vuAddUpperStalls(VURegs * VU, _VURegsNum *VUregsn);
 extern void _vuAddLowerStalls(VURegs * VU, _VURegsNum *VUregsn);
 extern void _vuXGKICKTransfer(s32 cycles, bool flush);
+extern void vuUpperFmacSoftHelper(VURegs* VU, VuUpperFmacSoftOp op);
+extern void vuUpperFmacSoftNativeFixup(VURegs* VU, VuUpperFmacSoftOp op);
+extern void vuLowerDivSoftHelper(VURegs* VU, u32 op);
