@@ -270,14 +270,27 @@ PS2Float PS2Float::Sqrt()
 
 PS2Float PS2Float::Rsqrt(PS2Float other)
 {
-	PS2Float sqrt = PS2Float(false, other.Exponent(), other.Mantissa()).Sqrt();
-	PS2Float div = Div(sqrt);
-	PS2Float result = PS2Float(div.raw);
-	result.SetDivideByZero(sqrt.HasDivideByZero() || div.HasDivideByZero());
-	result.SetInvalid(sqrt.HasInvalid() || div.HasInvalid());
-	result.SetOverflow(div.HasOverflow());
-	result.SetUnderflow(div.HasUnderflow());
-	return result;
+	if (!IsDenormalized() && !PS2Float(other.Abs()).IsDenormalized())
+	{
+		const u32 sign = raw & SIGNMASK;
+		const u32 sqrt_exp = (other.Exponent() + 127) >> 1;
+		const s32 cexp = Exponent() - sqrt_exp + 126;
+		if (cexp > 255)
+		{
+			PS2Float result = PS2Float(sign | PS2Float::MAX_FLOATING_POINT_VALUE);
+			result.SetOverflow();
+			return result;
+		}
+		else if (cexp < 0)
+		{
+			PS2Float result = PS2Float(sign);
+			result.SetUnderflow();
+			return result;
+		}
+	}
+
+	PS2Float sqrt = PS2Float(other.Abs()).Sqrt();
+	return Div(sqrt);
 }
 
 PS2Float PS2Float::ERCPR()
