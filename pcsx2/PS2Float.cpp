@@ -128,32 +128,23 @@ PS2Float PS2Float::Div(PS2Float divend)
 {
 	u32 a = raw;
 	u32 b = divend.raw;
+	u32 sign = ((a ^ b) & 0x80000000);
 	if (((a & 0x7F800000) == 0) && ((b & 0x7F800000) != 0))
 	{
-		u32 floatResult = 0;
-		floatResult &= PS2Float::MAX_FLOATING_POINT_VALUE;
-		floatResult |= (u32)(((s32)(b >> 31) != (s32)(a >> 31)) ? 1 : 0 & 1) << 31;
-		return PS2Float(floatResult);
+		return PS2Float(sign);
 	}
 	if (((a & 0x7F800000) != 0) && ((b & 0x7F800000) == 0))
 	{
-		u32 floatResult = PS2Float::MAX_FLOATING_POINT_VALUE;
-		floatResult &= PS2Float::MAX_FLOATING_POINT_VALUE;
-		floatResult |= (u32)(((s32)(b >> 31) != (s32)(a >> 31)) ? 1 : 0 & 1) << 31;
-		PS2Float result = PS2Float(floatResult);
+		PS2Float result = PS2Float(sign | PS2Float::MAX_FLOATING_POINT_VALUE);
 		result.SetDivideByZero();
 		return result;
 	}
 	if (((a & 0x7F800000) == 0) && ((b & 0x7F800000) == 0))
 	{
-		u32 floatResult = PS2Float::MAX_FLOATING_POINT_VALUE;
-		floatResult &= PS2Float::MAX_FLOATING_POINT_VALUE;
-		floatResult |= (u32)(((s32)(b >> 31) != (s32)(a >> 31)) ? 1 : 0 & 1) << 31;
-		PS2Float result = PS2Float(floatResult);
+		PS2Float result = PS2Float(sign | PS2Float::MAX_FLOATING_POINT_VALUE);
 		result.SetInvalid();
 		return result;
 	}
-	u32 sign = ((a ^ b) & 0x80000000);
 	u32 Dvdtexp = exponent(a);
 	u32 Dvsrexp = exponent(b);
 	s32 cexp = Dvdtexp - Dvsrexp + 126;
@@ -192,22 +183,6 @@ PS2Float PS2Float::Div(PS2Float divend)
 		cexp += 1;
 		quotient >>= 1;
 	}
-	if (Dvdtexp == 0 && Dvsrexp == 0)
-	{
-		PS2Float result = PS2Float(sign | PS2Float::MAX_FLOATING_POINT_VALUE);
-		result.SetInvalid();
-		return result;
-	}
-	else if (Dvdtexp == 0 || Dvsrexp != 0)
-	{
-		if (Dvdtexp == 0 && Dvsrexp != 0) { return PS2Float(sign); }
-	}
-	else
-	{
-		PS2Float result = PS2Float(sign | PS2Float::MAX_FLOATING_POINT_VALUE);
-		result.SetDivideByZero();
-		return result;
-	}
 	if (cexp > 255)
 	{
 		PS2Float result = PS2Float(sign | PS2Float::MAX_FLOATING_POINT_VALUE);
@@ -226,10 +201,11 @@ PS2Float PS2Float::Div(PS2Float divend)
 PS2Float PS2Float::Sqrt()
 {
 	u32 a = raw;
+	const bool negative = (a & SIGNMASK) != 0;
 	if ((a & 0x7F800000) == 0)
 	{
 		PS2Float result = PS2Float(0);
-		result.SetInvalid(((a >> 31) & 1) != 0);
+		result.SetInvalid(negative);
 		return result;
 	}
 	u32 m = mantissa(a) << 1;
@@ -255,22 +231,17 @@ PS2Float PS2Float::Sqrt()
 		current.carry = csa.carry << 1;
 	}
 	s32 Dvdtexp = exponent(a);
-	if (Dvdtexp == 0)
-		return PS2Float(0);
 	Dvdtexp = (Dvdtexp + 127) >> 1;
 	PS2Float result = PS2Float(((quotient >> 2) & 0x7fffff) | (Dvdtexp << 23));
-	if (Sign())
-	{
-		if (result.Sign())
-			result = result.Negate();
+	if (negative)
 		result.SetInvalid();
-	}
 	return result;
 }
 
 PS2Float PS2Float::Rsqrt(PS2Float other)
 {
-	if (!IsDenormalized() && !PS2Float(other.Abs()).IsDenormalized())
+	const u32 other_abs = other.Abs();
+	if (!IsDenormalized() && (other_abs & 0x7F800000) != 0)
 	{
 		const u32 sign = raw & SIGNMASK;
 		const u32 sqrt_exp = (other.Exponent() + 127) >> 1;
@@ -289,7 +260,7 @@ PS2Float PS2Float::Rsqrt(PS2Float other)
 		}
 	}
 
-	PS2Float sqrt = PS2Float(other.Abs()).Sqrt();
+	PS2Float sqrt = PS2Float(other_abs).Sqrt();
 	return Div(sqrt);
 }
 
