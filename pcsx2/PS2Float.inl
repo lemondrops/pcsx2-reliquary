@@ -233,11 +233,23 @@ inline __fi PS2Float PS2Float::DoMul(PS2Float other)
 {
 	u8 selfExponent = Exponent();
 	u8 otherExponent = other.Exponent();
+	u32 sign = (raw ^ other.raw) & SIGNMASK;
+	s32 resExponent = selfExponent + otherExponent - 127;
+	if (resExponent > 255)
+	{
+		PS2Float result = PS2Float(sign | MAX_FLOATING_POINT_VALUE);
+		result.SetOverflow();
+		return result;
+	}
+	else if (resExponent < 0)
+	{
+		PS2Float result = PS2Float(sign);
+		result.SetUnderflow();
+		return result;
+	}
+
 	u32 selfMantissa = Mantissa() | 0x800000;
 	u32 otherMantissa = other.Mantissa() | 0x800000;
-	u32 sign = (raw ^ other.raw) & SIGNMASK;
-
-	s32 resExponent = selfExponent + otherExponent - 127;
 	u32 resMantissa = (u32)(PS2FloatDetail::MulMantissa(selfMantissa, otherMantissa) >> MANTISSA_BITS);
 
 	if (resMantissa > 0xFFFFFF)
