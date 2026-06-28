@@ -12,6 +12,10 @@
 #ifdef _WIN32
 #include "GS/Renderers/DX12/GSDevice12.h"
 #endif
+#ifdef HAVE_PARALLEL_GS
+#include "GS/Renderers/parallel-gs/GSRendererPGS.h"
+extern std::unique_ptr<GSDevicePGS> g_pgs_device;
+#endif
 #include "GS/Renderers/HW/GSTextureReplacements.h"
 #include "Host.h"
 #include "IconsFontAwesome.h"
@@ -450,6 +454,9 @@ __ri void ImGuiManager::DrawPerformanceOverlay(float& position_y, float scale, f
 
 				s_hardware_info_gpu_line.format(
 					"GPU: {}{}",
+#ifdef HAVE_PARALLEL_GS
+					g_pgs_device ? "Unknown" : 
+#endif
 					g_gs_device->GetName(),
 					gpu_suffix);
 
@@ -505,7 +512,7 @@ __ri void ImGuiManager::DrawPerformanceOverlay(float& position_y, float scale, f
 			if (GSConfig.OsdShowGPUDebug)
 			{
 #ifdef _WIN32
-				if (g_gs_device->GetRenderAPI() == RenderAPI::D3D12)
+				if (g_gs_device && g_gs_device->GetRenderAPI() == RenderAPI::D3D12)
 				{
 					GSDevice12* dev12 = static_cast<GSDevice12*>(g_gs_device.get());
 
@@ -583,7 +590,7 @@ __ri void ImGuiManager::DrawPerformanceOverlay(float& position_y, float scale, f
 			if (GSConfig.OsdShowGPUDebug)
 			{
 #ifdef _WIN32
-				if (g_gs_device->GetRenderAPI() == RenderAPI::D3D12)
+				if (g_gs_device && g_gs_device->GetRenderAPI() == RenderAPI::D3D12)
 					DRAW_LINE(osd_font, font_size, s_gpu_debug_info_line.c_str(), white_color);
 #endif
 			}
@@ -1475,7 +1482,7 @@ void SaveStateSelectorUI::RefreshList(const std::string& serial, u32 crc)
 {
 	for (ListEntry& entry : s_slots)
 	{
-		if (entry.preview_texture)
+		if (entry.preview_texture && g_gs_device)
 			g_gs_device->Recycle(entry.preview_texture.release());
 	}
 
@@ -1492,7 +1499,8 @@ void SaveStateSelectorUI::Clear()
 		if (li.preview_texture)
 		{
 			MTGS::RunOnGSThread([tex = li.preview_texture.release()]() {
-				g_gs_device->Recycle(tex);
+				if (g_gs_device)
+					g_gs_device->Recycle(tex);
 			});
 		}
 
@@ -1508,7 +1516,7 @@ void SaveStateSelectorUI::DestroyTextures()
 
 	for (ListEntry& entry : s_slots)
 	{
-		if (entry.preview_texture)
+		if (entry.preview_texture && g_gs_device)
 			g_gs_device->Recycle(entry.preview_texture.release());
 	}
 
@@ -1594,6 +1602,19 @@ void SaveStateSelectorUI::InitializeListEntry(const std::string& serial, u32 crc
 	std::vector<u32> screenshot_pixels;
 	if (SaveState_ReadScreenshot(path, &screenshot_width, &screenshot_height, &screenshot_pixels))
 	{
+#ifdef HAVE_PARALLEL_GS
+		if (g_pgs_device)
+		{
+			li->preview_texture =
+				std::unique_ptr<GSTexture>(g_pgs_device->CreateTexture(screenshot_width, screenshot_height,
+								screenshot_pixels.data(), sizeof(u32) * screenshot_width));
+			if (!li->preview_texture)
+			{
+				Console.Error("Failed to upload save state image to GPU");
+			}
+			return;
+		}
+#else
 		li->preview_texture =
 			std::unique_ptr<GSTexture>(g_gs_device->CreateTexture(screenshot_width, screenshot_height, 1, GSTexture::Format::Color));
 		if (!li->preview_texture || !li->preview_texture->Update(GSVector4i(0, 0, screenshot_width, screenshot_height),
@@ -1603,6 +1624,7 @@ void SaveStateSelectorUI::InitializeListEntry(const std::string& serial, u32 crc
 			if (li->preview_texture)
 				g_gs_device->Recycle(li->preview_texture.release());
 		}
+#endif
 	}
 }
 

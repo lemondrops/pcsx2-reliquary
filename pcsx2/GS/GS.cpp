@@ -963,7 +963,12 @@ void GSgetInternalResolution(int* width, int* height)
 void GSgetStats(SmallStringBase& info)
 {
 	GSPerfMon& pm = g_perfmon;
-	const char* api_name = GSDevice::RenderAPIToString(g_gs_device->GetRenderAPI());
+	const char* api_name =
+#ifdef HAVE_PARALLEL_GS
+		g_pgs_renderer ? "paraLLEl" :
+
+#endif
+		GSDevice::RenderAPIToString(g_gs_device->GetRenderAPI());
 	if (GSCurrentRenderer == GSRendererType::SW)
 	{
 		const double fps = GetVerticalFrequency();
