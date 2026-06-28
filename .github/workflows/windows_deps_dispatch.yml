@@ -1,17 +1,24 @@
-name: 🖥️ 📦 Dispatch Windows Deps Build
+name: 🖥️ 📦 Build Windows Deps
 
 on:
-  pull_request_target:
-    types: [closed]
+  workflow_dispatch:
 
 jobs:
-  trigger:
-    if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'requires-win-deps-build')
-    runs-on: ubuntu-latest
+  build-win-deps:
+    runs-on: windows-2025-vs2026
     steps:
-      - name: Dispatch to windows-dependencies repo
-        uses: peter-evans/repository-dispatch@v4
-        with:
-          token: ${{ secrets.DEPS_REPO_DISPATCH_ACCESS_TOKEN }}
-          repository: pcsx2/pcsx2-windows-dependencies
-          event-type: deps-update
+    - name: Checkout repository
+      uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+
+    - name: Build dependencies
+      run: |
+        .github/workflows/scripts/windows/build-dependencies.bat
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: pcsx2-windows-dependencies
+        path: |
+          ./deps
