@@ -56,6 +56,42 @@ static __fi u32 exponent(u32 x)
 	return (x >> 23) & 0xff;
 }
 
+template <u32 Size>
+struct PS2FloatUnaryCache
+{
+	u32 key = 0;
+	u32 raw = 0;
+	u8 flags = 0;
+	bool valid = false;
+};
+
+template <u32 Size>
+struct PS2FloatBinaryCache
+{
+	u32 key_a = 0;
+	u32 key_b = 0;
+	u32 raw = 0;
+	u8 flags = 0;
+	bool valid = false;
+};
+
+static __fi PS2Float ps2FloatCachedResult(u32 raw, u8 flags)
+{
+	PS2Float result(raw);
+	result.flags = flags;
+	return result;
+}
+
+static __fi u32 ps2FloatCacheIndex(u32 key)
+{
+	return (key * 2654435761u) >> 20;
+}
+
+static __fi u32 ps2FloatCacheIndex(u32 key_a, u32 key_b)
+{
+	return ps2FloatCacheIndex(key_a ^ (key_b * 2246822519u));
+}
+
 //****************************************************************
 // Float Processor
 //****************************************************************
@@ -134,22 +170,44 @@ PS2Float PS2Float::Div(PS2Float divend)
 {
 	u32 a = raw;
 	u32 b = divend.raw;
+	static constexpr u32 CACHE_SETS = 4096;
+	static constexpr u32 CACHE_WAYS = 4;
+	static thread_local PS2FloatBinaryCache<CACHE_SETS> s_div_cache[CACHE_SETS][CACHE_WAYS];
+	static thread_local u8 s_div_cache_next[CACHE_SETS]{};
+	const u32 cache_index = ps2FloatCacheIndex(a, b);
+	PS2FloatBinaryCache<CACHE_SETS>* cache_entry = nullptr;
+	for (u32 way = 0; way < CACHE_WAYS; way++)
+	{
+		PS2FloatBinaryCache<CACHE_SETS>& entry = s_div_cache[cache_index][way];
+		if (entry.valid && entry.key_a == a && entry.key_b == b)
+			return ps2FloatCachedResult(entry.raw, entry.flags);
+	}
+	cache_entry = &s_div_cache[cache_index][s_div_cache_next[cache_index]++ & (CACHE_WAYS - 1)];
+	auto cacheResult = [&](PS2Float result) {
+		cache_entry->key_a = a;
+		cache_entry->key_b = b;
+		cache_entry->raw = result.raw;
+		cache_entry->flags = result.flags;
+		cache_entry->valid = true;
+		return result;
+	};
+
 	u32 sign = ((a ^ b) & 0x80000000);
 	if (((a & 0x7F800000) == 0) && ((b & 0x7F800000) != 0))
 	{
-		return PS2Float(sign);
+		return cacheResult(PS2Float(sign));
 	}
 	if (((a & 0x7F800000) != 0) && ((b & 0x7F800000) == 0))
 	{
 		PS2Float result = PS2Float(sign | PS2Float::MAX_FLOATING_POINT_VALUE);
 		result.SetDivideByZero();
-		return result;
+		return cacheResult(result);
 	}
 	if (((a & 0x7F800000) == 0) && ((b & 0x7F800000) == 0))
 	{
 		PS2Float result = PS2Float(sign | PS2Float::MAX_FLOATING_POINT_VALUE);
 		result.SetInvalid();
-		return result;
+		return cacheResult(result);
 	}
 	u32 Dvdtexp = exponent(a);
 	u32 Dvsrexp = exponent(b);
@@ -158,13 +216,13 @@ PS2Float PS2Float::Div(PS2Float divend)
 	{
 		PS2Float result = PS2Float(sign | PS2Float::MAX_FLOATING_POINT_VALUE);
 		result.SetOverflow();
-		return result;
+		return cacheResult(result);
 	}
 	else if (cexp < 0)
 	{
 		PS2Float result = PS2Float(sign);
 		result.SetUnderflow();
-		return result;
+		return cacheResult(result);
 	}
 	u32 am = mantissa(a) << 2;
 	u32 bm = mantissa(b) << 2;
@@ -174,7 +232,7 @@ PS2Float PS2Float::Div(PS2Float divend)
 #if defined(__clang__)
 #pragma clang loop unroll(full)
 #endif
-	for (int i = 0; i < 25; i++)
+	for (int i = 0; i < 23; i++)
 	{
 		quotient = (quotient << 1) + quotientBit;
 		u32 add = quotientBit > 0 ? ~bm : quotientBit < 0 ? bm : 0;
@@ -184,6 +242,12 @@ PS2Float PS2Float::Div(PS2Float divend)
 		current.sum = csa.sum << 1;
 		current.carry = csa.carry << 1;
 	}
+	quotient = (quotient << 1) + quotientBit;
+	u32 add = quotientBit > 0 ? ~bm : quotientBit < 0 ? bm : 0;
+	current.carry += quotientBit > 0;
+	struct CSAResult csa = CSA(current.sum, current.carry, add);
+	quotientBit = quotientSelect(selectCSAResult(current, csa, quotientBit));
+	quotient = (quotient << 1) + quotientBit;
 	if (quotient >= (1 << 24))
 	{
 		cexp += 1;
@@ -193,26 +257,47 @@ PS2Float PS2Float::Div(PS2Float divend)
 	{
 		PS2Float result = PS2Float(sign | PS2Float::MAX_FLOATING_POINT_VALUE);
 		result.SetOverflow();
-		return result;
+		return cacheResult(result);
 	}
 	else if (cexp < 1)
 	{
 		PS2Float result = PS2Float(sign);
 		result.SetUnderflow();
-		return result;
+		return cacheResult(result);
 	}
-	return (quotient & 0x7fffff) | (cexp << 23) | sign;
+	return cacheResult((quotient & 0x7fffff) | (cexp << 23) | sign);
 }
 
 PS2Float PS2Float::Sqrt()
 {
 	u32 a = raw;
+	static constexpr u32 CACHE_SETS = 4096;
+	static constexpr u32 CACHE_WAYS = 4;
+	static thread_local PS2FloatUnaryCache<CACHE_SETS> s_sqrt_cache[CACHE_SETS][CACHE_WAYS];
+	static thread_local u8 s_sqrt_cache_next[CACHE_SETS]{};
+	const u32 cache_index = ps2FloatCacheIndex(a);
+	PS2FloatUnaryCache<CACHE_SETS>* cache_entry = nullptr;
+	for (u32 way = 0; way < CACHE_WAYS; way++)
+	{
+		PS2FloatUnaryCache<CACHE_SETS>& entry = s_sqrt_cache[cache_index][way];
+		if (entry.valid && entry.key == a)
+			return ps2FloatCachedResult(entry.raw, entry.flags);
+	}
+	cache_entry = &s_sqrt_cache[cache_index][s_sqrt_cache_next[cache_index]++ & (CACHE_WAYS - 1)];
+	auto cacheResult = [&](PS2Float result) {
+		cache_entry->key = a;
+		cache_entry->raw = result.raw;
+		cache_entry->flags = result.flags;
+		cache_entry->valid = true;
+		return result;
+	};
+
 	const bool negative = (a & SIGNMASK) != 0;
 	if ((a & 0x7F800000) == 0)
 	{
 		PS2Float result = PS2Float(0);
 		result.SetInvalid(negative);
-		return result;
+		return cacheResult(result);
 	}
 	u32 m = mantissa(a) << 1;
 	if (!(a & 0x800000)) // If exponent is odd after subtracting bias of 127
@@ -223,7 +308,7 @@ PS2Float PS2Float::Sqrt()
 #if defined(__clang__)
 #pragma clang loop unroll(full)
 #endif
-	for (s32 i = 0; i < 25; i++)
+	for (s32 i = 0; i < 23; i++)
 	{
 		// Adding n to quotient adds n * (2*quotient + n) to quotient^2
 		// (which is what we need to subtract from the remainder)
@@ -236,12 +321,21 @@ PS2Float PS2Float::Sqrt()
 		current.sum = csa.sum << 1;
 		current.carry = csa.carry << 1;
 	}
+	// Adding n to quotient adds n * (2*quotient + n) to quotient^2
+	// (which is what we need to subtract from the remainder)
+	u32 adjust = quotient + (quotientBit << 1);
+	quotient += quotientBit << 2;
+	u32 add = quotientBit > 0 ? ~adjust : quotientBit < 0 ? adjust : 0;
+	current.carry += quotientBit > 0;
+	struct CSAResult csa = CSA(current.sum, current.carry, add);
+	quotientBit = quotientSelect(selectCSAResult(current, csa, quotientBit));
+	quotient += quotientBit << 1;
 	s32 Dvdtexp = exponent(a);
 	Dvdtexp = (Dvdtexp + 127) >> 1;
 	PS2Float result = PS2Float(((quotient >> 2) & 0x7fffff) | (Dvdtexp << 23));
 	if (negative)
 		result.SetInvalid();
-	return result;
+	return cacheResult(result);
 }
 
 PS2Float PS2Float::Rsqrt(PS2Float other)

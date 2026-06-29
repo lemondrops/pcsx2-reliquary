@@ -4,26 +4,6 @@ add_pcsx2_test(core_test
 	StubHost.cpp
 )
 
-add_executable(soft_float_bench EXCLUDE_FROM_ALL
-	soft_float_bench.cpp
-)
-
-add_executable(vu_soft_float_bench EXCLUDE_FROM_ALL
-	vu_soft_float_bench.cpp
-)
-
-target_link_libraries(soft_float_bench PRIVATE
-	PCSX2_FLAGS
-	PCSX2
-	common
-)
-
-target_link_libraries(vu_soft_float_bench PRIVATE
-	PCSX2_FLAGS
-	PCSX2
-	common
-)
-
 set(multi_isa_sources
 	GS/swizzle_test_main.cpp
 )

@@ -300,8 +300,8 @@ static VuUpperFmacSoftOp mVUselectUpperSoftHelperMulAddOp(microVU& mVU, int opCa
 
 static bool mVUupperSoftHelperReadsQ(VuUpperFmacSoftOp op)
 {
-	switch (op)
-	{
+			switch (op)
+		{
 		case VuUpperFmacSoftOp::ADDq:
 		case VuUpperFmacSoftOp::SUBq:
 		case VuUpperFmacSoftOp::MULq:
@@ -323,18 +323,43 @@ static void mVUemitUpperSoftHelperCall(microVU& mVU, VuUpperFmacSoftOp op)
 	static constexpr u32 VU_FMAC_STICKY_SOURCE_VALID = 1u << 20;
 	static constexpr u32 VU_FMAC_NATIVE_PRODUCT_UNDERFLOW = 1u << 21;
 	void* direct_full_helper = nullptr;
-	if (_X_Y_Z_W == 0xf)
+	switch (op)
 	{
-		switch (op)
-		{
 			case VuUpperFmacSoftOp::ADD:
-				direct_full_helper = (void*)vuUpperFmacSoftAddFull;
+				if (_X_Y_Z_W == 0xf)
+					direct_full_helper = (void*)vuUpperFmacSoftAddFull;
+				else
+					direct_full_helper = (void*)vuUpperFmacSoftAddMasked;
+				break;
+			case VuUpperFmacSoftOp::ADDi:
+				direct_full_helper = (void*)vuUpperFmacSoftAddI;
+				break;
+			case VuUpperFmacSoftOp::ADDq:
+				direct_full_helper = (void*)vuUpperFmacSoftAddQ;
 				break;
 			case VuUpperFmacSoftOp::SUB:
-				direct_full_helper = (void*)vuUpperFmacSoftSubFull;
+				if (_X_Y_Z_W == 0xf)
+					direct_full_helper = (void*)vuUpperFmacSoftSubFull;
+				else
+					direct_full_helper = (void*)vuUpperFmacSoftSubMasked;
+				break;
+			case VuUpperFmacSoftOp::SUBi:
+				direct_full_helper = (void*)vuUpperFmacSoftSubI;
+				break;
+			case VuUpperFmacSoftOp::SUBq:
+				direct_full_helper = (void*)vuUpperFmacSoftSubQ;
 				break;
 			case VuUpperFmacSoftOp::MUL:
-				direct_full_helper = (void*)vuUpperFmacSoftMulFull;
+				if (_X_Y_Z_W == 0xf)
+					direct_full_helper = (void*)vuUpperFmacSoftMulFull;
+				else
+					direct_full_helper = (void*)vuUpperFmacSoftMulMasked;
+				break;
+			case VuUpperFmacSoftOp::MULi:
+				direct_full_helper = (void*)vuUpperFmacSoftMulI;
+				break;
+			case VuUpperFmacSoftOp::MULq:
+				direct_full_helper = (void*)vuUpperFmacSoftMulQ;
 				break;
 			case VuUpperFmacSoftOp::ADDx:
 				direct_full_helper = (void*)vuUpperFmacSoftAddX;
@@ -375,11 +400,29 @@ static void mVUemitUpperSoftHelperCall(microVU& mVU, VuUpperFmacSoftOp op)
 			case VuUpperFmacSoftOp::ADDA:
 				direct_full_helper = (void*)vuUpperFmacSoftAddAccFull;
 				break;
+			case VuUpperFmacSoftOp::ADDAi:
+				direct_full_helper = (void*)vuUpperFmacSoftAddAccI;
+				break;
+			case VuUpperFmacSoftOp::ADDAq:
+				direct_full_helper = (void*)vuUpperFmacSoftAddAccQ;
+				break;
 			case VuUpperFmacSoftOp::SUBA:
 				direct_full_helper = (void*)vuUpperFmacSoftSubAccFull;
 				break;
+			case VuUpperFmacSoftOp::SUBAi:
+				direct_full_helper = (void*)vuUpperFmacSoftSubAccI;
+				break;
+			case VuUpperFmacSoftOp::SUBAq:
+				direct_full_helper = (void*)vuUpperFmacSoftSubAccQ;
+				break;
 			case VuUpperFmacSoftOp::MULA:
 				direct_full_helper = (void*)vuUpperFmacSoftMulAccFull;
+				break;
+			case VuUpperFmacSoftOp::MULAi:
+				direct_full_helper = (void*)vuUpperFmacSoftMulAccI;
+				break;
+			case VuUpperFmacSoftOp::MULAq:
+				direct_full_helper = (void*)vuUpperFmacSoftMulAccQ;
 				break;
 			case VuUpperFmacSoftOp::ADDAx:
 				direct_full_helper = (void*)vuUpperFmacSoftAddAccX;
@@ -417,9 +460,92 @@ static void mVUemitUpperSoftHelperCall(microVU& mVU, VuUpperFmacSoftOp op)
 			case VuUpperFmacSoftOp::MULAw:
 				direct_full_helper = (void*)vuUpperFmacSoftMulAccW;
 				break;
+			case VuUpperFmacSoftOp::MADD:
+				direct_full_helper = (void*)vuUpperFmacSoftMaddFull;
+				break;
+			case VuUpperFmacSoftOp::MADDi:
+				direct_full_helper = (void*)vuUpperFmacSoftMaddI;
+				break;
+			case VuUpperFmacSoftOp::MADDq:
+				direct_full_helper = (void*)vuUpperFmacSoftMaddQ;
+				break;
+			case VuUpperFmacSoftOp::MADDx:
+				direct_full_helper = (void*)vuUpperFmacSoftMaddX;
+				break;
+			case VuUpperFmacSoftOp::MADDy:
+				direct_full_helper = (void*)vuUpperFmacSoftMaddY;
+				break;
+			case VuUpperFmacSoftOp::MADDz:
+				direct_full_helper = (void*)vuUpperFmacSoftMaddZ;
+				break;
+			case VuUpperFmacSoftOp::MADDw:
+				direct_full_helper = (void*)vuUpperFmacSoftMaddW;
+				break;
+			case VuUpperFmacSoftOp::MADDA:
+				direct_full_helper = (void*)vuUpperFmacSoftMaddaFull;
+				break;
+			case VuUpperFmacSoftOp::MADDAi:
+				direct_full_helper = (void*)vuUpperFmacSoftMaddaI;
+				break;
+			case VuUpperFmacSoftOp::MADDAq:
+				direct_full_helper = (void*)vuUpperFmacSoftMaddaQ;
+				break;
+			case VuUpperFmacSoftOp::MADDAx:
+				direct_full_helper = (void*)vuUpperFmacSoftMaddaX;
+				break;
+			case VuUpperFmacSoftOp::MADDAy:
+				direct_full_helper = (void*)vuUpperFmacSoftMaddaY;
+				break;
+			case VuUpperFmacSoftOp::MADDAz:
+				direct_full_helper = (void*)vuUpperFmacSoftMaddaZ;
+				break;
+			case VuUpperFmacSoftOp::MADDAw:
+				direct_full_helper = (void*)vuUpperFmacSoftMaddaW;
+				break;
+			case VuUpperFmacSoftOp::MSUB:
+				direct_full_helper = (void*)vuUpperFmacSoftMsubFull;
+				break;
+			case VuUpperFmacSoftOp::MSUBi:
+				direct_full_helper = (void*)vuUpperFmacSoftMsubI;
+				break;
+			case VuUpperFmacSoftOp::MSUBq:
+				direct_full_helper = (void*)vuUpperFmacSoftMsubQ;
+				break;
+			case VuUpperFmacSoftOp::MSUBx:
+				direct_full_helper = (void*)vuUpperFmacSoftMsubX;
+				break;
+			case VuUpperFmacSoftOp::MSUBy:
+				direct_full_helper = (void*)vuUpperFmacSoftMsubY;
+				break;
+			case VuUpperFmacSoftOp::MSUBz:
+				direct_full_helper = (void*)vuUpperFmacSoftMsubZ;
+				break;
+			case VuUpperFmacSoftOp::MSUBw:
+				direct_full_helper = (void*)vuUpperFmacSoftMsubW;
+				break;
+			case VuUpperFmacSoftOp::MSUBA:
+				direct_full_helper = (void*)vuUpperFmacSoftMsubaFull;
+				break;
+			case VuUpperFmacSoftOp::MSUBAi:
+				direct_full_helper = (void*)vuUpperFmacSoftMsubaI;
+				break;
+			case VuUpperFmacSoftOp::MSUBAq:
+				direct_full_helper = (void*)vuUpperFmacSoftMsubaQ;
+				break;
+			case VuUpperFmacSoftOp::MSUBAx:
+				direct_full_helper = (void*)vuUpperFmacSoftMsubaX;
+				break;
+			case VuUpperFmacSoftOp::MSUBAy:
+				direct_full_helper = (void*)vuUpperFmacSoftMsubaY;
+				break;
+			case VuUpperFmacSoftOp::MSUBAz:
+				direct_full_helper = (void*)vuUpperFmacSoftMsubaZ;
+				break;
+			case VuUpperFmacSoftOp::MSUBAw:
+				direct_full_helper = (void*)vuUpperFmacSoftMsubaW;
+				break;
 			default:
 				break;
-		}
 	}
 
 	mVU.regAlloc->flushAll();

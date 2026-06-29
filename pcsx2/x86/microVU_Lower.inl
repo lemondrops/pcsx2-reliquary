@@ -32,6 +32,8 @@ static __fi void testNeg(mV, const xmm& xmmReg, const x32& gprTemp)
 
 static void mVUemitLowerDivSoftHelperCall(microVU& mVU, u32 op)
 {
+	void* helper = (op == 0) ? (void*)vuLowerDivSoftDivHelper : (op == 1) ? (void*)vuLowerDivSoftSqrtHelper : (void*)vuLowerDivSoftRsqrtHelper;
+
 	mVU.regAlloc->flushAll();
 	xMOV(gprT1, ptr32[&mVU.regs().VI[REG_STATUS_FLAG].UL]);
 	xMOV(ptr32[&mVU.regs().statusflag], gprT1);
@@ -39,8 +41,7 @@ static void mVUemitLowerDivSoftHelperCall(microVU& mVU, u32 op)
 
 	mVUbackupRegs(mVU, true, false);
 	xLoadFarAddr(arg1reg, &mVU.regs());
-	xMOV(arg2regd, op);
-	xFastCall((void*)vuLowerDivSoftHelper, arg1reg, arg2reg);
+	xFastCall(helper, arg1reg);
 	mVUrestoreRegs(mVU, true, false);
 	if (op == 2)
 	{

@@ -1479,14 +1479,62 @@ void vuUpperFmacSoftAddFull(VURegs* VU)
 	_vuADD(VU);
 }
 
+void vuUpperFmacSoftAddMasked(VURegs* VU)
+{
+	_vuADD(VU);
+	vuUpperFmacSoftNativeFixup(VU, VuUpperFmacSoftOp::ADD);
+}
+
+void vuUpperFmacSoftAddI(VURegs* VU)
+{
+	_vuADDi(VU);
+}
+
+void vuUpperFmacSoftAddQ(VURegs* VU)
+{
+	_vuADDq(VU);
+}
+
 void vuUpperFmacSoftSubFull(VURegs* VU)
 {
 	_vuSUB(VU);
 }
 
+void vuUpperFmacSoftSubMasked(VURegs* VU)
+{
+	_vuSUB(VU);
+	vuUpperFmacSoftNativeFixup(VU, VuUpperFmacSoftOp::SUB);
+}
+
+void vuUpperFmacSoftSubI(VURegs* VU)
+{
+	_vuSUBi(VU);
+}
+
+void vuUpperFmacSoftSubQ(VURegs* VU)
+{
+	_vuSUBq(VU);
+}
+
 void vuUpperFmacSoftMulFull(VURegs* VU)
 {
 	_vuMUL(VU);
+}
+
+void vuUpperFmacSoftMulMasked(VURegs* VU)
+{
+	_vuMUL(VU);
+	vuUpperFmacSoftNativeFixup(VU, VuUpperFmacSoftOp::MUL);
+}
+
+void vuUpperFmacSoftMulI(VURegs* VU)
+{
+	_vuMULi(VU);
+}
+
+void vuUpperFmacSoftMulQ(VURegs* VU)
+{
+	_vuMULq(VU);
 }
 
 #define VU_UPPER_FMAC_SOFT_BROADCAST_HELPER(name, op, helper) \
@@ -1519,8 +1567,14 @@ VU_UPPER_FMAC_SOFT_BROADCAST_HELPER(vuUpperFmacSoftMulW, VuUpperFmacSoftOp::MULw
 	}
 
 VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftAddAccFull, VuUpperFmacSoftOp::ADDA, _vuADDA)
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftAddAccI, VuUpperFmacSoftOp::ADDAi, _vuADDAi)
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftAddAccQ, VuUpperFmacSoftOp::ADDAq, _vuADDAq)
 VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftSubAccFull, VuUpperFmacSoftOp::SUBA, _vuSUBA)
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftSubAccI, VuUpperFmacSoftOp::SUBAi, _vuSUBAi)
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftSubAccQ, VuUpperFmacSoftOp::SUBAq, _vuSUBAq)
 VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftMulAccFull, VuUpperFmacSoftOp::MULA, _vuMULA)
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftMulAccI, VuUpperFmacSoftOp::MULAi, _vuMULAi)
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftMulAccQ, VuUpperFmacSoftOp::MULAq, _vuMULAq)
 VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftAddAccX, VuUpperFmacSoftOp::ADDAx, _vuADDAx)
 VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftAddAccY, VuUpperFmacSoftOp::ADDAy, _vuADDAy)
 VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftAddAccZ, VuUpperFmacSoftOp::ADDAz, _vuADDAz)
@@ -1535,6 +1589,82 @@ VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftMulAccZ, VuUpperFmacSoftOp::MULAz, 
 VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftMulAccW, VuUpperFmacSoftOp::MULAw, _vuMULAw)
 
 #undef VU_UPPER_FMAC_SOFT_ACC_HELPER
+
+static void vuUpperFmacSoftNativeFixupMaddMsub(VURegs* VU, bool check_product_underflow)
+{
+	auto productUnderflows = [](u32 fs, u32 ft) {
+		const u32 afs = fs & 0x7fffffffu;
+		const u32 aft = ft & 0x7fffffffu;
+		if (afs == 0 || aft == 0)
+			return false;
+		const u32 exp_fs = (afs >> 23) & 0xff;
+		const u32 exp_ft = (aft >> 23) & 0xff;
+		return (exp_fs + exp_ft) < 128;
+	};
+
+	u32 extra_sticky = 0;
+	bool product_underflow = false;
+	if ((_X && PS2Float(VU->ACC.i.x).IsZero()) || (_Y && PS2Float(VU->ACC.i.y).IsZero()) ||
+		(_Z && PS2Float(VU->ACC.i.z).IsZero()) || (_W && PS2Float(VU->ACC.i.w).IsZero()))
+	{
+		extra_sticky |= 0x40;
+	}
+
+	if (check_product_underflow)
+	{
+		product_underflow = (_X && productUnderflows(VU->VF[_Fs_].i.x, VU->VF[_Ft_].i.x)) ||
+			(_Y && productUnderflows(VU->VF[_Fs_].i.y, VU->VF[_Ft_].i.y)) ||
+			(_Z && productUnderflows(VU->VF[_Fs_].i.z, VU->VF[_Ft_].i.z)) ||
+			(_W && productUnderflows(VU->VF[_Fs_].i.w, VU->VF[_Ft_].i.w));
+	}
+
+	if (product_underflow)
+		extra_sticky |= 0x200;
+
+	if (extra_sticky)
+	{
+		VU->statusflag |= extra_sticky;
+		VU->VI[REG_STATUS_FLAG].UL |= extra_sticky;
+	}
+}
+
+#define VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(name, helper, check_product_underflow) \
+	void name(VURegs* VU) \
+	{ \
+		helper(VU); \
+		vuUpperFmacSoftNativeFixupMaddMsub(VU, check_product_underflow); \
+	}
+
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMaddFull, _vuMADD, true)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMaddI, _vuMADDi, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMaddQ, _vuMADDq, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMaddX, _vuMADDx, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMaddY, _vuMADDy, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMaddZ, _vuMADDz, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMaddW, _vuMADDw, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMaddaFull, _vuMADDA, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMaddaI, _vuMADDAi, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMaddaQ, _vuMADDAq, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMaddaX, _vuMADDAx, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMaddaY, _vuMADDAy, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMaddaZ, _vuMADDAz, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMaddaW, _vuMADDAw, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMsubFull, _vuMSUB, true)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMsubI, _vuMSUBi, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMsubQ, _vuMSUBq, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMsubX, _vuMSUBx, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMsubY, _vuMSUBy, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMsubZ, _vuMSUBz, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMsubW, _vuMSUBw, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMsubaFull, _vuMSUBA, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMsubaI, _vuMSUBAi, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMsubaQ, _vuMSUBAq, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMsubaX, _vuMSUBAx, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMsubaY, _vuMSUBAy, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMsubaZ, _vuMSUBAz, false)
+VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER(vuUpperFmacSoftMsubaW, _vuMSUBAw, false)
+
+#undef VU_UPPER_FMAC_SOFT_MADDMSUB_HELPER
 
 void vuUpperFmacSoftNativeFixup(VURegs* VU, VuUpperFmacSoftOp op)
 {
@@ -2014,39 +2144,54 @@ void vuLowerDivSoftHelper(VURegs* VU, u32 op)
 	switch (op)
 	{
 		case 0:
-			_vuDIV(VU);
+			vuLowerDivSoftDivHelper(VU);
 			break;
 		case 1:
-			_vuSQRT(VU);
+			vuLowerDivSoftSqrtHelper(VU);
 			break;
 		case 2:
-			_vuRSQRT(VU);
-			if (CHECK_VU_SOFT_DIVSQRT((VU == &VU1) ? 1 : 0))
-			{
-				const PS2Float ft = PS2Float(VU->VF[_Ft_].UL[_Ftf_]);
-				const PS2Float fs = PS2Float(VU->VF[_Fs_].UL[_Fsf_]);
-				const bool ft_zero = ft.IsZero() || ft.IsDenormalized();
-				u32 rsqrt_status = 0;
-				if (ft_zero)
-				{
-					if (!fs.IsZero())
-					{
-						rsqrt_status |= 0x820;
-						if (VU->VF[_Ft_].UL[_Ftf_] & 0x80000000)
-							rsqrt_status |= 0x410;
-					}
-					else
-					{
-						rsqrt_status |= 0x410;
-					}
-				}
-				else if (ft.Sign())
-				{
-					rsqrt_status |= 0x410;
-				}
-				VU->statusflag = (VU->statusflag & ~0xC30u) | rsqrt_status;
-			}
+			vuLowerDivSoftRsqrtHelper(VU);
 			break;
+	}
+}
+
+void vuLowerDivSoftDivHelper(VURegs* VU)
+{
+	_vuDIV(VU);
+}
+
+void vuLowerDivSoftSqrtHelper(VURegs* VU)
+{
+	_vuSQRT(VU);
+}
+
+void vuLowerDivSoftRsqrtHelper(VURegs* VU)
+{
+	_vuRSQRT(VU);
+	if (CHECK_VU_SOFT_DIVSQRT((VU == &VU1) ? 1 : 0))
+	{
+		const PS2Float ft = PS2Float(VU->VF[_Ft_].UL[_Ftf_]);
+		const PS2Float fs = PS2Float(VU->VF[_Fs_].UL[_Fsf_]);
+		const bool ft_zero = ft.IsZero() || ft.IsDenormalized();
+		u32 rsqrt_status = 0;
+		if (ft_zero)
+		{
+			if (!fs.IsZero())
+			{
+				rsqrt_status |= 0x820;
+				if (VU->VF[_Ft_].UL[_Ftf_] & 0x80000000)
+					rsqrt_status |= 0x410;
+			}
+			else
+			{
+				rsqrt_status |= 0x410;
+			}
+		}
+		else if (ft.Sign())
+		{
+			rsqrt_status |= 0x410;
+		}
+		VU->statusflag = (VU->statusflag & ~0xC30u) | rsqrt_status;
 	}
 }
 
