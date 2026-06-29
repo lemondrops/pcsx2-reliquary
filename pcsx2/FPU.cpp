@@ -393,7 +393,7 @@ void DIV_S() {
 	method provides a similar outcome and is faster. (cottonvibes)
 */
 void MADD_S() {
-	if (CHECK_FPU_SOFT_ADDSUB && CHECK_FPU_SOFT_MUL)
+	if (CHECK_FPU_SOFT_ADDSUB || CHECK_FPU_SOFT_MUL)
 	{
 		PS2Float mulres = fpuAccurateMul(_FsValUl_, _FtValUl_);
 		PS2Float fmacres = fpuAccurateMulAddAcc(_FAValUl_, _FsValUl_, _FtValUl_);
@@ -414,7 +414,7 @@ void MADD_S() {
 }
 
 void MADDA_S() {
-	if (CHECK_FPU_SOFT_ADDSUB && CHECK_FPU_SOFT_MUL)
+	if (CHECK_FPU_SOFT_ADDSUB || CHECK_FPU_SOFT_MUL)
 	{
 		PS2Float mulres = fpuAccurateMul(_FsValUl_, _FtValUl_);
 		PS2Float fmacres = fpuAccurateMulAddAcc(_FAValUl_, _FsValUl_, _FtValUl_);
@@ -453,7 +453,7 @@ void MOV_S() {
 }
 
 void MSUB_S() {
-	if (CHECK_FPU_SOFT_ADDSUB && CHECK_FPU_SOFT_MUL)
+	if (CHECK_FPU_SOFT_ADDSUB || CHECK_FPU_SOFT_MUL)
 	{
 		PS2Float mulres = fpuAccurateMul(_FsValUl_, _FtValUl_);
 		PS2Float fmacres = fpuAccurateMulSubAcc(_FAValUl_, _FsValUl_, _FtValUl_);
@@ -474,7 +474,7 @@ void MSUB_S() {
 }
 
 void MSUBA_S() {
-	if (CHECK_FPU_SOFT_ADDSUB && CHECK_FPU_SOFT_MUL)
+	if (CHECK_FPU_SOFT_ADDSUB || CHECK_FPU_SOFT_MUL)
 	{
 		PS2Float mulres = fpuAccurateMul(_FsValUl_, _FtValUl_);
 		PS2Float fmacres = fpuAccurateMulSubAcc(_FAValUl_, _FsValUl_, _FtValUl_);

@@ -2863,7 +2863,6 @@ void VMManager::UpdateCPUImplementations()
 
 	CpuVU0 = EmuConfig.Cpu.Recompiler.EnableVU0 ? static_cast<BaseVUmicroCPU*>(&CpuMicroVU0) : static_cast<BaseVUmicroCPU*>(&CpuIntVU0);
 	CpuVU1 = REC_VU1 ? static_cast<BaseVUmicroCPU*>(&CpuMicroVU1) : static_cast<BaseVUmicroCPU*>(&CpuIntVU1);
-	vu1SoftNativeDiagProvider(CpuVU1 == static_cast<BaseVUmicroCPU*>(&CpuMicroVU1));
 #else
 	Cpu = &intCpu;
 	psxCpu = &psxInt;

@@ -379,7 +379,18 @@ static bool mVU1UpperOpUsesSoftMul(u32 code)
 static bool mVU1UpperOpIsStage1Native(u32 code)
 {
 	const u32 upper_op = code & 0x3f;
-	return (upper_op <= 0x07) || (upper_op >= 0x18 && upper_op <= 0x1b) || upper_op == 0x28 || upper_op == 0x2a || upper_op == 0x2c;
+	const u32 xyzw = (code >> 21) & 0xf;
+	if (upper_op == 0x28 || upper_op == 0x2a || upper_op == 0x2c)
+		return xyzw == 0xf || IsVU1SoftNativeStageAllowed(2);
+	if ((upper_op <= 0x07) || (upper_op >= 0x18 && upper_op <= 0x1b))
+		return IsVU1SoftNativeStageAllowed(3);
+	if (upper_op == 0x1e || upper_op == 0x22 || upper_op == 0x26)
+		return IsVU1SoftNativeStageAllowed(4);
+	if ((upper_op >= 0x08 && upper_op <= 0x0f) || upper_op == 0x23 || upper_op == 0x27 || upper_op == 0x29 || upper_op == 0x2d)
+		return IsVU1SoftNativeStageAllowed(5);
+	if (upper_op == 0x1c)
+		return IsVU1SoftNativeStageAllowed(6);
+	return false;
 }
 
 static bool mVU1LowerOpIsUnsafeForStage1Native(u32 code)
@@ -402,8 +413,8 @@ static mVU1Stage1ScanResult mVU1ScanNativeSoftFloatStage1(microVU& mVU, s32 star
 	const bool soft_mul = CHECK_VU_SOFT_MUL(1) != 0;
 	if (!soft_addsub && !soft_mul)
 		return {false, "soft-disabled", static_cast<u32>(start), 0};
-	if (mVU.index != 1 || IsVU1SoftNativeDiagFallbackOnly())
-		return {false, "diag-disabled", static_cast<u32>(start), 0};
+	if (mVU.index != 1)
+		return {false, "not-vu1", static_cast<u32>(start), 0};
 	if (start < 0 || end <= start)
 		return {false, "empty-range", static_cast<u32>(start), 0};
 
@@ -440,16 +451,8 @@ static mVU1Stage1ScanResult mVU1ScanNativeSoftFloatStage1(microVU& mVU, s32 star
 
 void mVU1UpdateStage1NativeAllowed(microVU& mVU, s32 start, s32 end)
 {
-	static u64 s_decisions = 0;
 	const mVU1Stage1ScanResult scan = mVU1ScanNativeSoftFloatStage1(mVU, start, end);
 	mVU1Stage1NativeAllowed = scan.native_path;
-	if (mVU.index == 1 && IsVU1SoftNativeDiagEnabled() && !IsVU1SoftNativeDiagFallbackOnly() && (CHECK_VU_SOFT_ADDSUB(1) || CHECK_VU_SOFT_MUL(1)))
-	{
-		s_decisions++;
-		if (scan.native_path || s_decisions <= 16 || (s_decisions & (s_decisions - 1)) == 0)
-			Console.WriteLn("VU1 soft native diag: compile=%s reason=%s range=%04x-%04x pc=%04x code=%08x decisions=%" PRIu64,
-				scan.native_path ? "native" : "normal", scan.reason, static_cast<u32>(start), static_cast<u32>(end), scan.pc, scan.code, s_decisions);
-	}
 }
 
 void recMicroVU0::Reserve()

@@ -113,7 +113,7 @@ mVUop(mVU_DIV)
 	pass1 { mVUanalyzeFDIV(mVU, _Fs_, _Fsf_, _Ft_, _Ftf_, 7); }
 	pass2
 	{
-		if (mVU.index == 1 && CHECK_VU_SOFT_DIVSQRT(1))
+		if (CHECK_VU_SOFT_DIVSQRT(mVU.index) && (mVU.index == 0 || IsVU1SoftNativeStageAllowed(6)))
 		{
 			mVUemitLowerDivSoftHelperCall(mVU, 0);
 			mVU.profiler.EmitOp(opDIV);
@@ -169,7 +169,7 @@ mVUop(mVU_SQRT)
 	pass1 { mVUanalyzeFDIV(mVU, 0, 0, _Ft_, _Ftf_, 7); }
 	pass2
 	{
-		if (mVU.index == 1 && CHECK_VU_SOFT_DIVSQRT(1))
+		if (CHECK_VU_SOFT_DIVSQRT(mVU.index) && (mVU.index == 0 || IsVU1SoftNativeStageAllowed(6)))
 		{
 			mVUemitLowerDivSoftHelperCall(mVU, 1);
 			mVU.profiler.EmitOp(opSQRT);
@@ -203,7 +203,7 @@ mVUop(mVU_RSQRT)
 	pass1 { mVUanalyzeFDIV(mVU, _Fs_, _Fsf_, _Ft_, _Ftf_, 13); }
 	pass2
 	{
-		if (mVU.index == 1 && CHECK_VU_SOFT_DIVSQRT(1))
+		if (CHECK_VU_SOFT_DIVSQRT(mVU.index) && (mVU.index == 0 || IsVU1SoftNativeStageAllowed(6)))
 		{
 			mVUemitLowerDivSoftHelperCall(mVU, 2);
 			mVU.profiler.EmitOp(opRSQRT);

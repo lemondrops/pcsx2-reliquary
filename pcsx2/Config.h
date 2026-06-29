@@ -1590,31 +1590,13 @@ namespace EmuFolders
 // ------------ CPU / Recompiler Options ---------------
 
 #ifdef _M_X86 // TODO: Remove me once EE/VU/IOP recs are added.
-static inline bool IsVU1SoftNativeDiagEnabled()
-{
-	static const bool enabled = []() {
-		const char* value = std::getenv("PCSX2_VU1_SOFT_NATIVE_DIAG");
-		return value && value[0] && value[0] != '0';
-	}();
-	return enabled;
-}
-
-static inline bool IsVU1SoftNativeDiagFallbackOnly()
-{
-	static const bool enabled = []() {
-		const char* value = std::getenv("PCSX2_VU1_SOFT_NATIVE_DIAG");
-		return value && std::strcmp(value, "fallback") == 0;
-	}();
-	return enabled;
-}
-
-#define REC_VU1 (EmuConfig.Cpu.Recompiler.EnableVU1 && !IsVU1SoftNativeDiagFallbackOnly())
+#define REC_VU1 (EmuConfig.Cpu.Recompiler.EnableVU1)
 #define THREAD_VU1 (REC_VU1 && EmuConfig.Speedhacks.vuThread && !(CHECK_VU_SOFT_ADDSUB(1) || CHECK_VU_SOFT_MUL(1)))
+#define IsVU1SoftNativeStageAllowed(stage) true
 #else
 #define THREAD_VU1 false
 #define REC_VU1 false
-#define IsVU1SoftNativeDiagEnabled() false
-#define IsVU1SoftNativeDiagFallbackOnly() false
+#define IsVU1SoftNativeStageAllowed(stage) false
 #endif
 #define INSTANT_VU1 (EmuConfig.Speedhacks.vu1Instant)
 #define CHECK_EEREC (EmuConfig.Cpu.Recompiler.EnableEE)

@@ -8,7 +8,6 @@
 #include "Gif_Unit.h"
 #include "MTVU.h"
 
-#include <atomic>
 #include <cmath>
 u32 laststall = 0;
 //Lower/Upper instructions can use that..
@@ -37,37 +36,6 @@ static constexpr u32 VU_FMAC_STICKY_SOURCE_VALID = 1u << 20;
 #define VI_BACKUP
 
 alignas(16) static VECTOR RDzero;
-
-static std::atomic<u64> s_vu1_soft_native_diag_provider_microvu{0};
-static std::atomic<u64> s_vu1_soft_native_diag_provider_interp{0};
-static std::atomic<u64> s_vu1_soft_native_diag_upper_helper{0};
-
-static bool vu1SoftNativeDiagShouldLog(u64 count)
-{
-	return count <= 16 || (count & (count - 1)) == 0;
-}
-
-void vu1SoftNativeDiagProvider(bool microVUProvider)
-{
-	if (!IsVU1SoftNativeDiagEnabled())
-		return;
-
-	const u64 micro = microVUProvider ? s_vu1_soft_native_diag_provider_microvu.fetch_add(1, std::memory_order_relaxed) + 1 : s_vu1_soft_native_diag_provider_microvu.load(std::memory_order_relaxed);
-	const u64 interp = !microVUProvider ? s_vu1_soft_native_diag_provider_interp.fetch_add(1, std::memory_order_relaxed) + 1 : s_vu1_soft_native_diag_provider_interp.load(std::memory_order_relaxed);
-	const u64 count = microVUProvider ? micro : interp;
-	if (vu1SoftNativeDiagShouldLog(count))
-		Console.WriteLn("VU1 soft native diag: provider=%s micro=%" PRIu64 " interp=%" PRIu64, microVUProvider ? "microVU" : "interpreter", micro, interp);
-}
-
-void vu1SoftNativeDiagUpperHelper(VuUpperFmacSoftOp op)
-{
-	if (!IsVU1SoftNativeDiagEnabled())
-		return;
-
-	const u64 count = s_vu1_soft_native_diag_upper_helper.fetch_add(1, std::memory_order_relaxed) + 1;
-	if (vu1SoftNativeDiagShouldLog(count))
-		Console.WriteLn("VU1 soft native diag: upper_helper=%" PRIu64 " op=%u", count, static_cast<u32>(op));
-}
 
 static __fi u32 vuApplyFMACStatusFlag(u32 current_status, u32 fmac_status, bool write_sticky)
 {
@@ -1291,9 +1259,6 @@ static __fi void _vuMSUBAw(VURegs* VU) { vuMSUBAbc(VU, VU->VF[_Ft_].i.w); }
 
 void vuUpperFmacSoftHelper(VURegs* VU, VuUpperFmacSoftOp op)
 {
-	if (VU == &VU1)
-		vu1SoftNativeDiagUpperHelper(op);
-
 	switch (op)
 	{
 		case VuUpperFmacSoftOp::ADD:
@@ -1509,6 +1474,68 @@ void vuUpperFmacSoftHelper(VURegs* VU, VuUpperFmacSoftOp op)
 	}
 }
 
+void vuUpperFmacSoftAddFull(VURegs* VU)
+{
+	_vuADD(VU);
+}
+
+void vuUpperFmacSoftSubFull(VURegs* VU)
+{
+	_vuSUB(VU);
+}
+
+void vuUpperFmacSoftMulFull(VURegs* VU)
+{
+	_vuMUL(VU);
+}
+
+#define VU_UPPER_FMAC_SOFT_BROADCAST_HELPER(name, op, helper) \
+	void name(VURegs* VU) \
+	{ \
+		helper(VU); \
+		VU->statusflag |= 0x300; \
+		VU->VI[REG_STATUS_FLAG].UL |= 0x300; \
+	}
+
+VU_UPPER_FMAC_SOFT_BROADCAST_HELPER(vuUpperFmacSoftAddX, VuUpperFmacSoftOp::ADDx, _vuADDx)
+VU_UPPER_FMAC_SOFT_BROADCAST_HELPER(vuUpperFmacSoftAddY, VuUpperFmacSoftOp::ADDy, _vuADDy)
+VU_UPPER_FMAC_SOFT_BROADCAST_HELPER(vuUpperFmacSoftAddZ, VuUpperFmacSoftOp::ADDz, _vuADDz)
+VU_UPPER_FMAC_SOFT_BROADCAST_HELPER(vuUpperFmacSoftAddW, VuUpperFmacSoftOp::ADDw, _vuADDw)
+VU_UPPER_FMAC_SOFT_BROADCAST_HELPER(vuUpperFmacSoftSubX, VuUpperFmacSoftOp::SUBx, _vuSUBx)
+VU_UPPER_FMAC_SOFT_BROADCAST_HELPER(vuUpperFmacSoftSubY, VuUpperFmacSoftOp::SUBy, _vuSUBy)
+VU_UPPER_FMAC_SOFT_BROADCAST_HELPER(vuUpperFmacSoftSubZ, VuUpperFmacSoftOp::SUBz, _vuSUBz)
+VU_UPPER_FMAC_SOFT_BROADCAST_HELPER(vuUpperFmacSoftSubW, VuUpperFmacSoftOp::SUBw, _vuSUBw)
+VU_UPPER_FMAC_SOFT_BROADCAST_HELPER(vuUpperFmacSoftMulX, VuUpperFmacSoftOp::MULx, _vuMULx)
+VU_UPPER_FMAC_SOFT_BROADCAST_HELPER(vuUpperFmacSoftMulY, VuUpperFmacSoftOp::MULy, _vuMULy)
+VU_UPPER_FMAC_SOFT_BROADCAST_HELPER(vuUpperFmacSoftMulZ, VuUpperFmacSoftOp::MULz, _vuMULz)
+VU_UPPER_FMAC_SOFT_BROADCAST_HELPER(vuUpperFmacSoftMulW, VuUpperFmacSoftOp::MULw, _vuMULw)
+
+#undef VU_UPPER_FMAC_SOFT_BROADCAST_HELPER
+
+#define VU_UPPER_FMAC_SOFT_ACC_HELPER(name, op, helper) \
+	void name(VURegs* VU) \
+	{ \
+		helper(VU); \
+	}
+
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftAddAccFull, VuUpperFmacSoftOp::ADDA, _vuADDA)
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftSubAccFull, VuUpperFmacSoftOp::SUBA, _vuSUBA)
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftMulAccFull, VuUpperFmacSoftOp::MULA, _vuMULA)
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftAddAccX, VuUpperFmacSoftOp::ADDAx, _vuADDAx)
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftAddAccY, VuUpperFmacSoftOp::ADDAy, _vuADDAy)
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftAddAccZ, VuUpperFmacSoftOp::ADDAz, _vuADDAz)
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftAddAccW, VuUpperFmacSoftOp::ADDAw, _vuADDAw)
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftSubAccX, VuUpperFmacSoftOp::SUBAx, _vuSUBAx)
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftSubAccY, VuUpperFmacSoftOp::SUBAy, _vuSUBAy)
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftSubAccZ, VuUpperFmacSoftOp::SUBAz, _vuSUBAz)
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftSubAccW, VuUpperFmacSoftOp::SUBAw, _vuSUBAw)
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftMulAccX, VuUpperFmacSoftOp::MULAx, _vuMULAx)
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftMulAccY, VuUpperFmacSoftOp::MULAy, _vuMULAy)
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftMulAccZ, VuUpperFmacSoftOp::MULAz, _vuMULAz)
+VU_UPPER_FMAC_SOFT_ACC_HELPER(vuUpperFmacSoftMulAccW, VuUpperFmacSoftOp::MULAw, _vuMULAw)
+
+#undef VU_UPPER_FMAC_SOFT_ACC_HELPER
+
 void vuUpperFmacSoftNativeFixup(VURegs* VU, VuUpperFmacSoftOp op)
 {
 	auto updateMaskedBinaryFlags = [VU](PS2Float (*fn)(u32, u32)) {
@@ -1621,6 +1648,39 @@ void vuUpperFmacSoftNativeFixup(VURegs* VU, VuUpperFmacSoftOp op)
 		VU->statusflag |= extra_sticky;
 		VU->VI[REG_STATUS_FLAG].UL |= extra_sticky;
 	}
+}
+
+static bool vuUpperFmacSoftNativeNeedsFixup(VURegs* VU, VuUpperFmacSoftOp op)
+{
+	switch (op)
+	{
+		case VuUpperFmacSoftOp::ADD:
+		case VuUpperFmacSoftOp::SUB:
+		case VuUpperFmacSoftOp::MUL:
+			return ((VU->code >> 21) & 0xf) != 0xf;
+		case VuUpperFmacSoftOp::ADDx:
+		case VuUpperFmacSoftOp::ADDy:
+		case VuUpperFmacSoftOp::ADDz:
+		case VuUpperFmacSoftOp::ADDw:
+		case VuUpperFmacSoftOp::SUBx:
+		case VuUpperFmacSoftOp::SUBy:
+		case VuUpperFmacSoftOp::SUBz:
+		case VuUpperFmacSoftOp::SUBw:
+		case VuUpperFmacSoftOp::MULx:
+		case VuUpperFmacSoftOp::MULy:
+		case VuUpperFmacSoftOp::MULz:
+		case VuUpperFmacSoftOp::MULw:
+			return true;
+		default:
+			return op >= VuUpperFmacSoftOp::MADD && op <= VuUpperFmacSoftOp::MSUBAw;
+	}
+}
+
+void vuUpperFmacSoftNativeBridge(VURegs* VU, VuUpperFmacSoftOp op)
+{
+	vuUpperFmacSoftHelper(VU, op);
+	if (vuUpperFmacSoftNativeNeedsFixup(VU, op))
+		vuUpperFmacSoftNativeFixup(VU, op);
 }
 
 // The functions below are floating point semantics min/max on integer representations to get
@@ -1813,11 +1873,7 @@ static __fi void _vuDIV(VURegs* VU)
 			else
 				VU->statusflag |= 0x820;
 
-			if ((VU->VF[_Ft_].UL[_Ftf_] & 0x80000000) ^
-				(VU->VF[_Fs_].UL[_Fsf_] & 0x80000000))
-				VU->q.UL = PS2Float::MIN_FLOATING_POINT_VALUE;
-			else
-				VU->q.UL = PS2Float::MAX_FLOATING_POINT_VALUE;
+			VU->q.UL = ((VU->VF[_Ft_].UL[_Ftf_] ^ VU->VF[_Fs_].UL[_Fsf_]) & 0x80000000) | 0x7fffffffu;
 		}
 		else
 		{
@@ -1894,11 +1950,11 @@ static __fi void _vuRSQRT(VURegs* VU)
 				VU->statusflag |= 0x820;
 				if (VU->VF[_Ft_].UL[_Ftf_] & 0x80000000)
 					VU->statusflag |= 0x410;
-				VU->q.UL = PS2Float::MAX_FLOATING_POINT_VALUE;
+				VU->q.UL = 0x7fffffffu;
 			}
 			else
 			{
-				VU->q.UL = PS2Float::MAX_FLOATING_POINT_VALUE;
+				VU->q.UL = 0x7fffffffu;
 				VU->statusflag |= 0x410;
 			}
 		}
