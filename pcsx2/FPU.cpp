@@ -309,7 +309,8 @@ void ADDA_S() {
 	else
 	{
 		_FAValf_  = fpuDouble( _FsValUl_ ) + fpuDouble( _FtValUl_ );
-		if (checkOverflow( _FAValUl_, FPUflagO | FPUflagSO)) return;
+		s_fpuAccOverflow = checkOverflow( _FAValUl_, FPUflagO | FPUflagSO);
+		if (s_fpuAccOverflow) return;
 		checkUnderflow( _FAValUl_, FPUflagU | FPUflagSU);
 	}
 }
@@ -428,7 +429,8 @@ void MADDA_S() {
 	else
 	{
 		_FAValf_ += fpuDouble( _FsValUl_ ) * fpuDouble( _FtValUl_ );
-		if (checkOverflow( _FAValUl_, FPUflagO | FPUflagSO)) return;
+		s_fpuAccOverflow = checkOverflow( _FAValUl_, FPUflagO | FPUflagSO);
+		if (s_fpuAccOverflow) return;
 		checkUnderflow( _FAValUl_, FPUflagU | FPUflagSU);
 	}
 }
@@ -488,7 +490,8 @@ void MSUBA_S() {
 	else
 	{
 		_FAValf_ -= fpuDouble( _FsValUl_ ) * fpuDouble( _FtValUl_ );
-		if (checkOverflow( _FAValUl_, FPUflagO | FPUflagSO)) return;
+		s_fpuAccOverflow = checkOverflow( _FAValUl_, FPUflagO | FPUflagSO);
+		if (s_fpuAccOverflow) return;
 		checkUnderflow( _FAValUl_, FPUflagU | FPUflagSU);
 	}
 }
@@ -525,7 +528,8 @@ void MULA_S() {
 	else
 	{
 		_FAValf_  = fpuDouble( _FsValUl_ ) * fpuDouble( _FtValUl_ );
-		if (checkOverflow( _FAValUl_, FPUflagO | FPUflagSO)) return;
+		s_fpuAccOverflow = checkOverflow( _FAValUl_, FPUflagO | FPUflagSO);
+		if (s_fpuAccOverflow) return;
 		checkUnderflow( _FAValUl_, FPUflagU | FPUflagSU);
 	}
 }
@@ -619,7 +623,8 @@ void SUBA_S() {
 	else
 	{
 		_FAValf_  = fpuDouble( _FsValUl_ ) - fpuDouble( _FtValUl_ );
-		if (checkOverflow( _FAValUl_, FPUflagO | FPUflagSO)) return;
+		s_fpuAccOverflow = checkOverflow( _FAValUl_, FPUflagO | FPUflagSO);
+		if (s_fpuAccOverflow) return;
 		checkUnderflow( _FAValUl_, FPUflagU | FPUflagSU);
 	}
 }
