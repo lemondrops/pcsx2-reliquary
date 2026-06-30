@@ -43,7 +43,7 @@ public:
 		m_size.x = img->get_width();
 		m_size.y = img->get_height();
 		m_mipmap_levels = 1;
-		m_type = Type::Texture;
+		m_usage = Usage::Texture;
 		m_format = Format::Color;
 	}
 

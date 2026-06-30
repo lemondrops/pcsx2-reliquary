@@ -207,7 +207,10 @@ static bool OpenGSDevice(GSRendererType renderer, bool clear_state_on_fail, bool
 		return false;
 	}
 
-	GSConfig.OsdShowGPU = g_gs_device && GSConfig.OsdShowGPU && g_gs_device->SetGPUTimingEnabled(true);
+	if (g_gs_device && !g_gs_device->SetGPUTimingEnabled(true))
+		GSConfig.OsdShowGPU = false;
+	if (g_gs_device && !g_gs_device->SetGPUPipelineStatisticsEnabled(true))
+		GSConfig.OsdShowGPUStats = false;
 
 	Console.WriteLn(Color_StrongGreen, "%s Graphics Driver Info:", GSDevice::RenderAPIToString(new_api));
 	if (g_gs_device)
@@ -1026,7 +1029,7 @@ void GSgetStats(SmallStringBase& info)
 				(int)std::ceil(pm.Get(GSPerfMon::RenderPasses)),
 				(int)std::ceil(pm.Get(GSPerfMon::Readbacks)),
 				(int)std::ceil(pm.Get(GSPerfMon::TextureCopies)),
-				(int)std::ceil(pm.Get(GSPerfMon::DepthCopiesROV)),
+				(int)std::ceil(pm.Get(GSPerfMon::TextureCopiesROV)),
 				(int)std::ceil(pm.Get(GSPerfMon::TextureUploads)));
 		}
 	}
@@ -1192,6 +1195,12 @@ void GSUpdateConfig(const Pcsx2Config::GSOptions& new_config)
 	{
 		if (!g_gs_device->SetGPUTimingEnabled(true))
 			GSConfig.OsdShowGPU = false;
+	}
+
+	if (GSConfig.OsdShowGPUStats != old_config.OsdShowGPUStats)
+	{
+		if (!g_gs_device->SetGPUPipelineStatisticsEnabled(GSConfig.OsdShowGPUStats))
+			GSConfig.OsdShowGPUStats = false;
 	}
 }
 

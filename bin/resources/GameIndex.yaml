@@ -1978,6 +1978,7 @@ SCAJ-20109:
     halfPixelOffset: 4 # Aligns post bloom.
     nativeScaling: 1 # Fixes light blooms.
     autoFlush: 2 # Helps fix misaligned bloom.
+    recommendedAccurateAlphaTest: 1 # Fixes shadows and glasses alpha.
   memcardFilters:
     - "SCAJ-20109"
     - "SCAJ-20052"
@@ -5875,6 +5876,7 @@ SCES-52456:
     halfPixelOffset: 4 # Aligns post bloom.
     nativeScaling: 1 # Fixes light blooms.
     autoFlush: 2 # Helps fix misaligned bloom.
+    recommendedAccurateAlphaTest: 1 # Fixes shadows and glasses alpha.
   memcardFilters: # Reads Ratchet 1 & 2 data.
     - "SCES-52456"
     - "SCES-51607"
@@ -7525,6 +7527,7 @@ SCKA-20037:
     halfPixelOffset: 4 # Aligns post bloom.
     nativeScaling: 1 # Fixes light blooms.
     autoFlush: 2 # Helps fix misaligned bloom.
+    recommendedAccurateAlphaTest: 1 # Fixes shadows and glasses alpha.
   memcardFilters:
     - "SCKA-20037"
     - "SCKA-20011"
@@ -9410,6 +9413,7 @@ SCPS-15084:
     halfPixelOffset: 4 # Aligns post bloom.
     nativeScaling: 1 # Fixes light blooms.
     autoFlush: 2 # Helps fix misaligned bloom.
+    recommendedAccurateAlphaTest: 1 # Fixes shadows and glasses alpha.
   memcardFilters:
     - "SCPS-15084"
     - "SCPS-15056"
@@ -10207,6 +10211,7 @@ SCPS-19309:
     halfPixelOffset: 4 # Aligns post bloom.
     nativeScaling: 1 # Fixes light blooms.
     autoFlush: 2 # Helps fix misaligned bloom.
+    recommendedAccurateAlphaTest: 1 # Fixes shadows and glasses alpha.
 SCPS-19310:
   name: "ラチェット&クランク [PlayStation2 the Best]"
   name-sort: "らちぇっとあんどくらんく [PlayStation2 the Best]"
@@ -12092,6 +12097,7 @@ SCUS-97353:
     halfPixelOffset: 4 # Aligns post bloom.
     nativeScaling: 1 # Fixes light blooms.
     autoFlush: 2 # Helps fix misaligned bloom.
+    recommendedAccurateAlphaTest: 1 # Fixes shadows and glasses alpha.
   memcardFilters:
     - "SCUS-97353"
     - "SCUS-97268"
@@ -12326,6 +12332,7 @@ SCUS-97411:
     halfPixelOffset: 4 # Aligns post bloom.
     nativeScaling: 1 # Fixes light blooms.
     autoFlush: 2 # Helps fix misaligned bloom.
+    recommendedAccurateAlphaTest: 1 # Fixes shadows and glasses alpha.
 SCUS-97412:
   name: "Jak 3 [Demo]"
   region: "NTSC-U"
@@ -12349,6 +12356,7 @@ SCUS-97413:
     halfPixelOffset: 4 # Aligns post bloom.
     nativeScaling: 1 # Fixes light blooms.
     autoFlush: 2 # Helps fix misaligned bloom.
+    recommendedAccurateAlphaTest: 1 # Fixes shadows and glasses alpha.
 SCUS-97414:
   name: "EyeToy - AntiGrav"
   region: "NTSC-U"
@@ -12908,6 +12916,7 @@ SCUS-97518:
     halfPixelOffset: 4 # Aligns post bloom.
     nativeScaling: 1 # Fixes light blooms.
     autoFlush: 2 # Helps fix misaligned bloom.
+    recommendedAccurateAlphaTest: 1 # Fixes shadows and glasses alpha.
   memcardFilters:
     - "SCUS-97518"
     - "SCUS-97513"
@@ -18692,6 +18701,8 @@ SLES-51713:
 SLES-51714:
   name: "BCV - Battle Construction Vehicles"
   region: "PAL-E"
+  gsHWFixes:
+    recommendedHWAA1: 1 # Fixes line thickness on vehicles and buildings.
 SLES-51715:
   name: "The Seed - War Zone"
   name-sort: "Seed, The - War Zone"
@@ -22099,10 +22110,10 @@ SLES-52939:
   name: "Airborne Troops - Countdown to D-Day"
   region: "PAL-M4"
 SLES-52940:
-  name: "S.L.A.I. Steel Lancer Arena International"
+  name: "S.L.A.I. - Steel Lancer Arena International"
   region: "PAL-M3"
   gsHWFixes:
-    halfPixelOffset: 4 # Fixes double image and aligns glow effects.
+    halfPixelOffset: 5 # Fixes double image and aligns glow effects.
 SLES-52941:
   name: "Gungrave - Overdose"
   region: "PAL-M3"
@@ -45999,12 +46010,12 @@ SLPM-65790:
     nativeScaling: 4 # Fixes post lighting.
     getSkipCount: "GSC_MetalGearSolid3" # Fixes depth of field blur.
 SLPM-65791:
-  name: "S.L.A.I -STEEL LANCER ARENA INTERNATIONAL-"
+  name: "S.L.A.I. -STEEL LANCER ARENA INTERNATIONAL-"
   name-sort: "すれい -すてぃーる らんさー ありーな いんたーなしょなる-"
   name-en: "S.L.A.I. - Steel Lancer Arena International"
   region: "NTSC-J"
   gsHWFixes:
-    halfPixelOffset: 4 # Fixes double image and aligns glow effects.
+    halfPixelOffset: 5 # Fixes double image and aligns glow effects.
 SLPM-65793:
   name: "SSX3 [EA BEST HITS]"
   name-sort: "SSX3 [EA BEST HITS]"
@@ -57514,6 +57525,8 @@ SLPS-25004:
   name-en: "Kensetsu Juuki Kenka Battle - Buchigire Kongou!!"
   region: "NTSC-J"
   compat: 5
+  gsHWFixes:
+    recommendedHWAA1: 1 # Fixes line thickness on vehicles and buildings.
 SLPS-25005:
   name: "ロックンメガステージ"
   name-sort: "ろっくんめがすてーじ"
@@ -59892,6 +59905,8 @@ SLPS-25394:
   name-sort: "あなざーせんちゅりーずえぴそーど"
   name-en: "Another Century's Episode"
   region: "NTSC-J"
+  gsHWFixes:
+    textureInsideRT: 1 # Fixes broken effect rendering.
 SLPS-25395:
   name: "センチメンタルプレリュード"
   name-sort: "せんちめんたるぷれりゅーど"
@@ -64003,6 +64018,8 @@ SLPS-73227:
   name-sort: "あなざーせんちゅりーずえぴそーど [PlayStation2 the Best]"
   name-en: "Another Century's Episode [PlayStation2 the Best]"
   region: "NTSC-J"
+  gsHWFixes:
+    textureInsideRT: 1 # Fixes broken effect rendering.
 SLPS-73228:
   name: "風雲　幕末伝 [PlayStation2 the Best]"
   name-sort: "ふううんばくまつでん [PlayStation2 the Best]"
@@ -69535,11 +69552,11 @@ SLUS-20968:
   name: "Karaoke Revolution Volume 2"
   region: "NTSC-U"
 SLUS-20969:
-  name: "S.L.A.I. - Steel Lancer Arena International - Phantom Crash"
+  name: "S.L.A.I. - Steel Lancer Arena International"
   region: "NTSC-U"
   compat: 5
   gsHWFixes:
-    halfPixelOffset: 4 # Fixes double image and aligns glow effects.
+    halfPixelOffset: 5 # Fixes double image and aligns glow effects.
 SLUS-20970:
   name: "Rumble Roses"
   region: "NTSC-U"
@@ -76066,7 +76083,7 @@ SLUS-29132:
   name: "S.L.A.I. - Steel Lancer Arena International - Phantom Crash [Public Beta Vol.1.0]"
   region: "NTSC-U"
   gsHWFixes:
-    halfPixelOffset: 4 # Fixes double image and aligns glow effects.
+    halfPixelOffset: 5 # Fixes double image and aligns glow effects.
 SLUS-29133:
   name: "Namco Transmission Demo Disc Vol.2"
   region: "NTSC-U"
@@ -76514,6 +76531,7 @@ TCES-52456:
     halfPixelOffset: 4 # Aligns post bloom.
     nativeScaling: 1 # Fixes light blooms.
     autoFlush: 2 # Helps fix misaligned bloom.
+    recommendedAccurateAlphaTest: 1 # Fixes shadows and glasses alpha.
 TCES-52582:
   name: "Everybody's Golf 4 [Beta Trial Code]"
   region: "PAL-E"
@@ -76866,6 +76884,8 @@ TLES-52781:
 TLES-52940:
   name: "S.L.A.I. - Steel Lancer Arena International Beta Trial Code"
   region: "PAL-E"
+  gsHWFixes:
+    halfPixelOffset: 5 # Fixes double image and aligns glow effects.
 TLES-53544:
   name: "Pro Evolution Soccer 5 Beta Trial Code"
   region: "PAL-E"
