@@ -138,7 +138,7 @@ jobs:
 
   # Windows
   build_windows_deps:
-    if: github.repository == 'DiscoStarslayer/pcsx2-reliquary'
+    if: github.event_name == 'workflow_dispatch' || github.repository == 'DiscoStarslayer/pcsx2-reliquary'
     name: "Windows Dependencies"
     uses: ./.github/workflows/windows_deps_build.yml
 
