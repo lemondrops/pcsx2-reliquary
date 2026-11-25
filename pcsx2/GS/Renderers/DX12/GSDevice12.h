@@ -217,7 +217,6 @@ private:
 	void LoadAgilitySDK();
 
 	bool CreateDevice(u32& vendor_id);
-	HRESULT CheckFeatureSupport(D3D12_FEATURE feature, void* data, UINT size) const;
 	bool CreateDescriptorHeaps();
 	bool CreateCommandLists();
 	bool CreateTimestampQuery();
@@ -227,7 +226,6 @@ private:
 
 	ComPtr<IDXGIAdapter1> m_adapter;
 	ComPtr<ID3D12Device> m_device;
-	ComPtr<ID3D12Device16> m_device16;
 	ComPtr<ID3D12CommandQueue> m_command_queue;
 	ComPtr<D3D12MA::Allocator> m_allocator;
 
