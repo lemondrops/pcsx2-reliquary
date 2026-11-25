@@ -18,6 +18,7 @@ private:
 		const GSVector2i& src_size, GSDisplayAlignment alignment, bool flip_y);
 
 	u64 m_shader_time_start = 0;
+	bool m_background_blurred = false;
 
 	std::string m_snapshot;
 	u32 m_dump_frames = 0;

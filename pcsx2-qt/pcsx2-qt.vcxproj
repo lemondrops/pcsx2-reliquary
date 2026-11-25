@@ -340,6 +340,7 @@
     <QtUi Include="Settings\BIOSSettingsWidget.ui" />
     <QtUi Include="Settings\ControllerBindingWidget.ui" />
     <QtUi Include="Settings\FireWireDeviceWidget.ui" />
+    <QtUi Include="Settings\ControllerBindingWidget_DualShock1.ui" />
     <QtUi Include="Settings\ControllerBindingWidget_DualShock2.ui" />
     <QtUi Include="Settings\ControllerBindingWidget_Guitar.ui" />
     <QtUi Include="Settings\ControllerBindingWidget_Jogcon.ui" />

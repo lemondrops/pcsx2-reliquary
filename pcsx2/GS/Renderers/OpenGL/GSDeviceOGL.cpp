@@ -941,12 +941,15 @@ bool GSDeviceOGL::CheckFeatures()
 	// Attachment can not be bound as read only unlike on dx11/12/vk,
 	// and it's not always guaranteed to work properly even if depth write is disabled.
 	m_features.test_and_sample_depth = false;
-	// Auto select chooses depth-as-rt as it appears to be more compatible across hardware.
-	m_features.depth_feedback = GSConfig.DepthFeedbackMode == GSDepthFeedbackMode::Depth;
-	if (!m_features.texture_barrier && m_features.multidraw_fb_copy)
+	if (!m_features.framebuffer_fetch)
 	{
-		// Multidraw fb copy can do depth feedback just fine
-		m_features.depth_feedback |= GSConfig.DepthFeedbackMode == GSDepthFeedbackMode::Auto;
+		// Auto select chooses depth-as-rt as it appears to be more compatible across hardware.
+		m_features.depth_feedback = GSConfig.DepthFeedbackMode == GSDepthFeedbackMode::Depth;
+		if (!m_features.texture_barrier && m_features.multidraw_fb_copy)
+		{
+			// Multidraw fb copy can do depth feedback just fine
+			m_features.depth_feedback |= GSConfig.DepthFeedbackMode == GSDepthFeedbackMode::Auto;
+		}
 	}
 
 	if (GLAD_GL_VERSION_4_3 || GLAD_GL_ARB_shader_storage_buffer_object)
@@ -1952,6 +1955,9 @@ void GSDeviceOGL::CopyRect(GSTexture* sTex, GSTexture* dTex, const GSVector4i& r
 		return;
 	}
 
+	if (dTex->IsDepthStencil())
+		InvalidateDSAsRT(dTex);
+
 	const GLuint& sid = static_cast<GSTextureOGL*>(sTex)->GetID();
 	const GLuint& did = static_cast<GSTextureOGL*>(dTex)->GetID();
 	const GSVector4i dst_rect(0, 0, dTex->GetWidth(), dTex->GetHeight());
@@ -2918,7 +2924,8 @@ void GSDeviceOGL::OMSetBlendState(bool enable, GLenum src_factor, GLenum dst_fac
 void GSDeviceOGL::OMSetRenderTargets(GSTexture* rt, GSTexture* ds_as_rt, GSTexture* ds, const GSVector4i* scissor)
 {
 	const bool rt_changed = (rt != GLState::current_rt);
-	const bool ds_as_rt_changed = (ds_as_rt != GLState::current_ds_as_rt);
+	const bool ds_as_rt_changed = (ds_as_rt != GLState::current_ds_as_rt) ||
+		(ds_as_rt && ds_as_rt->GetState() == GSTexture::State::Cleared); // See note about clearing below.
 	const bool ds_changed = (ds != GLState::current_ds);
 	const u32 draw_buffers = GLState::draw_buffers;
 
@@ -2943,7 +2950,8 @@ void GSDeviceOGL::OMSetRenderTargets(GSTexture* rt, GSTexture* ds_as_rt, GSTextu
 	if (ds_as_rt)
 	{
 		OMAttachDsAsRt(ds_as_rt);
-		CommitClear(ds_as_rt, false);
+		// Clearing DS as RT on the main FBO appears to cause problems so use the alternate FBO.
+		CommitClear(ds_as_rt, true);
 		GLState::ds_as_rt_written = ds_as_rt_changed;
 	}
 	else
@@ -2954,6 +2962,13 @@ void GSDeviceOGL::OMSetRenderTargets(GSTexture* rt, GSTexture* ds_as_rt, GSTextu
 		OMAttachDs(ds);
 		CommitClear(ds, false);
 		GLState::ds_written = ds_changed;
+
+		// Invalidate DS as RT if we're updating DS alone.
+		if (!ds_as_rt)
+			InvalidateDSAsRT(ds);
+
+		// Make sure something didn't go wrong with DS as RT caching.
+		pxAssert(!ds_as_rt || m_ds_as_rt_orig == ds);
 	}
 	else
 		OMAttachDs();
@@ -3053,7 +3068,7 @@ void GSDeviceOGL::RenderHW(GSHWDrawConfig& config)
 	GSTexture* colclip_rt = g_gs_device->GetColorClipTexture();
 	GSTexture* draw_rt = config.rt;
 	GSTexture* draw_ds = config.ds;
-	GSTexture* draw_ds_as_rt = m_ds_as_rt;
+	GSTexture* draw_ds_as_rt = config.ps.IsFeedbackLoopDepth() ? m_ds_as_rt : nullptr;
 	GSTexture* draw_rt_clone = nullptr;
 	GSTexture* draw_ds_clone = nullptr;
 	GSTexture* primid_texture = nullptr;
@@ -3174,7 +3189,7 @@ void GSDeviceOGL::RenderHW(GSHWDrawConfig& config)
 	if (m_features.texture_barrier && (config.require_one_barrier || config.require_full_barrier))
 		PSSetShaderResource(TEXTURE_RT, colclip_rt ? colclip_rt : config.rt);
 	if (m_features.texture_barrier && (config.require_one_barrier || config.require_full_barrier) && config.ps.IsFeedbackLoopDepth())
-		PSSetShaderResource(TEXTURE_DEPTH, m_features.depth_feedback ? config.ds : m_ds_as_rt);
+		PSSetShaderResource(TEXTURE_DEPTH, m_features.depth_feedback ? config.ds : draw_ds_as_rt);
 
 	SetupSampler(config.sampler);
 
@@ -3307,11 +3322,11 @@ void GSDeviceOGL::RenderHW(GSHWDrawConfig& config)
 
 	const bool ds_feedbackloop_pass1 = config.ps.IsFeedbackLoopDepth();
 	const bool ds_feedbackloop_pass2 = config.alpha_second_pass.ps.IsFeedbackLoopDepth();
-	if (draw_ds && !m_features.texture_barrier && m_features.depth_feedback &&
+	if (draw_ds && !m_features.texture_barrier &&
 		(config.require_one_barrier || (config.require_full_barrier && m_features.multidraw_fb_copy)) && (ds_feedbackloop_pass1 || ds_feedbackloop_pass2))
 	{
 		// Requires a copy of the DS.
-		draw_ds_clone = CreateTexture(rtsize.x, rtsize.y, 1, draw_ds->GetFormat(), true);
+		draw_ds_clone = CreateTexture(rtsize.x, rtsize.y, 1, (draw_ds_as_rt ? draw_ds_as_rt : draw_ds)->GetFormat(), true);
 
 		if (!draw_ds_clone)
 			Console.Warning("GL: Failed to allocate temp texture for DS copy.");
@@ -3328,7 +3343,7 @@ void GSDeviceOGL::RenderHW(GSHWDrawConfig& config)
 		glClearBufferiv(GL_STENCIL, 0, &clear_color);
 	}
 
-	SendHWDraw(config, rt_feedbackloop_pass1 ? draw_rt_clone : nullptr, draw_rt, ds_feedbackloop_pass1 ? draw_ds_clone : nullptr, draw_ds,
+	SendHWDraw(config, rt_feedbackloop_pass1 ? draw_rt_clone : nullptr, draw_rt, ds_feedbackloop_pass1 ? draw_ds_clone : nullptr, draw_ds_as_rt ? draw_ds_as_rt : draw_ds,
 		config.require_one_barrier, config.require_full_barrier);
 
 	if (config.blend_multi_pass.enable)
@@ -3376,7 +3391,7 @@ void GSDeviceOGL::RenderHW(GSHWDrawConfig& config)
 		}
 		const bool one_barrier = config.alpha_second_pass.require_one_barrier && m_features.feedback_loops();
 		SetupOM(config.alpha_second_pass.depth);
-		SendHWDraw(config, rt_feedbackloop_pass2 ? draw_rt_clone : nullptr, draw_rt, ds_feedbackloop_pass2 ? draw_ds_clone : nullptr, draw_ds,
+		SendHWDraw(config, rt_feedbackloop_pass2 ? draw_rt_clone : nullptr, draw_rt, ds_feedbackloop_pass2 ? draw_ds_clone : nullptr, draw_ds_as_rt ? draw_ds_as_rt : draw_ds,
 			one_barrier, config.alpha_second_pass.require_full_barrier);
 	}
 

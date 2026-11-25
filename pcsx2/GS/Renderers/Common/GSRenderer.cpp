@@ -542,6 +542,7 @@ void GSRenderer::VSync(u32 field, bool registers_written, bool idle_frame)
 
 	m_last_draw_n = s_n;
 	m_last_transfer_n = s_transfer_n;
+	m_background_blurred = false;
 
 	// Skip presentation when running uncapped while vsync is on.
 	if (skip_frame || g_gs_device->ShouldSkipPresentingFrame())
@@ -561,7 +562,7 @@ void GSRenderer::VSync(u32 field, bool registers_written, bool idle_frame)
 		if ((g_perfmon.GetFrame() & 0x1f) == 0)
 			g_perfmon.Update();
 
-		// Little bit ugly, but we can't do CAS inside the render pass.
+		// Little bit ugly, but we can't do CAS or background blur inside the render pass.
 		GSVector4i src_rect;
 		GSVector4 src_uv, draw_rect;
 		GSTexture* current = g_gs_device->GetCurrent();
@@ -573,10 +574,11 @@ void GSRenderer::VSync(u32 field, bool registers_written, bool idle_frame)
 				src_rect, current->GetSize(), s_display_alignment, g_gs_device->UsesLowerLeftOrigin());
 			s_last_draw_rect = draw_rect;
 
+			const float blur_scale = FullscreenUI::GetBackgroundBlurScale();
+			m_background_blurred = blur_scale > 0.0f && g_gs_device->GaussianBlur(current, src_uv, draw_rect, blur_scale, true);
 			if (draw_rect.z <= draw_rect.x || draw_rect.w <= draw_rect.y)
 				current = nullptr;
-
-			if (current && GSConfig.CASMode != GSCASMode::Disabled)
+				if (current && !m_background_blurred && GSConfig.CASMode != GSCASMode::Disabled)
 			{
 				static bool cas_log_once = false;
 				if (g_gs_device->Features().cas_sharpening)
@@ -605,7 +607,8 @@ void GSRenderer::VSync(u32 field, bool registers_written, bool idle_frame)
 				const float shader_time = static_cast<float>(Common::Timer::ConvertValueToSeconds(current_time - m_shader_time_start));
 
 				g_gs_device->PresentRect(current, src_uv, nullptr, draw_rect,
-					s_tv_shader_indices[GSConfig.TVShader], shader_time, BilnIf(GSConfig.LinearPresent != GSPostBilinearMode::Off));
+					s_tv_shader_indices[GSConfig.TVShader], shader_time,
+					BilnIf(m_background_blurred || GSConfig.LinearPresent != GSPostBilinearMode::Off));
 			}
 
 			EndPresentFrame();
@@ -894,22 +897,30 @@ bool GSRenderer::IsSavingMetrics()
 
 void GSRenderer::PresentCurrentFrame()
 {
+	GSTexture* current = g_gs_device->GetCurrent();
+	GSVector4 src_uv, draw_rect;
+	if (current)
+	{
+		const GSVector4i src_rect(CalculateDrawSrcRect(current->GetSize()));
+		src_uv = GSVector4(src_rect) / GSVector4(current->GetSize()).xyxy();
+		draw_rect = CalculateDrawDstRect(g_gs_device->GetWindowWidth(), g_gs_device->GetWindowHeight(),
+			src_rect, current->GetSize(), s_display_alignment, g_gs_device->UsesLowerLeftOrigin());
+		s_last_draw_rect = draw_rect;
+		const bool refresh_blur = !m_background_blurred;
+		const float blur_scale = FullscreenUI::GetBackgroundBlurScale();
+		m_background_blurred = blur_scale > 0.0f && g_gs_device->GaussianBlur(current, src_uv, draw_rect, blur_scale, refresh_blur);
+	}
+
 	if (BeginPresentFrame(false))
 	{
-		GSTexture* current = g_gs_device->GetCurrent();
 		if (current)
 		{
-			const GSVector4i src_rect(CalculateDrawSrcRect(current->GetSize()));
-			const GSVector4 src_uv(GSVector4(src_rect) / GSVector4(current->GetSize()).xyxy());
-			const GSVector4 draw_rect(CalculateDrawDstRect(g_gs_device->GetWindowWidth(), g_gs_device->GetWindowHeight(),
-				src_rect, current->GetSize(), s_display_alignment, g_gs_device->UsesLowerLeftOrigin()));
-			s_last_draw_rect = draw_rect;
-
 			const u64 current_time = Common::Timer::GetCurrentValue();
 			const float shader_time = static_cast<float>(Common::Timer::ConvertValueToSeconds(current_time - m_shader_time_start));
 
 			g_gs_device->PresentRect(current, src_uv, nullptr, draw_rect,
-				s_tv_shader_indices[GSConfig.TVShader], shader_time, BilnIf(GSConfig.LinearPresent != GSPostBilinearMode::Off));
+				s_tv_shader_indices[GSConfig.TVShader], shader_time,
+				BilnIf(m_background_blurred || GSConfig.LinearPresent != GSPostBilinearMode::Off));
 		}
 
 		EndPresentFrame();

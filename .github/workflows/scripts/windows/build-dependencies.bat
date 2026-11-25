@@ -72,7 +72,8 @@ set LIBX264=b35605ace3ddf7c1a5d67a2eb553f034aef41d55
 
 set FREETYPE=2.14.3
 set HARFBUZZ=14.2.0
-set SDL=SDL3-3.4.18
+set SDLMINOR=3.4.20
+set SDL=SDL3-%SDLMINOR%
 set LIBJPEGTURBO=3.2.0
 set LIBPNG=1658
 set LIBPNGLONG=1.6.58
@@ -92,8 +93,8 @@ set SHADERC_GLSLANG=275822a6261ee689aadb1da5f09a0ec2f058685c
 set SHADERC_SPIRVHEADERS=58006c901d1d5c37dece6b6610e9af87fa951375
 set SHADERC_SPIRVTOOLS=6337eb62cadd7d124ac6789bf39c0f71148f0a73
 
-set AGILITYSDK=1.619.5
-set DXHEADERS=1.619.5
+set AGILITYSDK=1.620.2
+set DXHEADERS=1.620.2
 set DXC=1.9.2609.5
 
 call :downloadfile "qtbase-everywhere-src-%QT%.zip" "https://download.qt.io/official_releases/qt/%QTMINOR%/%QT%/submodules/qtbase-everywhere-src-%QT%.zip" 0529901575c413e34ded504eeda177c4a6dfd0dff1e39ed52c811dc5204b43c7 || goto error
@@ -121,15 +122,15 @@ call :downloadfile "lpng%LIBPNG%-apng.patch.gz" https://download.sourceforge.net
 call :downloadfile "libjpeg-turbo-%LIBJPEGTURBO%.tar.gz" "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/%LIBJPEGTURBO%/libjpeg-turbo-%LIBJPEGTURBO%.tar.gz" 6f30092cef9fb839779646608f4ee14ae3cbac989c47fa05e841b0841f09878e || goto error
 call :downloadfile "libusb-%LIBUSB%.tar.bz2" "https://github.com/libusb/libusb/releases/download/v%LIBUSB%/libusb-%LIBUSB%.tar.bz2" 12ce7a61fc9854d1d2a1ffe095f7b5fac19ddba095c259e6067a46500381b5a5 || goto error
 call :downloadfile "libwebp-%WEBP%.tar.gz" "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-%WEBP%.tar.gz" e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564 || goto error
-call :downloadfile "%SDL%.zip" "https://libsdl.org/release/%SDL%.zip" 9cd42377704398796071b8597cd7e21da254a43bad98c4199739647adc13fa6f || goto error
+call :downloadfile "%SDL%.zip" "https://github.com/libsdl-org/SDL/releases/download/release-%SDLMINOR%/%SDL%.zip" 9850235fa6c9e99631dbe6f30dd620e4fba2e9c879b551a8c479e505e9e3f617 || goto error
 call :downloadfile "lz4-%LZ4%.zip" "https://github.com/lz4/lz4/archive/refs/tags/v%LZ4%.zip" 3224b4c80f351f194984526ef396f6079bd6332dd9825c72ac0d7a37b3cdc565 || goto error
 call :downloadfile "zlib%ZLIBSHORT%.zip" "https://github.com/madler/zlib/releases/download/v%ZLIB%/zlib%ZLIBSHORT%.zip" e8bf55f3017aa181690990cb58a994e77885da140609fc8f94abe9b65d2cae28 || goto error
 call :downloadfile "zstd-%ZSTD%.zip" "https://github.com/facebook/zstd/archive/refs/tags/v%ZSTD%.zip" 7897bc5d620580d9b7cd3539c44b59d78f3657d33663fe97a145e07b4ebd69a4 || goto error
 call :downloadfile "KDDockWidgets-%KDDOCKWIDGETS%.zip" "https://github.com/KDAB/KDDockWidgets/archive/v%KDDOCKWIDGETS%.zip" 6f803c533e95687b3cf968ea851fb9b04e253b32e02b5a40a1542cf202dcd9d1 || goto error
 call :downloadfile "plutovg-%PLUTOVG%.zip" "https://github.com/sammycage/plutovg/archive/v%PLUTOVG%.zip" 030b656758a5d48bc82e931caba7e13f6b672345cebb9c2893c09223ac322ecf || goto error
 call :downloadfile "plutosvg-%PLUTOSVG%.zip" "https://github.com/sammycage/plutosvg/archive/v%PLUTOSVG%.zip" bf2223c3ae69b2dfc8d69b238e26d2d877a1315a9e355671ea937a970f1cacd0 || goto error
-call :downloadfile "agility-sdk-%AGILITYSDK%.nupkg" "https://www.nuget.org/api/v2/package/Microsoft.Direct3D.D3D12/%AGILITYSDK%" 0e9bcf32aac9a79343ede9b21e4864950ee54577e3d8e19bfcdf002bb4e9bfd6 || goto error
-call :downloadfile "DirectX-Headers-%DXHEADERS%.zip" "https://github.com/microsoft/DirectX-Headers/archive/v%DXHEADERS%.zip" e839554c5c14e2fcce85ca99085ffa255626f054b44c2c10683f1062bc30401b || goto error
+call :downloadfile "agility-sdk-%AGILITYSDK%.nupkg" "https://www.nuget.org/api/v2/package/Microsoft.Direct3D.D3D12/%AGILITYSDK%" 70489669c2bbeaf318b62d72b0ac3e753d521387bfc848c9763791c4e920bfcc || goto error
+call :downloadfile "DirectX-Headers-%DXHEADERS%.zip" "https://github.com/microsoft/DirectX-Headers/archive/v%DXHEADERS%.zip" d96ac6e834cef5d89f3e8301cfdd5a57b9ef1d383f3b2aa717a5556b9b5985d5 || goto error
 call :downloadfile "DirectXShaderCompiler-%DXC%.nupkg" "https://www.nuget.org/api/v2/package/Microsoft.Direct3D.DXC/%DXC%" 73cfa082245918c2cc1ec6740250eb7377e83a757b3b3a3e16e0d71535bfbfc3 || goto error
 call :downloadfile "rapidyaml-%RAPIDYAML%-src.zip" "https://github.com/biojppm/rapidyaml/releases/download/v%RAPIDYAML%/rapidyaml-%RAPIDYAML%-src.zip" 96276f55b9fa7837ac8f3f72fd52965879cbb5d5d2e6af548c69a177fb078304 || goto error
 

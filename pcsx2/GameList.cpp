@@ -1227,6 +1227,7 @@ bool GameList::AddFileFromCache(const std::string& path, std::time_t timestamp, 
 		entry.total_played_time = iter->second.total_played_time;
 	}
 	entry.is_favorite = custom_attributes_ini.GetBoolValue(EncodeIniKey(entry.path).c_str(), "Favorite", false);
+	entry.has_custom_settings = VMManager::AreGameSettingsPresent(entry.serial, entry.crc);
 
 	s_entries.push_back(std::move(entry));
 	return true;
@@ -1281,6 +1282,7 @@ bool GameList::ScanFile(std::string path, std::time_t timestamp, std::unique_loc
 		}
 	}
 	entry.is_favorite = custom_attributes_ini.GetBoolValue(EncodeIniKey(entry.path).c_str(), "Favorite", false);
+	entry.has_custom_settings = VMManager::AreGameSettingsPresent(entry.serial, entry.crc);
 
 	lock.lock();
 
@@ -1773,7 +1775,19 @@ std::string GameList::GetCoverImagePathForEntry(const Entry* entry)
 				return cover_path;
 		}
 
-		// Lookup by serial (most specific)
+		// Lookup by serial and crc (most specific)
+		if (!entry->serial.empty())
+		{
+			std::string cover_filename = fmt::format("{}_{:08X}{}", entry->serial, entry->crc, extension);
+			Path::SanitizeFileName(&cover_filename);
+
+			cover_path = Path::Combine(EmuFolders::Covers, cover_filename);
+			if (FileSystem::FileExists(cover_path.c_str()))
+				return cover_path;
+		}
+
+		// Lookup by serial only
+		// Fallback to maintain backward compatibility with covers downloaded without using CRC
 		if (!entry->serial.empty())
 		{
 			const std::string cover_filename(entry->serial + extension);
@@ -1822,7 +1836,12 @@ std::string GameList::GetNewCoverImagePathForEntry(const Entry* entry, const cha
 			return existing_filename;
 	}
 
-	std::string cover_filename = fmt::format("{}.{}", use_serial ? entry->serial : entry->title, extension);
+	std::string cover_filename;
+	if (use_serial)
+		cover_filename = fmt::format("{}_{:08X}.{}", entry->serial, entry->crc, extension);
+	else
+		cover_filename = fmt::format("{}.{}", entry->title, extension);
+
 	Path::SanitizeFileName(&cover_filename);
 	return Path::Combine(EmuFolders::Covers, cover_filename);
 }
@@ -1836,6 +1855,7 @@ bool GameList::DownloadCovers(const std::vector<std::string>& url_templates, boo
 	bool has_title = false;
 	bool has_file_title = false;
 	bool has_serial = false;
+	bool has_crc = false;
 	for (const std::string& url_template : url_templates)
 	{
 		if (!has_title && url_template.find("${title}") != std::string::npos)
@@ -1844,10 +1864,12 @@ bool GameList::DownloadCovers(const std::vector<std::string>& url_templates, boo
 			has_file_title = true;
 		if (!has_serial && url_template.find("${serial}") != std::string::npos)
 			has_serial = true;
+		if (!has_crc && url_template.find("${crc}") != std::string::npos)
+			has_crc = true;
 	}
-	if (!has_title && !has_file_title && !has_serial)
+	if (!has_title && !has_file_title && !has_serial && !has_crc)
 	{
-		progress->DisplayError("URL template must contain at least one of ${title}, ${filetitle}, or ${serial}.");
+		progress->DisplayError("URL template must contain at least one of ${title}, ${filetitle}, ${serial} or ${crc}.");
 		return false;
 	}
 
@@ -1875,6 +1897,8 @@ bool GameList::DownloadCovers(const std::vector<std::string>& url_templates, boo
 					StringUtil::ReplaceAll(&url, "${filetitle}", Path::URLEncode(Path::GetFileTitle(entry.path)));
 				if (has_serial)
 					StringUtil::ReplaceAll(&url, "${serial}", Path::URLEncode(entry.serial));
+				if (has_crc)
+					StringUtil::ReplaceAll(&url, "${crc}", Path::URLEncode(fmt::format("{:08X}", entry.crc)));
 
 				download_urls.emplace_back(entry.path, std::move(url));
 			}
@@ -2038,6 +2062,22 @@ void GameList::SaveFavoriteForPath(const std::string& path, bool favorite)
 		}
 	}
 	Host::OnGameListFavoriteChanged(path);
+}
+
+void GameList::SetCustomSettingsForPath(const std::string& path, bool custom_settings)
+{
+	{
+		std::unique_lock lock(s_mutex);
+		for (Entry& entry : s_entries)
+		{
+			if (entry.path == path)
+			{
+				entry.has_custom_settings = custom_settings;
+				break;
+			}
+		}
+	}
+	Host::OnGameSettingsChanged(path);
 }
 
 std::string GameList::GetCustomTitleForPath(const std::string& path)

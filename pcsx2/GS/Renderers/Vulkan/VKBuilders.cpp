@@ -665,6 +665,11 @@ void Vulkan::GraphicsPipelineBuilder::AddBlendFlags(u32 flags)
 	m_blend_state.flags |= flags;
 }
 
+void Vulkan::GraphicsPipelineBuilder::AddDepthStencilFlags(u32 flags)
+{
+	m_depth_state.flags |= flags;
+}
+
 void Vulkan::GraphicsPipelineBuilder::ClearBlendAttachments()
 {
 	m_blend_attachments = {};
@@ -744,6 +749,11 @@ void Vulkan::GraphicsPipelineBuilder::SetProvokingVertex(VkProvokingVertexModeEX
 	AddPointerToChain(&m_rasterization_state, &m_provoking_vertex);
 
 	m_provoking_vertex.provokingVertexMode = mode;
+}
+
+void Vulkan::GraphicsPipelineBuilder::AddFlags(u32 flags)
+{
+	m_ci.flags |= flags;
 }
 
 Vulkan::ComputePipelineBuilder::ComputePipelineBuilder()

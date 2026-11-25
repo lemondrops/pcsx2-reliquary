@@ -1503,9 +1503,15 @@ void MainWindow::refreshGameList(bool invalidate_cache, bool popup_on_error)
 
 void MainWindow::refreshGameListFavorite(const std::string& path)
 {
-	m_game_list_widget->getModel()->refreshFavorite(path);
+	m_game_list_widget->getModel()->refreshDecorations(path);
 	if (MTGS::IsOpen())
 		Host::RunOnGSThread(&FullscreenUI::GameListFavoriteChanged);
+}
+
+void MainWindow::refreshGameSettingsIndicators(const std::string& path)
+{
+	m_game_list_widget->getModel()->refreshDecorations(path);
+	updateGameDependentActions();
 }
 
 void MainWindow::cancelGameListRefresh()
@@ -1822,6 +1828,7 @@ void MainWindow::onGameListEntryContextMenuRequested(const QPoint& point)
 	if (entry.has_value())
 	{
 		const bool is_favorite = entry->is_favorite;
+
 		QAction* action = menu.addAction(tr("Properties..."));
 		action->setEnabled(!entry->serial.empty() || entry->type == GameList::EntryType::ELF);
 		if (action->isEnabled())
@@ -1880,7 +1887,6 @@ void MainWindow::onGameListEntryContextMenuRequested(const QPoint& point)
 		{
 			action = menu.addAction(tr("Default Boot"));
 			connect(action, &QAction::triggered, [this, entry]() { startGameListEntry(*entry); });
-
 			// Make bold to indicate it's the default choice when double-clicking
 			if (!VMManager::HasSaveStateInSlot(entry->serial.c_str(), entry->crc, -1))
 				QtUtils::MarkActionAsDefault(action);

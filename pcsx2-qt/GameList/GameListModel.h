@@ -21,6 +21,7 @@ class GameListModel final : public QAbstractTableModel
 
 public:
 	static constexpr int FavoriteRole = Qt::UserRole + 1;
+	static constexpr int CustomSettingsRole = Qt::UserRole + 2;
 	enum Column : int
 	{
 		Column_Type,
@@ -55,7 +56,7 @@ public:
 	__fi const QString& getColumnDisplayName(int column) { return m_column_display_names[column]; }
 
 	void refresh();
-	void refreshFavorite(const std::string& path);
+	void refreshDecorations(const std::string& path);
 	void reloadThemeSpecificImages();
 
 	bool titlesLessThan(int left_row, int right_row) const;
@@ -89,8 +90,6 @@ private:
 	void loadOrGenerateCover(const GameList::Entry* ge);
 	void invalidateCoverForPath(const std::string& path);
 
-	static QString formatTimespan(const time_t timespan);
-
 	float m_cover_scale = 0.0f;
 	std::atomic<u32> m_cover_scale_counter{0};
 	bool m_show_titles_for_covers = false;
@@ -103,6 +102,7 @@ private:
 	QPixmap m_placeholder_pixmap;
 	QPixmap m_loading_pixmap;
 	QPixmap m_favorite_pixmap;
+	QPixmap m_custom_settings_pixmap;
 	qreal m_dpr;
 
 	std::array<QPixmap, static_cast<int>(GameList::CompatibilityRatingCount)> m_compatibility_pixmaps;
